@@ -5,14 +5,16 @@ import {
   FileCheck2,
   PieChart,
   Settings,
+  Layers,
 } from 'lucide-react';
 
 const navItems = [
-  { icon: LayoutDashboard, label: 'Dashboard', href: '/' },
-  { icon: ArrowRightLeft, label: 'Transactions', href: '/transactions' },
-  { icon: FileCheck2, label: 'Reconciliation', href: '/reconciliation' },
-  { icon: PieChart, label: 'Reports', href: '/reports' },
-  { icon: Settings, label: 'Settings', href: '/settings' },
+  { icon: Layers, label: 'ทุกโปรเจกต์', href: '/projects' },
+  { icon: LayoutDashboard, label: 'หน้าปัดหลัก', href: '/' },
+  { icon: ArrowRightLeft, label: 'ธุรกรรม', href: '/transactions' },
+  { icon: FileCheck2, label: 'การกระทบยอด', href: '/reconciliation' },
+  { icon: PieChart, label: 'รายงาน', href: '/reports' },
+  { icon: Settings, label: 'ตั้งค่า', href: '/settings' },
 ];
 
 export function Sidebar() {

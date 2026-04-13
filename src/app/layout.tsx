@@ -1,11 +1,14 @@
 import type { Metadata } from 'next';
-import { Inter } from 'next/font/google';
+import { Anuphan } from 'next/font/google';
 import './globals.css';
 import { Sidebar } from '@/components/layout/Sidebar';
 import { Header } from '@/components/layout/Header';
 import { TooltipProvider } from '@/components/ui/tooltip';
 
-const inter = Inter({ subsets: ['latin'] });
+const anuphan = Anuphan({ 
+  subsets: ['thai', 'latin'],
+  variable: '--font-anuphan',
+});
 
 export const metadata: Metadata = {
   title: 'Fixlo | Admin Dashboard',
@@ -19,7 +22,7 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en" className="h-full antialiased">
-      <body className={`${inter.className} min-h-screen bg-muted/40 font-sans`}>
+      <body className={`${anuphan.variable} min-h-screen bg-muted/40 font-sans`}>
         <TooltipProvider>
           <div className="flex min-h-screen w-full flex-col">
             <Sidebar />

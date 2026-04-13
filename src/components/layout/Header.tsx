@@ -1,3 +1,7 @@
+'use client';
+
+import { Suspense } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { Search, Bell } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
@@ -10,16 +14,60 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 
-export function Header() {
+const PROJECTS = [
+  { id: 'juno168', name: 'Juno168', icon: 'J', color: 'bg-blue-600' },
+  { id: 'uno', name: 'Uno', icon: 'U', color: 'bg-indigo-500' },
+  { id: 'gaza', name: 'Gaza', icon: 'G', color: 'bg-emerald-500' },
+  { id: 'yb', name: 'YB', icon: 'Y', color: 'bg-amber-500' },
+];
+
+function HeaderContent() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const currentProject = searchParams.get('project') || 'all';
+
   return (
     <header className="sticky top-0 z-30 flex h-20 items-center justify-between border-b border-gray-100 bg-white/95 px-6 backdrop-blur supports-[backdrop-filter]:bg-white/60">
-      <div className="flex items-center flex-1">
+      <div className="flex items-center flex-1 gap-4">
+        <Select value={currentProject} onValueChange={(val) => router.push(val === 'all' ? '/' : `/?project=${val}`)}>
+          <SelectTrigger className="w-[180px] h-10 border-transparent bg-gray-50 hover:bg-gray-100 transition-colors shadow-none rounded-2xl focus:ring-2 focus:ring-blue-100">
+            <SelectValue placeholder="เลือกโปรเจกต์" />
+          </SelectTrigger>
+          <SelectContent className="rounded-xl border-gray-100 shadow-lg">
+            <SelectItem value="all" className="cursor-pointer rounded-lg py-2">
+              <div className="flex items-center gap-2.5">
+                <div className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[10px] font-bold text-white shadow-sm bg-gray-700">
+                  A
+                </div>
+                <span className="font-medium text-gray-700">ทุกโปรเจกต์</span>
+              </div>
+            </SelectItem>
+            {PROJECTS.map((project) => (
+              <SelectItem key={project.id} value={project.id} className="cursor-pointer rounded-lg py-2">
+                <div className="flex items-center gap-2.5">
+                  <div className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[10px] font-bold text-white shadow-sm ${project.color}`}>
+                    {project.icon}
+                  </div>
+                  <span className="font-medium text-gray-700">{project.name}</span>
+                </div>
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+
         <div className="relative w-full max-w-md group">
           <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400 transition-colors group-hover:text-blue-500" />
           <Input
             type="search"
-            placeholder="Search transactions, reconciliations, etc..."
+            placeholder="ค้นหาธุรกรรม, การกระทบยอด..."
             className="w-full rounded-2xl bg-gray-50 pl-10 border-transparent shadow-none hover:bg-gray-100 hover:border-gray-200 focus-visible:bg-white focus-visible:ring-2 focus-visible:ring-blue-100 transition-all h-10"
           />
         </div>
@@ -29,7 +77,7 @@ export function Header() {
         <Button variant="ghost" size="icon" className="relative h-10 w-10 rounded-full hover:bg-blue-50 hover:text-blue-600 text-gray-500 transition-colors">
           <Bell className="h-5 w-5" strokeWidth={1.5} />
           <span className="absolute right-2 top-2 h-2 w-2 rounded-full bg-red-500 border border-white" />
-          <span className="sr-only">Notifications</span>
+          <span className="sr-only">การแจ้งเตือน</span>
         </Button>
         <div className="h-6 w-px bg-gray-200 hidden sm:block"></div>
         <DropdownMenu>
@@ -42,7 +90,7 @@ export function Header() {
             </Avatar>
             <div className="flex flex-col items-start hidden sm:flex">
               <span className="text-sm font-medium text-gray-700 leading-tight">Alice Doe</span>
-              <span className="text-xs text-gray-500">Admin</span>
+              <span className="text-xs text-gray-500">ผู้ดูแลระบบ</span>
             </div>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end" className="w-56 rounded-xl shadow-lg border-gray-100">
@@ -55,13 +103,21 @@ export function Header() {
               </div>
             </DropdownMenuLabel>
             <DropdownMenuSeparator />
-            <DropdownMenuItem className="cursor-pointer">Profile Settings</DropdownMenuItem>
-            <DropdownMenuItem className="cursor-pointer">Billing</DropdownMenuItem>
+            <DropdownMenuItem className="cursor-pointer">ตั้งค่าโปรไฟล์</DropdownMenuItem>
+            <DropdownMenuItem className="cursor-pointer">การเรียกเก็บเงิน</DropdownMenuItem>
             <DropdownMenuSeparator />
-            <DropdownMenuItem className="cursor-pointer text-red-600 focus:text-red-600 focus:bg-red-50">Log out</DropdownMenuItem>
+            <DropdownMenuItem className="cursor-pointer text-red-600 focus:text-red-600 focus:bg-red-50">ออกจากระบบ</DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
       </div>
     </header>
+  );
+}
+
+export function Header() {
+  return (
+    <Suspense fallback={<div className="h-20 w-full flex-shrink-0 border-b border-gray-100 bg-white/95" />}>
+      <HeaderContent />
+    </Suspense>
   );
 }

@@ -12,6 +12,7 @@ import {
   ResponsiveContainer
 } from 'recharts';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { formatBaht } from '@/lib/utils';
 
 const data = [
   { day: 'Mon', deposits: 4200, withdrawals: 1200, balance: 14000 },
@@ -27,9 +28,9 @@ export function CashflowChart() {
   return (
     <Card className="border-none shadow-sm rounded-2xl bg-white supports-[backdrop-filter]:bg-white/60">
       <CardHeader>
-        <CardTitle className="text-lg font-semibold text-gray-900">7-Day Cashflow & Balance</CardTitle>
+        <CardTitle className="text-lg font-semibold text-gray-900">กระแสเงินสดและยอดคงเหลือ 7 วัน</CardTitle>
         <CardDescription className="text-gray-500">
-          Daily deposit and withdrawal volumes against end-of-day bank balance.
+          ปริมาณการฝากและถอนรายวันเทียบกับยอดคงเหลือในธนาคารสิ้นวัน
         </CardDescription>
       </CardHeader>
       <CardContent>
@@ -52,7 +53,7 @@ export function CashflowChart() {
                 axisLine={false} 
                 tickLine={false} 
                 tick={{ fill: '#6B7280', fontSize: 13 }} 
-                tickFormatter={(value) => `$${value}`}
+                tickFormatter={(value) => formatBaht(value)}
                 dx={-10}
               />
               <YAxis 
@@ -61,7 +62,7 @@ export function CashflowChart() {
                 axisLine={false} 
                 tickLine={false} 
                 tick={{ fill: '#6B7280', fontSize: 13 }}
-                tickFormatter={(value) => `$${value}`}
+                tickFormatter={(value) => formatBaht(value)}
                 dx={10}
               />
               <Tooltip 
@@ -72,7 +73,7 @@ export function CashflowChart() {
                   padding: '12px'
                 }}
                 formatter={(value: any) => {
-                  if (typeof value === 'number') return [`$${value.toLocaleString()}`, undefined]
+                  if (typeof value === 'number') return [formatBaht(value), undefined]
                   return [value, undefined]
                 }}
                 cursor={{ fill: '#F3F4F6' }}
@@ -84,7 +85,7 @@ export function CashflowChart() {
               <Bar 
                 yAxisId="left" 
                 dataKey="deposits" 
-                name="Deposits" 
+                name="ฝาก" 
                 fill="#10B981" 
                 radius={[4, 4, 0, 0]} 
                 maxBarSize={40}
@@ -92,7 +93,7 @@ export function CashflowChart() {
               <Bar 
                 yAxisId="left" 
                 dataKey="withdrawals" 
-                name="Withdrawals" 
+                name="ถอน" 
                 fill="#EF4444" 
                 radius={[4, 4, 0, 0]} 
                 maxBarSize={40}
@@ -101,7 +102,7 @@ export function CashflowChart() {
                 yAxisId="right" 
                 type="monotone" 
                 dataKey="balance" 
-                name="Daily Bank Balance" 
+                name="ยอดคงเหลือในธนาคารรายวัน" 
                 stroke="#6366F1" 
                 strokeWidth={3}
                 dot={{ stroke: '#6366F1', strokeWidth: 2, r: 4, fill: '#fff' }}
