@@ -4,6 +4,7 @@ import './globals.css';
 import { Sidebar } from '@/components/layout/Sidebar';
 import { Header } from '@/components/layout/Header';
 import { TooltipProvider } from '@/components/ui/tooltip';
+import { Toaster } from 'sonner';
 
 const anuphan = Anuphan({ 
   subsets: ['thai', 'latin'],
@@ -24,6 +25,7 @@ export default function RootLayout({
     <html lang="en" className="h-full antialiased">
       <body className={`${anuphan.variable} min-h-screen bg-muted/40 font-sans`}>
         <TooltipProvider>
+          <Toaster position="top-center" richColors />
           <div className="flex min-h-screen w-full flex-col">
             <Sidebar />
             <div className="flex flex-col sm:pl-[72px]">

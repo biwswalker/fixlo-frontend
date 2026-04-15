@@ -1,23 +1,61 @@
+'use client';
+
 import Link from 'next/link';
+import { usePathname, useParams } from 'next/navigation';
 import {
   LayoutDashboard,
   ArrowRightLeft,
-  FileCheck2,
   PieChart,
   Settings,
   Layers,
+  Scale,
 } from 'lucide-react';
-
-const navItems = [
-  { icon: Layers, label: 'ทุกโปรเจกต์', href: '/projects' },
-  { icon: LayoutDashboard, label: 'หน้าปัดหลัก', href: '/' },
-  { icon: ArrowRightLeft, label: 'ธุรกรรม', href: '/transactions' },
-  { icon: FileCheck2, label: 'การกระทบยอด', href: '/reconciliation' },
-  { icon: PieChart, label: 'รายงาน', href: '/reports' },
-  { icon: Settings, label: 'ตั้งค่า', href: '/settings' },
-];
+import { cn } from '@/lib/utils';
 
 export function Sidebar() {
+  const pathname = usePathname();
+  const params = useParams();
+  const projectId = (params?.projectId as string) || 'all';
+
+  const navItems = [
+    { 
+      label: 'ทุกโปรเจกต์', 
+      href: '/projects', 
+      icon: Layers,
+      active: pathname === '/projects'
+    },
+    { 
+      label: 'หน้าปัดหลัก', 
+      href: `/dashboard/${projectId}`, 
+      icon: LayoutDashboard,
+      active: pathname === `/dashboard/${projectId}`
+    },
+    { 
+      label: 'กระทบยอดบัญชี', 
+      href: `/dashboard/${projectId}/reconciliation`, 
+      icon: Scale,
+      active: pathname === `/dashboard/${projectId}/reconciliation`
+    },
+    { 
+      label: 'ธุรกรรม', 
+      href: '/transactions', 
+      icon: ArrowRightLeft,
+      active: pathname === '/transactions'
+    },
+    { 
+      label: 'รายงาน', 
+      href: '/reports', 
+      icon: PieChart,
+      active: pathname === '/reports'
+    },
+    { 
+      label: 'ตั้งค่า', 
+      href: '/settings', 
+      icon: Settings,
+      active: pathname === '/settings'
+    },
+  ];
+
   return (
     <aside className="fixed inset-y-0 left-0 z-10 hidden w-[72px] flex-col border-r bg-white/95 backdrop-blur supports-[backdrop-filter]:bg-white/60 sm:flex">
       <div className="flex justify-center py-6 border-b border-gray-100/50">
@@ -31,7 +69,12 @@ export function Sidebar() {
             key={item.label}
             href={item.href}
             title={item.label}
-            className="group flex h-12 w-12 items-center justify-center rounded-xl text-gray-400 transition-all hover:bg-blue-50 hover:text-blue-600 hover:shadow-sm"
+            className={cn(
+              "group flex h-12 w-12 items-center justify-center rounded-xl transition-all hover:shadow-sm",
+              item.active 
+                ? "bg-blue-600 text-white shadow-md shadow-blue-600/20" 
+                : "text-gray-400 hover:bg-blue-50 hover:text-blue-600"
+            )}
           >
             <item.icon className="h-6 w-6 transition-transform group-hover:scale-110" strokeWidth={1.5} />
             <span className="sr-only">{item.label}</span>

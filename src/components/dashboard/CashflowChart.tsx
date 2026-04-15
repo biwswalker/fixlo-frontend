@@ -14,17 +14,14 @@ import {
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { formatBaht } from '@/lib/utils';
 
-const data = [
-  { day: 'Mon', deposits: 4200, withdrawals: 1200, balance: 14000 },
-  { day: 'Tue', deposits: 3600, withdrawals: 1400, balance: 16200 },
-  { day: 'Wed', deposits: 2800, withdrawals: 4100, balance: 14900 },
-  { day: 'Thu', deposits: 5100, withdrawals: 2300, balance: 17700 },
-  { day: 'Fri', deposits: 3900, withdrawals: 5200, balance: 16400 },
-  { day: 'Sat', deposits: 1200, withdrawals: 900, balance: 16700 },
-  { day: 'Sun', deposits: 1800, withdrawals: 1100, balance: 17400 },
-];
+interface ChartData {
+  day: string;
+  deposits: number;
+  withdrawals: number;
+  balance: number;
+}
 
-export function CashflowChart() {
+export function CashflowChart({ data }: { data: ChartData[] }) {
   return (
     <Card className="border-none shadow-sm rounded-2xl bg-white supports-[backdrop-filter]:bg-white/60">
       <CardHeader>
@@ -34,7 +31,7 @@ export function CashflowChart() {
         </CardDescription>
       </CardHeader>
       <CardContent>
-        <div className="h-[350px] w-full mt-2">
+        <div style={{ width: '100%', height: '350px', minHeight: '350px' }}>
           <ResponsiveContainer width="100%" height="100%">
             <ComposedChart
               data={data}

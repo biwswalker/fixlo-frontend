@@ -1,8 +1,9 @@
 'use client';
 
 import { Suspense } from 'react';
-import { useRouter, useSearchParams } from 'next/navigation';
+import { useRouter, useParams, useSearchParams } from 'next/navigation';
 import { Search, Bell } from 'lucide-react';
+import { DateRangePicker } from '@/components/dashboard/DateRangePicker';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
@@ -31,13 +32,17 @@ const PROJECTS = [
 
 function HeaderContent() {
   const router = useRouter();
+  const params = useParams();
   const searchParams = useSearchParams();
-  const currentProject = searchParams.get('project') || 'all';
+  const currentProject = (params?.projectId as string) || 'all';
 
   return (
     <header className="sticky top-0 z-30 flex h-20 items-center justify-between border-b border-gray-100 bg-white/95 px-6 backdrop-blur supports-[backdrop-filter]:bg-white/60">
       <div className="flex items-center flex-1 gap-4">
-        <Select value={currentProject} onValueChange={(val) => router.push(val === 'all' ? '/' : `/?project=${val}`)}>
+        <Select value={currentProject} onValueChange={(val) => {
+          const newParams = new URLSearchParams(searchParams.toString());
+          router.push(`/dashboard/${val}?${newParams.toString()}`);
+        }}>
           <SelectTrigger className="w-[180px] h-10 border-transparent bg-gray-50 hover:bg-gray-100 transition-colors shadow-none rounded-2xl focus:ring-2 focus:ring-blue-100">
             <SelectValue placeholder="เลือกโปรเจกต์" />
           </SelectTrigger>
@@ -62,6 +67,8 @@ function HeaderContent() {
             ))}
           </SelectContent>
         </Select>
+
+        <DateRangePicker />
 
         <div className="relative w-full max-w-md group">
           <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400 transition-colors group-hover:text-blue-500" />
