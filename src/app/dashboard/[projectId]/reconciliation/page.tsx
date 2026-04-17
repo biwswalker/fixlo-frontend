@@ -2,9 +2,10 @@ import { Suspense } from "react";
 import { format } from "date-fns";
 import { ReconciliationCard } from "@/components/dashboard/ReconciliationCard";
 import { ReconciliationSkeleton } from "@/components/dashboard/DashboardSkeletons";
-import { getReconciliationStatus } from "@/actions/dashboard";
-import { PROJECTS_MAP } from "@/lib/constants";
+import { getReconciliationStatus, getProjectByName } from "@/actions/dashboard";
 import { Button } from "@/components/ui/button";
+import { getServerAuthSession } from "@/lib/auth";
+import { redirect } from "next/navigation";
 
 export default async function ReconciliationPage({
   params,
@@ -13,9 +14,21 @@ export default async function ReconciliationPage({
   params: Promise<{ projectId: string }>;
   searchParams: Promise<{ from?: string; to?: string }>;
 }) {
+  const session = await getServerAuthSession();
+  
+  // RBAC Check: Only ADMIN can access reconciliation
+  if (!session || session.user.role !== 'ADMIN') {
+    redirect('/dashboard/all');
+  }
+
   const { projectId } = await params;
   const { to } = await searchParams;
   
+  // Resolve project details dynamically
+  const project = await getProjectByName(projectId);
+
+  const displayTitle = project?.project_name || (projectId === 'all' ? 'ทุกโปรเจกต์' : projectId);
+
   // Use 'to' date for reconciliation target, or today if not provided
   const targetDate = to || format(new Date(), 'yyyy-MM-dd');
 
@@ -24,7 +37,7 @@ export default async function ReconciliationPage({
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <h1 className="text-3xl font-bold tracking-tight text-gray-900 font-sans">
-            กระทบยอดบัญชี: {PROJECTS_MAP[projectId]?.name || projectId}
+            กระทบยอดบัญชี: {displayTitle}
           </h1>
           <p className="text-gray-500 mt-1">
             ตรวจสอบความถูกต้องของยอดเงินฝากและการถอนประจำวัน

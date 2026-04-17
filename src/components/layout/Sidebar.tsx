@@ -4,26 +4,21 @@ import Link from 'next/link';
 import { usePathname, useParams } from 'next/navigation';
 import {
   LayoutDashboard,
-  ArrowRightLeft,
-  PieChart,
-  Settings,
-  Layers,
   Scale,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
+import { useSession } from 'next-auth/react';
+
 export function Sidebar() {
   const pathname = usePathname();
   const params = useParams();
+  const { data: session } = useSession();
   const projectId = (params?.projectId as string) || 'all';
 
+  const userRole = session?.user?.role;
+
   const navItems = [
-    { 
-      label: 'ทุกโปรเจกต์', 
-      href: '/projects', 
-      icon: Layers,
-      active: pathname === '/projects'
-    },
     { 
       label: 'หน้าปัดหลัก', 
       href: `/dashboard/${projectId}`, 
@@ -34,27 +29,10 @@ export function Sidebar() {
       label: 'กระทบยอดบัญชี', 
       href: `/dashboard/${projectId}/reconciliation`, 
       icon: Scale,
-      active: pathname === `/dashboard/${projectId}/reconciliation`
+      active: pathname === `/dashboard/${projectId}/reconciliation`,
+      hidden: userRole !== 'ADMIN'
     },
-    { 
-      label: 'ธุรกรรม', 
-      href: '/transactions', 
-      icon: ArrowRightLeft,
-      active: pathname === '/transactions'
-    },
-    { 
-      label: 'รายงาน', 
-      href: '/reports', 
-      icon: PieChart,
-      active: pathname === '/reports'
-    },
-    { 
-      label: 'ตั้งค่า', 
-      href: '/settings', 
-      icon: Settings,
-      active: pathname === '/settings'
-    },
-  ];
+  ].filter(item => !item.hidden);
 
   return (
     <aside className="fixed inset-y-0 left-0 z-10 hidden w-[72px] flex-col border-r bg-white/95 backdrop-blur supports-[backdrop-filter]:bg-white/60 sm:flex">

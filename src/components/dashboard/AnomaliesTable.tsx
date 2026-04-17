@@ -14,7 +14,6 @@ import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { TransactionRecord } from "@/actions/dashboard"
 import { formatBaht } from "@/lib/utils"
-import { PROJECTS_MAP } from "@/lib/constants"
 import { SlipReviewDialog } from "./SlipReviewDialog"
 
 interface AnomaliesTableProps {
@@ -47,29 +46,43 @@ export function AnomaliesTable({ anomalies }: AnomaliesTableProps) {
                 </TableRow>
               </TableHeader>
               <TableBody className="font-sans">
-                {anomalies.length === 0 ? (
+                {(!anomalies || anomalies.length === 0) ? (
                   <TableRow>
                     <TableCell colSpan={6} className="text-center py-12 text-gray-400 font-medium">
                       ไม่พบรายการผิดปกติในขณะนี้
                     </TableCell>
                   </TableRow>
                 ) : (
-                  anomalies.map((txn) => (
+                  anomalies?.map((txn) => (
                     <TableRow key={txn.id} className="border-gray-50 hover:bg-gray-50/50 transition-colors group">
                       <TableCell className="font-medium text-gray-900 px-6 py-4">
                         TXN-{txn.id.toString().slice(-4)}
                       </TableCell>
                       <TableCell>
-                        <Badge variant="secondary" className={`${PROJECTS_MAP[txn.project_id]?.color || 'bg-gray-100 text-gray-600'} border-transparent rounded-full px-2.5 py-0.5 font-medium`}>
-                          {PROJECTS_MAP[txn.project_id]?.name || txn.project_id}
+                        <Badge variant="secondary" className="bg-blue-50 text-blue-700 border-transparent rounded-full px-2.5 py-0.5 font-medium">
+                          {txn.project_name || txn.project_id}
                         </Badge>
                       </TableCell>
                       <TableCell className="text-gray-900 font-bold">{formatBaht(txn.amount)}</TableCell>
                       <TableCell className="text-gray-500">{formatBaht(txn.ai_amount)}</TableCell>
                       <TableCell>
-                        <Badge variant="secondary" className={`${txn.is_duplicate ? 'bg-red-50 text-red-700' : 'bg-rose-50 text-rose-700'} border-transparent rounded-full px-2.5 py-0.5 font-medium`}>
-                          {txn.is_duplicate ? 'เลขอ้างอิงซ้ำ' : 'ยอดเงินไม่ตรง'}
-                        </Badge>
+                        <div className="flex flex-wrap gap-1.5">
+                          {txn.is_amount_mismatch && (
+                            <Badge variant="destructive" className="bg-rose-50 text-rose-700 border-transparent rounded-full px-2.5 py-0.5 font-medium whitespace-nowrap">
+                              ยอดไม่ตรง
+                            </Badge>
+                          )}
+                          {txn.is_duplicate && (
+                            <Badge variant="secondary" className="bg-orange-50 text-orange-700 border-transparent rounded-full px-2.5 py-0.5 font-medium whitespace-nowrap">
+                              สลิปซ้ำ
+                            </Badge>
+                          )}
+                          {txn.is_time_anomaly && (
+                            <Badge variant="secondary" className="bg-amber-50 text-amber-700 border-transparent rounded-full px-2.5 py-0.5 font-medium whitespace-nowrap">
+                              เวลาผิดปกติ
+                            </Badge>
+                          )}
+                        </div>
                       </TableCell>
                       <TableCell className="text-right px-6">
                         <Button 

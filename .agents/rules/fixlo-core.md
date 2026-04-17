@@ -17,25 +17,26 @@ Fixlo is a Multi-Tenant financial backoffice and reconciliation system. It scrap
 
 ### A. Core Tables
 
-- **`projects`**: `id` (VARCHAR PK), `name` (VARCHAR), `url` (VARCHAR), `status` (VARCHAR), `created_at` (TIMESTAMP)
+- **[span_2](start_span)`projects`**: `id` (UUID PK), `project_name` (VARCHAR), `discord_channel_id`, `status`[span_2](end_span).
+- **[span_3](start_span)`daily_balances`**: `id` (UUID), `date`, `balance_amount`, `project_name` (VARCHAR)[span_3](end_span).
 
 ### B. Summary & Reconciliation
 
-- **`report_summary_daily`** (Daily Aggregated Data):
-  `id` (SERIAL PK), `project_id` (VARCHAR FK), `report_date` (DATE), `deposit` (DECIMAL), `withdraw` (DECIMAL), `manual_in` (DECIMAL), `manual_out` (DECIMAL), `bonus` (DECIMAL), `redeem` (DECIMAL), `fixed_deposit` (DECIMAL), `affiliate` (DECIMAL), `cashback` (DECIMAL), `balance` (DECIMAL), `created_at` (TIMESTAMP)
+- **[span_4](start_span)`report_summary_daily`**: `id` (INT), `project_id` (VARCHAR), `report_date`, `deposit` (ฝาก), `withdraw` (ถอน), `manual_in` (เติมมือ), `manual_out` (ถอนมือ), `bonus` (โบนัส), `redeem` (แลกรางวัล), `fixed_deposit` (ฝากประจำ), `affiliate` (พันธมิตร), `cashback` (คืนยอดเสีย), `balance`[span_4](end_span).
 
-### C. Slip Verification & Anomalies (AI Processed)
+### C. Slip Verification & Anomalies
 
-- **`transaction`** (Individual user slips):
-  `id` (PK), `project_id` (VARCHAR FK), `discord_message_id`, `image_path`, `image_hash`, `source_project_id`, `target_project_id`, `amount` (DECIMAL), `ref_id`, `sender_account`, `receiver_account`, `sender_name`, `receiver_name`, `sender_bank`, `receiver_bank`, `transfer_date`, `transfer_time`, `qr_code_text`, `is_duplicate` (BOOLEAN), `duplicate_of_ref_id`, `is_time_anomaly` (BOOLEAN), `time_diff_minutes`, `raw_ai_output` (TEXT), `ai_amount` (DECIMAL), `qr_amount` (DECIMAL), `is_amount_mismatch` (BOOLEAN), `is_amount_verified` (BOOLEAN), `created_at` (TIMESTAMP)
+- **[span_5](start_span)`transactions`** (WITH AN 'S'): `id` (UUID PK), `source_project_id` (UUID FK), `target_project_id` (UUID FK), `amount`, `ai_amount`, `is_duplicate`, `is_amount_mismatch`, `is_amount_verified`, `transfer_date`, `transfer_time`[span_5](end_span).
+  // IMPORTANT: `transactions` table DOES NOT have a `project_id` column. [span_6](start_span)Use `source_project_id` or `target_project_id`[span_6](end_span).
 
-### D. Scraped Raw Data Tables (From Platforms)
+### D. Authentication & Authorization
 
-All standard scraped tables MUST include: `id` (SERIAL PK), `project_id` (VARCHAR FK), and `created_at` (TIMESTAMP DEFAULT CURRENT_TIMESTAMP).
+- **`users`**: `id` (UUID PK), `username` (VARCHAR UNIQUE), `password_hash` (TEXT), `role` (ENUM: 'ADMIN', 'SUPPORT', 'VIEWER'), `created_at`.
+- **Permissions Logic**:
+  - `ADMIN`: ทำได้ทุกอย่าง (ดูรายงาน, อนุมัติสลิป, จัดการโปรเจกต์).
+  - `SUPPORT`: ดู Dashboard และ "อนุมัติสลิป" ได้ แต่ดูรายงานภาพรวมลึกๆ หรือลบข้อมูลไม่ได้.
+  - `VIEWER`: ดูข้อมูลได้อย่างเดียว (Read-only).
 
-- **`report_deposits`**: `bank_acc`, `full_name`, `username`, `amb_user`, `amount` (DECIMAL), `promotion`, `status`, `web_acc`, `manage_by`, `trans_date`, `action_by`
-- **`report_withdrawals`**: `bank_info`, `full_name`, `username`, `amb_user`, `amount` (DECIMAL), `status`, `web_acc`, `trans_date`, `note`, `action_by`
+## 4. Project Matching Rule
 
-## 4. Rule of Thumb for AI
-
-DO NOT hallucinate schemas. If a column is not listed above, ask the user before writing the SQL or Type definition.
+When querying based on a project URL parameter (e.g., 'juno168'), ALWAYS use fuzzy matching against `projects.project_name` using `ILIKE '%' || $1 || '%'` to handle variations like 'juno', 'jno', etc.

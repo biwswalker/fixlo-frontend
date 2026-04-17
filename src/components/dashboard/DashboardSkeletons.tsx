@@ -12,7 +12,13 @@ export function KPISkeleton() {
           </CardHeader>
           <CardContent>
             <Skeleton className="h-8 w-[120px] mb-2" />
-            <Skeleton className="h-4 w-[180px]" />
+            <Skeleton className="h-4 w-[180px] mb-4" />
+            <Skeleton className="h-[1px] w-full mb-4" />
+            <div className="space-y-3">
+              <div className="flex justify-between"><Skeleton className="h-3 w-24" /><Skeleton className="h-3 w-16" /></div>
+              <div className="flex justify-between"><Skeleton className="h-3 w-20" /><Skeleton className="h-3 w-14" /></div>
+              <div className="flex justify-between"><Skeleton className="h-3 w-28" /><Skeleton className="h-3 w-12" /></div>
+            </div>
           </CardContent>
         </Card>
       ))}
