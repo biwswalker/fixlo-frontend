@@ -3,6 +3,7 @@ import Credentials from "next-auth/providers/credentials"
 import { query } from "@/lib/db"
 import bcrypt from "bcryptjs"
 import authConfig from "./auth.config"
+import { logger } from "@/lib/logger"
 
 export const { handlers, signIn, signOut, auth } = NextAuth({
   ...authConfig,
@@ -41,7 +42,7 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
             role: user.role,
           }
         } catch (error) {
-          console.error("Auth authorize error:", error)
+          logger.error('Auth:authorize', 'Failed to authenticate user', error)
           return null
         }
       },

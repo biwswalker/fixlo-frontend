@@ -1,14 +1,24 @@
-'use client';
+"use client";
 
-import { useState, useEffect } from 'react';
-import { useRouter, useParams, useSearchParams } from 'next/navigation';
-import { signOut } from 'next-auth/react';
-import { Search, Bell, Loader2 } from 'lucide-react';
-import { DateRangePicker } from '@/components/dashboard/DateRangePicker';
-import ExportButton from '@/components/dashboard/ExportButton';
-import { Input } from '@/components/ui/input';
-import { Button } from '@/components/ui/button';
-import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
+import { useState, useEffect } from "react";
+import { cn } from "@/lib/utils";
+import { useRouter, useParams, useSearchParams } from "next/navigation";
+import { useSession, signOut } from "next-auth/react";
+import {
+  Search,
+  Bell,
+  Loader2,
+  User,
+  Settings,
+  Users,
+  LogOut,
+  ChevronDown,
+} from "lucide-react";
+import { DateRangePicker } from "@/components/dashboard/DateRangePicker";
+import ExportButton from "@/components/dashboard/ExportButton";
+import { Input } from "@/components/ui/input";
+import { Button, buttonVariants } from "@/components/ui/button";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -17,28 +27,51 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
   DropdownMenuGroup,
-} from '@/components/ui/dropdown-menu';
+} from "@/components/ui/dropdown-menu";
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from '@/components/ui/select';
+} from "@/components/ui/select";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 
 interface Project {
   id: string;
   project_name: string;
 }
 
-export default function HeaderClient({ activeProjects }: { activeProjects: Project[] }) {
+export default function HeaderClient({
+  activeProjects,
+}: {
+  activeProjects: Project[];
+}) {
+  const { data: session } = useSession();
   const router = useRouter();
   const params = useParams();
   const searchParams = useSearchParams();
-  const currentProject = (params?.projectId as string) || 'all';
+  const currentProject = (params?.projectId as string) || "all";
+
+  const user = session?.user;
+  const roleLabels: Record<string, string> = {
+    ADMIN: "ผู้ดูแลระบบ",
+    SUPPORT: "เจ้าหน้าที่เทคนิค",
+    VIEWER: "ผู้เข้าชม",
+  };
+
+  const roleLabel = user?.role
+    ? roleLabels[user.role] || user.role
+    : "ผู้ใช้งาน";
 
   // Search State
-  const [searchValue, setSearchValue] = useState(searchParams.get('query') || '');
+  const [searchValue, setSearchValue] = useState(
+    searchParams.get("query") || "",
+  );
   const [isSearching, setIsSearching] = useState(false);
 
   // Debounced Search Sync to URL
@@ -46,11 +79,11 @@ export default function HeaderClient({ activeProjects }: { activeProjects: Proje
     const delayDebounceFn = setTimeout(() => {
       const currentParams = new URLSearchParams(searchParams.toString());
       if (searchValue) {
-        currentParams.set('query', searchValue);
+        currentParams.set("query", searchValue);
       } else {
-        currentParams.delete('query');
+        currentParams.delete("query");
       }
-      
+
       const newQueryString = currentParams.toString();
       const oldQueryString = searchParams.toString();
 
@@ -69,10 +102,13 @@ export default function HeaderClient({ activeProjects }: { activeProjects: Proje
   return (
     <header className="sticky top-0 z-30 flex h-20 items-center justify-between border-b border-gray-100 bg-white/95 px-6 backdrop-blur supports-[backdrop-filter]:bg-white/60">
       <div className="flex items-center flex-1 gap-4">
-        <Select value={currentProject} onValueChange={(val) => {
-          const newParams = new URLSearchParams(searchParams.toString());
-          router.push(`/dashboard/${val}?${newParams.toString()}`);
-        }}>
+        <Select
+          value={currentProject}
+          onValueChange={(val) => {
+            const newParams = new URLSearchParams(searchParams.toString());
+            router.push(`/dashboard/${val}?${newParams.toString()}`);
+          }}
+        >
           <SelectTrigger className="w-[180px] h-10 border-transparent bg-gray-50 hover:bg-gray-100 transition-colors shadow-none rounded-2xl focus:ring-2 focus:ring-blue-100">
             <SelectValue placeholder="เลือกโปรเจกต์" />
           </SelectTrigger>
@@ -86,12 +122,20 @@ export default function HeaderClient({ activeProjects }: { activeProjects: Proje
               </div>
             </SelectItem>
             {activeProjects.map((project) => (
-              <SelectItem key={project.id} value={project.project_name} className="cursor-pointer rounded-lg py-2">
+              <SelectItem
+                key={project.id}
+                value={project.project_name}
+                className="cursor-pointer rounded-lg py-2"
+              >
                 <div className="flex items-center gap-2.5">
-                  <div className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[10px] font-bold text-white shadow-sm bg-blue-600`}>
+                  <div
+                    className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[10px] font-bold text-white shadow-sm bg-blue-600`}
+                  >
                     {project.project_name.charAt(0).toUpperCase()}
                   </div>
-                  <span className="font-medium text-gray-700">{project.project_name}</span>
+                  <span className="font-medium text-gray-700">
+                    {project.project_name}
+                  </span>
                 </div>
               </SelectItem>
             ))}
@@ -103,9 +147,9 @@ export default function HeaderClient({ activeProjects }: { activeProjects: Proje
 
         <div className="relative w-full max-w-md group font-sans">
           {isSearching ? (
-             <Loader2 className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-blue-500 animate-spin" />
+            <Loader2 className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-blue-500 animate-spin" />
           ) : (
-             <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400 transition-colors group-focus-within:text-blue-500" />
+            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400 transition-colors group-focus-within:text-blue-500" />
           )}
           <Input
             type="search"
@@ -116,44 +160,79 @@ export default function HeaderClient({ activeProjects }: { activeProjects: Proje
           />
         </div>
       </div>
-      
+
       <div className="flex items-center gap-5">
-        <Button variant="ghost" size="icon" className="relative h-10 w-10 rounded-full hover:bg-blue-50 hover:text-blue-600 text-gray-500 transition-colors">
-          <Bell className="h-5 w-5" strokeWidth={1.5} />
-          <span className="absolute right-2 top-2 h-2 w-2 rounded-full bg-red-500 border border-white" />
-          <span className="sr-only">การแจ้งเตือน</span>
-        </Button>
+        <Tooltip>
+          <TooltipTrigger
+            disabled
+            className={cn(
+              buttonVariants({ variant: "ghost", size: "icon" }),
+              "relative h-10 w-10 rounded-full opacity-50 cursor-not-allowed text-muted-foreground"
+            )}
+          >
+            <Bell className="h-5 w-5" strokeWidth={1.5} />
+            <span className="absolute right-2 top-2 h-2 w-2 rounded-full bg-red-500 border border-white" />
+            <span className="sr-only">การแจ้งเตือน</span>
+          </TooltipTrigger>
+          <TooltipContent>
+            <p>การแจ้งเตือน (เร็วๆ นี้)</p>
+          </TooltipContent>
+        </Tooltip>
         <div className="h-6 w-px bg-gray-200 hidden sm:block"></div>
         <DropdownMenu>
-          <DropdownMenuTrigger
-            className="flex items-center gap-3 rounded-full hover:bg-gray-50 h-auto py-1 pl-1 pr-3 border-none bg-transparent outline-none cursor-pointer"
-          >
-            <Avatar className="h-9 w-9 border border-gray-100">
-              <AvatarImage src="https://i.pravatar.cc/150?u=a042581f4e29026704f" alt="User profile" />
-              <AvatarFallback className="bg-blue-100 text-blue-700">AD</AvatarFallback>
+          <DropdownMenuTrigger className="flex items-center gap-2 rounded-full hover:bg-gray-50 h-auto py-1 pl-1 pr-3 border border-transparent hover:border-gray-200 transition-all bg-transparent outline-none cursor-pointer group">
+            <Avatar className="h-8 w-8 border border-white shadow-sm transition-transform group-hover:scale-105">
+              <AvatarFallback className="bg-blue-600 text-white text-xs font-bold ring-2 ring-blue-50">
+                {user?.username?.charAt(0).toUpperCase() || "U"}
+              </AvatarFallback>
             </Avatar>
-            <div className="flex flex-col items-start hidden sm:flex">
-              <span className="text-sm font-medium text-gray-700 leading-tight">Alice Doe</span>
-              <span className="text-xs text-gray-500 font-sans">ผู้ดูแลระบบ</span>
+            <div className="flex items-center gap-1.5 hidden sm:flex">
+              <div className="flex flex-col items-start">
+                <span className="text-sm font-semibold text-gray-800 leading-none mb-0.5">
+                  {user?.username || "กำลังโหลด..."}
+                </span>
+                <span className="text-[10px] text-gray-500 font-medium uppercase tracking-wider">
+                  {roleLabel}
+                </span>
+              </div>
+              <ChevronDown className="h-3.5 w-3.5 text-gray-400 group-hover:text-gray-600 transition-colors" />
             </div>
           </DropdownMenuTrigger>
-          <DropdownMenuContent align="end" className="w-56 rounded-xl shadow-lg border-gray-100 font-sans">
+          <DropdownMenuContent
+            align="end"
+            sideOffset={8}
+            className="w-56 rounded-xl shadow-xl border-gray-100 font-sans"
+          >
             <DropdownMenuGroup>
               <DropdownMenuLabel className="font-normal">
-                <div className="flex flex-col space-y-1">
-                  <p className="text-sm font-medium leading-none">Alice Doe</p>
+                <div className="flex flex-col space-y-1 p-1">
+                  <p className="text-sm font-medium leading-none">
+                    {user?.username || "User"}
+                  </p>
                   <p className="text-xs leading-none text-muted-foreground">
-                    alice.doe@fixlo.hq
+                    {user?.role || "Role"}
                   </p>
                 </div>
               </DropdownMenuLabel>
               <DropdownMenuSeparator />
-              <DropdownMenuItem className="cursor-pointer">ตั้งค่าโปรไฟล์</DropdownMenuItem>
-              <DropdownMenuItem className="cursor-pointer">การเรียกเก็บเงิน</DropdownMenuItem>
+              <DropdownMenuItem
+                disabled
+                className="cursor-not-allowed opacity-60"
+              >
+                ตั้งค่าโปรไฟล์
+              </DropdownMenuItem>
+              {user?.role === "ADMIN" && (
+                <DropdownMenuItem
+                  disabled
+                  className="cursor-not-allowed opacity-60"
+                >
+                  จัดการผู้ใช้
+                </DropdownMenuItem>
+              )}
               <DropdownMenuSeparator />
-              <DropdownMenuItem 
+              <DropdownMenuItem
                 className="cursor-pointer text-red-600 focus:text-red-600 focus:bg-red-50"
-                onClick={() => signOut({ callbackUrl: '/login' })}
+                onClick={() => signOut({ callbackUrl: "/login" })}
               >
                 ออกจากระบบ
               </DropdownMenuItem>

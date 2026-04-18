@@ -19,6 +19,7 @@ declare module "next-auth" {
 declare module "@auth/core/jwt" {
   interface JWT {
     id: string
+    username: string
     role: string
   }
 }
@@ -34,6 +35,7 @@ export default {
     async jwt({ token, user }) {
       if (user) {
         token.id = user.id as string
+        token.username = user.username as string
         token.role = user.role as string
       }
       return token
@@ -41,6 +43,7 @@ export default {
     async session({ session, token }) {
       if (token && session.user) {
         session.user.id = token.id as string
+        session.user.username = token.username as string
         session.user.role = token.role as string
       }
       return session

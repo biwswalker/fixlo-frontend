@@ -3,6 +3,7 @@
 import { query } from '@/lib/db';
 import { subDays, format } from 'date-fns';
 import { revalidatePath } from 'next/cache';
+import { logger } from '@/lib/logger';
 
 export interface AccountBreakdown {
   account: string;
@@ -111,19 +112,19 @@ function formatAccountName(webAcc: string): string {
 async function getProjectIdentifiers(projectName: string): Promise<{ id: string, name: string } | null> {
   if (projectName === 'all' || !projectName) return null;
   try {
-    console.log(`[DEBUG] Resolving identifiers for projectName: ${projectName}`);
+    logger.debug('getProjectIdentifiers', `Resolving identifiers for projectName: ${projectName}`);
     const result = await query(
       'SELECT id, project_name FROM projects WHERE project_name ILIKE \'%\' || $1 || \'%\' AND status = \'ACTIVE\' LIMIT 1', 
       [projectName]
     );
-    console.log(`[DEBUG] Resolve result:`, result.rows[0]);
+    logger.debug('getProjectIdentifiers', 'Resolve result', result.rows[0]);
     if (!result.rows[0]) return null;
     return {
       id: result.rows[0].id,
       name: result.rows[0].project_name
     };
   } catch (error) {
-    console.error(`Error resolving identifiers for project ${projectName}:`, error);
+    logger.error('getProjectIdentifiers', `Failed to resolve identifiers for project: ${projectName}`, error);
     return null;
   }
 }
@@ -137,10 +138,7 @@ export async function getActiveProjects(): Promise<{ id: string, project_name: s
     const result = await query(sql);
     return result.rows;
   } catch (error) {
-    console.error('Error in getActiveProjects:', {
-      error,
-      sql: 'SELECT id, project_name FROM projects WHERE status = \'ACTIVE\' ORDER BY project_name ASC'
-    });
+    logger.error('getActiveProjects', 'Failed to fetch active projects', error);
     return [];
   }
 }
@@ -157,7 +155,7 @@ export async function getProjectByName(name: string): Promise<{ id: string, proj
     );
     return result.rows[0] || null;
   } catch (error) {
-    console.error(`Error fetching project by name ${name}:`, error);
+    logger.error('getProjectByName', `Failed to fetch project by name: ${name}`, error);
     return null;
   }
 }
@@ -266,7 +264,7 @@ export async function getDashboardSummary(projectId: string, from?: string, to?:
       AND trans_date::date BETWEEN $1 AND $2
     `;
 
-    console.log(`[DEBUG] getDashboardSummary projectId: ${projectId}, Resolved:`, project);
+    logger.debug('getDashboardSummary', `Resolved project for projectId: ${projectId}`, project);
     const projectName = project?.name || '';
     const summaryParams = [projectName, isAll, startDate, endDate];
     const breakdownParams = [startDate, endDate];
@@ -300,29 +298,7 @@ export async function getDashboardSummary(projectId: string, from?: string, to?:
       withdrawalBreakdown: aggregateBreakdown(withdrawalsRes.rows),
     };
   } catch (error) {
-    console.error('CRITICAL: getDashboardSummary failed', {
-      error,
-      projectId,
-      dates: { from, to },
-      queries: {
-        depositsBreakdownQuery: `
-          SELECT web_acc as account, COALESCE(SUM(amount), 0) as total
-          FROM report_deposits
-          WHERE trans_date BETWEEN $1 AND $2
-          GROUP BY web_acc
-          ORDER BY total DESC
-        `,
-        summaryQuery: `
-          SELECT 
-            COALESCE(SUM(deposit), 0) as total_deposits,
-            COALESCE(SUM(withdraw), 0) as total_withdrawals,
-            ... (see summaryQuery above)
-          FROM report_summary_daily
-          WHERE (project_id ILIKE '%' || $1 || '%' OR $2 = true)
-          AND report_date BETWEEN $3 AND $4
-        `
-      }
-    });
+    logger.error('getDashboardSummary', 'Failed to fetch dashboard summary', { projectId, from, to, error });
 
     return {
       totalDeposits: 0,
@@ -397,7 +373,7 @@ export async function getPendingAnomalies(
       ))
     `;
 
-    console.log(`[DEBUG] getPendingAnomalies projectId: ${projectId}, UUID: ${project?.id}, Page: ${page}, Search: ${searchQuery}`);
+    logger.debug('getPendingAnomalies', `Fetching anomalies`, { projectId, uuid: project?.id, page, searchQuery });
 
     const projectIdParam = project?.id || null;
     const [result, countRes] = await Promise.all([
@@ -431,7 +407,7 @@ export async function getPendingAnomalies(
 
     return { data, totalPages, currentPage: page };
   } catch (error) {
-    console.error('Error in getPendingAnomalies:', error);
+    logger.error('getPendingAnomalies', 'Failed to fetch pending anomalies', error);
     return { data: [], totalPages: 0, currentPage: page };
   }
 }
@@ -461,9 +437,7 @@ export async function getDailyChartData(projectId: string, from?: string, to?: s
     `;
 
     const projectName = project?.name || '';
-    console.log(`[DEBUG] getDailyChartData projectId: ${projectId}, Name: ${projectName}`);
-    console.log(`[DEBUG] getDailyChartData SQL:\n${sql}`);
-    console.log(`[DEBUG] getDailyChartData params:`, [projectName, isAll, startDate, endDate]);
+    logger.debug('getDailyChartData', `Fetching chart data`, { projectId, projectName, startDate, endDate });
     const result = await query(sql, [projectName, isAll, startDate, endDate]);
 
     return result.rows.map(row => ({
@@ -474,7 +448,7 @@ export async function getDailyChartData(projectId: string, from?: string, to?: s
       date: typeof row.report_date === 'string' ? row.report_date : row.report_date.toISOString().split('T')[0],
     }));
   } catch (error) {
-    console.error('Error in getDailyChartData:', error);
+    logger.error('getDailyChartData', 'Failed to fetch daily chart data', error);
     return [];
   }
 }
@@ -545,15 +519,7 @@ export async function getReconciliationStatus(projectId: string, targetDate: str
 
     const projectName = project?.name || '';
     const projectIdParam = project?.id || null;
-    console.log(`[DEBUG] getReconciliationStatus projectId: ${projectId}, UUID: ${projectIdParam}, Name: ${projectName}`);
-    console.log(`[DEBUG] todayBalanceSql SQL:\n${todayBalanceSql}`);
-    console.log(`[DEBUG] todayBalanceSql params:`, [projectName, isAll, targetDate]);
-    console.log(`[DEBUG] yesterdayBalanceSql SQL:\n${yesterdayBalanceSql}`);
-    console.log(`[DEBUG] yesterdayBalanceSql params:`, isAll ? [targetDate] : [projectName, targetDate]);
-    console.log(`[DEBUG] withdrawalsSql SQL:\n${withdrawalsSql}`);
-    console.log(`[DEBUG] withdrawalsSql params:`, [projectIdParam, isAll, targetDate]);
-    console.log(`[DEBUG] depositsSql SQL:\n${depositsSql}`);
-    console.log(`[DEBUG] depositsSql params:`, [projectName, isAll, targetDate]);
+    logger.debug('getReconciliationStatus', `Fetching reconciliation status`, { projectId, uuid: projectIdParam, projectName, targetDate });
 
     const [todayRes, yesterdayRes, withdrawalsRes, depositsRes] = await Promise.all([
       query(todayBalanceSql, [projectName, isAll, targetDate]),
@@ -579,7 +545,7 @@ export async function getReconciliationStatus(projectId: string, targetDate: str
       targetDate
     };
   } catch (error) {
-    console.error('Error in getReconciliationStatus:', error);
+    logger.error('getReconciliationStatus', 'Failed to fetch reconciliation status', error);
     return {
       todayBalance: 0,
       yesterdayBalance: 0,
@@ -599,7 +565,7 @@ export async function approveTransaction(id: string) {
     await query('UPDATE transactions SET is_amount_verified = true WHERE id = $1', [id]);
     return { success: true };
   } catch (error) {
-    console.error('Error in approveTransaction:', error);
+    logger.error('approveTransaction', 'Failed to approve transaction', error);
     return { success: false, error: 'Failed to approve transaction' };
   }
 }
@@ -622,7 +588,7 @@ export async function forceApproveTransaction(id: string) {
     
     return { success: true };
   } catch (error) {
-    console.error('Error in forceApproveTransaction:', error);
+    logger.error('forceApproveTransaction', 'Failed to force approve transaction', error);
     return { success: false, error: 'Failed to force approve transaction' };
   }
 }

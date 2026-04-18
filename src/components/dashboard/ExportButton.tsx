@@ -79,7 +79,6 @@ export default function ExportButton() {
         description: `ส่งออกไฟล์ ${fileName} เรียบร้อยแล้ว`,
       });
     } catch (error) {
-      console.error('Export failed:', error);
       toast.error('ดาวน์โหลดรายงานล้มเหลว', {
         description: 'กรุณาลองใหม่อีกครั้งในภายหลัง',
       });
