@@ -1,9 +1,9 @@
-'use server';
+"use server";
 
-import { query } from '@/lib/db';
-import { subDays, format } from 'date-fns';
-import { revalidatePath } from 'next/cache';
-import { logger } from '@/lib/logger';
+import { query } from "@/lib/db";
+import { subDays, format } from "date-fns";
+import { revalidatePath } from "next/cache";
+import { logger } from "@/lib/logger";
 
 export interface AccountBreakdown {
   account: string;
@@ -55,8 +55,8 @@ export interface TransactionRecord {
  * Normalizes date range for queries.
  */
 function getDateRange(from?: string, to?: string) {
-  const startDate = from || format(subDays(new Date(), 7), 'yyyy-MM-dd');
-  const endDate = to || format(new Date(), 'yyyy-MM-dd');
+  const startDate = from || format(subDays(new Date(), 7), "yyyy-MM-dd");
+  const endDate = to || format(new Date(), "yyyy-MM-dd");
   return { startDate, endDate };
 }
 
@@ -65,12 +65,12 @@ function getDateRange(from?: string, to?: string) {
  */
 function aggregateBreakdown(rows: any[]): AccountBreakdown[] {
   const map = new Map<string, number>();
-  
-  rows.forEach(row => {
-    const rawAccount = row.account || 'Unknown';
+
+  rows.forEach((row) => {
+    const rawAccount = row.account || "Unknown";
     const formattedName = formatAccountName(rawAccount);
     const amount = Number(row.total || 0);
-    
+
     map.set(formattedName, (map.get(formattedName) || 0) + amount);
   });
 
@@ -84,10 +84,10 @@ function aggregateBreakdown(rows: any[]): AccountBreakdown[] {
  */
 function formatAccountName(webAcc: string): string {
   const trimmed = webAcc.trim();
-  
+
   // Pattern 1: Pipe (ID | Name) -> Name (ID)
-  if (trimmed.includes('|')) {
-    const [id, name] = trimmed.split('|').map(s => s.trim());
+  if (trimmed.includes("|")) {
+    const [id, name] = trimmed.split("|").map((s) => s.trim());
     return name ? `${name} (${id})` : id;
   }
 
@@ -109,22 +109,31 @@ function formatAccountName(webAcc: string): string {
 /**
  * Resolves a project identifier (from the URL) to its UUID AND canonical name.
  */
-async function getProjectIdentifiers(projectName: string): Promise<{ id: string, name: string } | null> {
-  if (projectName === 'all' || !projectName) return null;
+async function getProjectIdentifiers(
+  projectName: string,
+): Promise<{ id: string; name: string } | null> {
+  if (projectName === "all" || !projectName) return null;
   try {
-    logger.debug('getProjectIdentifiers', `Resolving identifiers for projectName: ${projectName}`);
-    const result = await query(
-      'SELECT id, project_name FROM projects WHERE project_name ILIKE \'%\' || $1 || \'%\' AND status = \'ACTIVE\' LIMIT 1', 
-      [projectName]
+    logger.debug(
+      "getProjectIdentifiers",
+      `Resolving identifiers for projectName: ${projectName}`,
     );
-    logger.debug('getProjectIdentifiers', 'Resolve result', result.rows[0]);
+    const result = await query(
+      "SELECT id, project_name FROM projects WHERE project_name ILIKE '%' || $1 || '%' AND status = 'ACTIVE' LIMIT 1",
+      [projectName],
+    );
+    logger.debug("getProjectIdentifiers", "Resolve result", result.rows[0]);
     if (!result.rows[0]) return null;
     return {
       id: result.rows[0].id,
-      name: result.rows[0].project_name
+      name: result.rows[0].project_name,
     };
   } catch (error) {
-    logger.error('getProjectIdentifiers', `Failed to resolve identifiers for project: ${projectName}`, error);
+    logger.error(
+      "getProjectIdentifiers",
+      `Failed to resolve identifiers for project: ${projectName}`,
+      error,
+    );
     return null;
   }
 }
@@ -132,13 +141,16 @@ async function getProjectIdentifiers(projectName: string): Promise<{ id: string,
 /**
  * Fetches all active projects for the switcher.
  */
-export async function getActiveProjects(): Promise<{ id: string, project_name: string }[]> {
+export async function getActiveProjects(): Promise<
+  { id: string; project_name: string }[]
+> {
   try {
-    const sql = 'SELECT id, project_name FROM projects WHERE status = \'ACTIVE\' ORDER BY project_name ASC';
+    const sql =
+      "SELECT id, project_name FROM projects WHERE status = 'ACTIVE' ORDER BY project_name ASC";
     const result = await query(sql);
     return result.rows;
   } catch (error) {
-    logger.error('getActiveProjects', 'Failed to fetch active projects', error);
+    logger.error("getActiveProjects", "Failed to fetch active projects", error);
     return [];
   }
 }
@@ -146,16 +158,22 @@ export async function getActiveProjects(): Promise<{ id: string, project_name: s
 /**
  * Fetches a single project's details by its Name (from URL).
  */
-export async function getProjectByName(name: string): Promise<{ id: string, project_name: string } | null> {
-  if (name === 'all') return { id: 'all', project_name: 'ทุกโปรเจกต์' };
+export async function getProjectByName(
+  name: string,
+): Promise<{ id: string; project_name: string } | null> {
+  if (name === "all") return { id: "all", project_name: "ทุกโปรเจกต์" };
   try {
     const result = await query(
-      'SELECT id, project_name FROM projects WHERE project_name ILIKE \'%\' || $1 || \'%\' AND status = \'ACTIVE\' LIMIT 1',
-      [name]
+      "SELECT id, project_name FROM projects WHERE project_name ILIKE '%' || $1 || '%' AND status = 'ACTIVE' LIMIT 1",
+      [name],
     );
     return result.rows[0] || null;
   } catch (error) {
-    logger.error('getProjectByName', `Failed to fetch project by name: ${name}`, error);
+    logger.error(
+      "getProjectByName",
+      `Failed to fetch project by name: ${name}`,
+      error,
+    );
     return null;
   }
 }
@@ -166,17 +184,21 @@ export async function getProjectByName(name: string): Promise<{ id: string, proj
  * @param from - Start date (YYYY-MM-DD).
  * @param to - End date (YYYY-MM-DD).
  */
-export async function getDashboardSummary(projectId: string, from?: string, to?: string): Promise<DashboardSummary> {
+export async function getDashboardSummary(
+  projectId: string,
+  from?: string,
+  to?: string,
+): Promise<DashboardSummary> {
   try {
-    const isAll = projectId === 'all';
+    const isAll = projectId === "all";
     const { startDate, endDate } = getDateRange(from, to);
-    
+
     // Resolve identifiers
     const project = isAll ? null : await getProjectIdentifiers(projectId);
     if (!isAll && !project) {
-      return { 
-        totalDeposits: 0, 
-        totalWithdrawals: 0, 
+      return {
+        totalDeposits: 0,
+        totalWithdrawals: 0,
         latestBalance: 0,
         deposit: 0,
         manualIn: 0,
@@ -188,7 +210,7 @@ export async function getDashboardSummary(projectId: string, from?: string, to?:
         affiliate: 0,
         cashback: 0,
         depositBreakdown: [],
-        withdrawalBreakdown: []
+        withdrawalBreakdown: [],
       };
     }
 
@@ -210,9 +232,9 @@ export async function getDashboardSummary(projectId: string, from?: string, to?:
       WHERE (project_id ILIKE '%' || $1 || '%' OR $2 = true)
       AND report_date::date BETWEEN $3 AND $4
     `;
-    
+
     // Query for the latest balance
-    const balanceQuery = isAll 
+    const balanceQuery = isAll
       ? `
         SELECT COALESCE(SUM(balance), 0) as latest_balance 
         FROM (
@@ -264,18 +286,29 @@ export async function getDashboardSummary(projectId: string, from?: string, to?:
       AND trans_date::date BETWEEN $1 AND $2
     `;
 
-    logger.debug('getDashboardSummary', `Resolved project for projectId: ${projectId}`, project);
-    const projectName = project?.name || '';
+    logger.debug(
+      "getDashboardSummary",
+      `Resolved project for projectId: ${projectId}`,
+      project,
+    );
+    const projectName = project?.name || "";
     const summaryParams = [projectName, isAll, startDate, endDate];
     const breakdownParams = [startDate, endDate];
 
-    const [summaryRes, balanceRes, depositsRes, withdrawalsRes, totalDepRes, totalWdRes] = await Promise.all([
+    const [
+      summaryRes,
+      balanceRes,
+      depositsRes,
+      withdrawalsRes,
+      totalDepRes,
+      totalWdRes,
+    ] = await Promise.all([
       query(summaryQuery, summaryParams),
       query(balanceQuery, isAll ? [endDate] : [projectName, endDate]),
       query(depositsBreakdownQuery, breakdownParams),
       query(withdrawalsBreakdownQuery, breakdownParams),
       query(totalDepositsQuery, breakdownParams),
-      query(totalWithdrawalsQuery, breakdownParams)
+      query(totalWithdrawalsQuery, breakdownParams),
     ]);
 
     const trueTotalDeposits = Number(totalDepRes.rows[0]?.total || 0);
@@ -298,7 +331,12 @@ export async function getDashboardSummary(projectId: string, from?: string, to?:
       withdrawalBreakdown: aggregateBreakdown(withdrawalsRes.rows),
     };
   } catch (error) {
-    logger.error('getDashboardSummary', 'Failed to fetch dashboard summary', { projectId, from, to, error });
+    logger.error("getDashboardSummary", "Failed to fetch dashboard summary", {
+      projectId,
+      from,
+      to,
+      error,
+    });
 
     return {
       totalDeposits: 0,
@@ -314,7 +352,7 @@ export async function getDashboardSummary(projectId: string, from?: string, to?:
       affiliate: 0,
       cashback: 0,
       depositBreakdown: [],
-      withdrawalBreakdown: []
+      withdrawalBreakdown: [],
     };
   }
 }
@@ -323,18 +361,23 @@ export async function getDashboardSummary(projectId: string, from?: string, to?:
  * Fetches pending anomalies (mismatched amounts or duplicates) with pagination.
  */
 export async function getPendingAnomalies(
-  projectId: string, 
-  from?: string, 
+  projectId: string,
+  from?: string,
   to?: string,
   page: number = 1,
-  searchQuery?: string
-): Promise<{ data: TransactionRecord[], totalPages: number, currentPage: number }> {
+  searchQuery?: string,
+): Promise<{
+  data: TransactionRecord[];
+  totalPages: number;
+  currentPage: number;
+}> {
   try {
-    const isAll = projectId === 'all';
+    const isAll = projectId === "all";
     const { startDate, endDate } = getDateRange(from, to);
-    
+
     const project = isAll ? null : await getProjectIdentifiers(projectId);
-    if (!isAll && !project) return { data: [], totalPages: 0, currentPage: page };
+    if (!isAll && !project)
+      return { data: [], totalPages: 0, currentPage: page };
 
     const LIMIT = 10;
     const OFFSET = (page - 1) * LIMIT;
@@ -373,18 +416,31 @@ export async function getPendingAnomalies(
       ))
     `;
 
-    logger.debug('getPendingAnomalies', `Fetching anomalies`, { projectId, uuid: project?.id, page, searchQuery });
+    logger.debug("getPendingAnomalies", `Fetching anomalies`, {
+      projectId,
+      uuid: project?.id,
+      page,
+      searchQuery,
+    });
 
     const projectIdParam = project?.id || null;
     const [result, countRes] = await Promise.all([
-      query(sql, [projectIdParam, isAll, startDate, endDate, searchQuery, LIMIT, OFFSET]),
-      query(countSql, [projectIdParam, isAll, startDate, endDate, searchQuery])
+      query(sql, [
+        projectIdParam,
+        isAll,
+        startDate,
+        endDate,
+        searchQuery,
+        LIMIT,
+        OFFSET,
+      ]),
+      query(countSql, [projectIdParam, isAll, startDate, endDate, searchQuery]),
     ]);
 
     const totalItems = Number(countRes.rows[0]?.total || 0);
     const totalPages = Math.ceil(totalItems / LIMIT);
 
-    const data = result.rows.map(row => ({
+    const data = result.rows.map((row) => ({
       id: row.id,
       project_id: row.source_project_id,
       project_name: row.project_name,
@@ -395,19 +451,29 @@ export async function getPendingAnomalies(
       is_duplicate: Boolean(row.is_duplicate),
       is_amount_mismatch: Boolean(row.is_amount_mismatch),
       is_time_anomaly: Boolean(row.is_time_anomaly),
-      sender_name: row.sender_name || '',
-      receiver_name: row.receiver_name || '',
+      sender_name: row.sender_name || "",
+      receiver_name: row.receiver_name || "",
       sender_bank: row.sender_bank || undefined,
       receiver_bank: row.receiver_bank || undefined,
-      transfer_date: row.transfer_date ? row.transfer_date.toString() : '',
+      transfer_date: row.transfer_date ? row.transfer_date.toString() : "",
       transfer_time: row.transfer_time || undefined,
-      image_path: row.image_path || undefined,
-      created_at: row.created_at ? new Date(row.created_at).toISOString() : '',
+      image_path: row.image_path
+        ? `${process.env.NEXT_PUBLIC_IMAGE_SERVER_URL || "http://localhost:8080"}${row.image_path.replace("/app/data", "")}`
+        : undefined,
+      created_at: (() => {
+        if (!row.created_at) return "";
+        const d = new Date(row.created_at);
+        return isNaN(d.getTime()) ? "" : d.toISOString();
+      })(),
     }));
 
     return { data, totalPages, currentPage: page };
   } catch (error) {
-    logger.error('getPendingAnomalies', 'Failed to fetch pending anomalies', error);
+    logger.error(
+      "getPendingAnomalies",
+      "Failed to fetch pending anomalies",
+      error,
+    );
     return { data: [], totalPages: 0, currentPage: page };
   }
 }
@@ -415,11 +481,15 @@ export async function getPendingAnomalies(
 /**
  * Fetches daily chart data for the selected range.
  */
-export async function getDailyChartData(projectId: string, from?: string, to?: string) {
+export async function getDailyChartData(
+  projectId: string,
+  from?: string,
+  to?: string,
+) {
   try {
-    const isAll = projectId === 'all';
+    const isAll = projectId === "all";
     const { startDate, endDate } = getDateRange(from, to);
-    
+
     const project = isAll ? null : await getProjectIdentifiers(projectId);
     if (!isAll && !project) return [];
 
@@ -436,19 +506,35 @@ export async function getDailyChartData(projectId: string, from?: string, to?: s
       ORDER BY sd.report_date ASC
     `;
 
-    const projectName = project?.name || '';
-    logger.debug('getDailyChartData', `Fetching chart data`, { projectId, projectName, startDate, endDate });
+    const projectName = project?.name || "";
+    logger.debug("getDailyChartData", `Fetching chart data`, {
+      projectId,
+      projectName,
+      startDate,
+      endDate,
+    });
     const result = await query(sql, [projectName, isAll, startDate, endDate]);
 
-    return result.rows.map(row => ({
-      day: new Intl.DateTimeFormat('en-US', { weekday: 'short' }).format(new Date(row.report_date)),
+    return result.rows.map((row) => ({
+      day: (() => {
+        const d = new Date(row.report_date);
+        if (isNaN(d.getTime())) return "N/A";
+        return new Intl.DateTimeFormat("en-US", { weekday: "short" }).format(d);
+      })(),
       deposits: Number(row.deposits),
       withdrawals: Number(row.withdrawals),
       netDiff: Number(row.net_diff),
-      date: typeof row.report_date === 'string' ? row.report_date : row.report_date.toISOString().split('T')[0],
+      date:
+        typeof row.report_date === "string"
+          ? row.report_date
+          : row.report_date.toISOString().split("T")[0],
     }));
   } catch (error) {
-    logger.error('getDailyChartData', 'Failed to fetch daily chart data', error);
+    logger.error(
+      "getDailyChartData",
+      "Failed to fetch daily chart data",
+      error,
+    );
     return [];
   }
 }
@@ -465,12 +551,22 @@ export interface ReconciliationStatus {
 /**
  * Calculates the reconciliation status based on the accounting equation.
  */
-export async function getReconciliationStatus(projectId: string, targetDate: string): Promise<ReconciliationStatus> {
+export async function getReconciliationStatus(
+  projectId: string,
+  targetDate: string,
+): Promise<ReconciliationStatus> {
   try {
-    const isAll = projectId === 'all';
+    const isAll = projectId === "all";
     const project = isAll ? null : await getProjectIdentifiers(projectId);
     if (!isAll && !project) {
-      return { todayBalance: 0, yesterdayBalance: 0, totalWithdrawals: 0, totalDeposits: 0, variance: 0, targetDate };
+      return {
+        todayBalance: 0,
+        yesterdayBalance: 0,
+        totalWithdrawals: 0,
+        totalDeposits: 0,
+        variance: 0,
+        targetDate,
+      };
     }
 
     // 1. Fetch Today's Balance
@@ -481,7 +577,7 @@ export async function getReconciliationStatus(projectId: string, targetDate: str
       WHERE (p.project_name ILIKE '%' || $1 || '%' OR $2 = true)
       AND db.date = $3
     `;
-    
+
     // 2. Fetch Yesterday's Balance (Most recent before targetDate)
     const yesterdayBalanceSql = isAll
       ? `
@@ -517,16 +613,25 @@ export async function getReconciliationStatus(projectId: string, targetDate: str
       AND report_date = $3
     `;
 
-    const projectName = project?.name || '';
+    const projectName = project?.name || "";
     const projectIdParam = project?.id || null;
-    logger.debug('getReconciliationStatus', `Fetching reconciliation status`, { projectId, uuid: projectIdParam, projectName, targetDate });
+    logger.debug("getReconciliationStatus", `Fetching reconciliation status`, {
+      projectId,
+      uuid: projectIdParam,
+      projectName,
+      targetDate,
+    });
 
-    const [todayRes, yesterdayRes, withdrawalsRes, depositsRes] = await Promise.all([
-      query(todayBalanceSql, [projectName, isAll, targetDate]),
-      query(yesterdayBalanceSql, isAll ? [targetDate] : [projectName, targetDate]),
-      query(withdrawalsSql, [projectIdParam, isAll, targetDate]),
-      query(depositsSql, [projectName, isAll, targetDate])
-    ]);
+    const [todayRes, yesterdayRes, withdrawalsRes, depositsRes] =
+      await Promise.all([
+        query(todayBalanceSql, [projectName, isAll, targetDate]),
+        query(
+          yesterdayBalanceSql,
+          isAll ? [targetDate] : [projectName, targetDate],
+        ),
+        query(withdrawalsSql, [projectIdParam, isAll, targetDate]),
+        query(depositsSql, [projectName, isAll, targetDate]),
+      ]);
 
     const todayBalance = Number(todayRes.rows[0]?.total || 0);
     const yesterdayBalance = Number(yesterdayRes.rows[0]?.total || 0);
@@ -534,7 +639,8 @@ export async function getReconciliationStatus(projectId: string, targetDate: str
     const totalDeposits = Number(depositsRes.rows[0]?.total || 0);
 
     // Equation: Variance = ((Today - Yesterday) + Withdrawals) - Deposits
-    const variance = ((todayBalance - yesterdayBalance) + totalWithdrawals) - totalDeposits;
+    const variance =
+      todayBalance - yesterdayBalance + totalWithdrawals - totalDeposits;
 
     return {
       todayBalance,
@@ -542,17 +648,21 @@ export async function getReconciliationStatus(projectId: string, targetDate: str
       totalWithdrawals,
       totalDeposits,
       variance,
-      targetDate
+      targetDate,
     };
   } catch (error) {
-    logger.error('getReconciliationStatus', 'Failed to fetch reconciliation status', error);
+    logger.error(
+      "getReconciliationStatus",
+      "Failed to fetch reconciliation status",
+      error,
+    );
     return {
       todayBalance: 0,
       yesterdayBalance: 0,
       totalWithdrawals: 0,
       totalDeposits: 0,
       variance: 0,
-      targetDate
+      targetDate,
     };
   }
 }
@@ -562,11 +672,14 @@ export async function getReconciliationStatus(projectId: string, targetDate: str
  */
 export async function approveTransaction(id: string) {
   try {
-    await query('UPDATE transactions SET is_amount_verified = true WHERE id = $1', [id]);
+    await query(
+      "UPDATE transactions SET is_amount_verified = true WHERE id = $1",
+      [id],
+    );
     return { success: true };
   } catch (error) {
-    logger.error('approveTransaction', 'Failed to approve transaction', error);
-    return { success: false, error: 'Failed to approve transaction' };
+    logger.error("approveTransaction", "Failed to approve transaction", error);
+    return { success: false, error: "Failed to approve transaction" };
   }
 }
 
@@ -575,20 +688,27 @@ export async function approveTransaction(id: string) {
  */
 export async function forceApproveTransaction(id: string) {
   try {
-    await query(`
+    await query(
+      `
       UPDATE transactions 
       SET is_amount_verified = true, 
           is_amount_mismatch = false, 
           is_duplicate = false 
       WHERE id = $1
-    `, [id]);
-    
+    `,
+      [id],
+    );
+
     // Refresh the dashboard data
-    revalidatePath('/dashboard/[projectId]', 'page');
-    
+    revalidatePath("/dashboard/[projectId]", "page");
+
     return { success: true };
   } catch (error) {
-    logger.error('forceApproveTransaction', 'Failed to force approve transaction', error);
-    return { success: false, error: 'Failed to force approve transaction' };
+    logger.error(
+      "forceApproveTransaction",
+      "Failed to force approve transaction",
+      error,
+    );
+    return { success: false, error: "Failed to force approve transaction" };
   }
 }

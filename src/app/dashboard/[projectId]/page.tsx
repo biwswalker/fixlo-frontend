@@ -165,7 +165,7 @@ async function KPICardsSection({
         </CardHeader>
         <CardContent>
           <div
-            className={`text-2xl font-bold ${netCashflow >= 0 ? "text-emerald-600" : "text-rose-600"}`}
+            className={`text-2xl font-bold tabular-nums ${netCashflow >= 0 ? "text-emerald-600" : "text-rose-600"}`}
           >
             {formatBaht(netCashflow)}
           </div>
@@ -186,7 +186,7 @@ async function KPICardsSection({
           </div>
         </CardHeader>
         <CardContent className="flex-1 flex flex-col">
-          <div className="text-2xl font-bold text-gray-900">
+          <div className="text-2xl font-bold text-gray-900 tabular-nums">
             {formatBaht(totalDeposits)}
           </div>
           <p className="text-xs mt-1 text-gray-500 font-medium">
@@ -206,7 +206,7 @@ async function KPICardsSection({
           </div>
         </CardHeader>
         <CardContent className="flex-1 flex flex-col">
-          <div className="text-2xl font-bold text-gray-900">
+          <div className="text-2xl font-bold text-gray-900 tabular-nums">
             {formatBaht(totalWithdrawals)}
           </div>
           <p className="text-xs mt-1 text-gray-500 font-medium">
@@ -252,7 +252,7 @@ function ProgressBar({
     <div className="space-y-1">
       <div className="flex justify-between text-sm">
         <span className="font-medium text-gray-700">{label}</span>
-        <span className="font-semibold">{formatBaht(amount)}</span>
+        <span className="font-semibold tabular-nums">{formatBaht(amount)}</span>
       </div>
       <div className="h-2 w-full bg-gray-100 rounded-full overflow-hidden">
         <div
@@ -310,7 +310,7 @@ async function IncomeExpenseSection({
                   total={totalIncome}
                   colorClass="bg-emerald-500"
                 />
-                {summary.depositBreakdown && summary.depositBreakdown.length > 0 && (
+                {summary.depositBreakdown && summary.depositBreakdown.length > 0 ? (
                   <div className="mt-4 ml-4 pl-3 border-l-2 border-emerald-100 max-h-[150px] overflow-y-auto space-y-1.5 pr-2">
                     {summary.depositBreakdown.map((item, idx) => (
                       <div
@@ -323,14 +323,20 @@ async function IncomeExpenseSection({
                         >
                           {item.account}
                         </span>
-                        <span className="font-medium text-emerald-700 flex-shrink-0">
+                        <span className="font-medium text-emerald-700 flex-shrink-0 tabular-nums">
                           {formatBaht(item.total || 0)}
                         </span>
                       </div>
                     ))}
                   </div>
+                ) : (
+                  <div className="mt-4 flex flex-col items-center justify-center p-4 text-muted-foreground border border-dashed rounded-xl border-gray-200/60 bg-gray-50/50">
+                    <p className="text-sm font-medium">ไม่มีข้อมูลในวันที่เลือก</p>
+                  </div>
                 )}
               </div>
+
+              <Separator className="my-4" />
 
               {/* Other Income Categories */}
               <div className="flex flex-col">
@@ -374,7 +380,7 @@ async function IncomeExpenseSection({
                   total={totalExpense}
                   colorClass="bg-rose-500"
                 />
-                {summary.withdrawalBreakdown && summary.withdrawalBreakdown.length > 0 && (
+                {summary.withdrawalBreakdown && summary.withdrawalBreakdown.length > 0 ? (
                   <div className="mt-4 ml-4 pl-3 border-l-2 border-rose-100 max-h-[150px] overflow-y-auto space-y-1.5 pr-2">
                     {summary.withdrawalBreakdown.map((item, idx) => (
                       <div
@@ -387,14 +393,20 @@ async function IncomeExpenseSection({
                         >
                           {item.account}
                         </span>
-                        <span className="font-medium text-rose-700 flex-shrink-0">
+                        <span className="font-medium text-rose-700 flex-shrink-0 tabular-nums">
                           {formatBaht(item.total || 0)}
                         </span>
                       </div>
                     ))}
                   </div>
+                ) : (
+                  <div className="mt-4 flex flex-col items-center justify-center p-4 text-muted-foreground border border-dashed rounded-xl border-gray-200/60 bg-gray-50/50">
+                    <p className="text-sm font-medium">ไม่มีข้อมูลในวันที่เลือก</p>
+                  </div>
                 )}
               </div>
+
+              <Separator className="my-4" />
 
               {/* Other Expense Categories */}
               <div className="flex flex-col">

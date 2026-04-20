@@ -12,8 +12,11 @@ export function formatBaht(amount: number) {
   }).format(amount);
 }
 
-export function formatThaiDate(dateStr: string | Date) {
+export function formatThaiDate(dateStr: string | Date | null | undefined) {
+  if (!dateStr) return "-";
   const date = new Date(dateStr);
+  if (isNaN(date.getTime())) return "-";
+  
   return new Intl.DateTimeFormat('th-TH', {
     year: 'numeric',
     month: 'short',
