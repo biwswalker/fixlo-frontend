@@ -137,7 +137,7 @@ export function AddAdjustmentDialog({ projectId }: AddAdjustmentDialogProps) {
 
             <div className="space-y-2">
               <label className="text-sm font-medium">บัญชีหลัก (Master Account)</label>
-              <Select value={account} onValueChange={setAccount}>
+              <Select value={account} onValueChange={(val) => setAccount(val ?? "")}>
                 <SelectTrigger>
                   <SelectValue placeholder="เลือกบัญชี..." />
                 </SelectTrigger>
