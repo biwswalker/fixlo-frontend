@@ -182,6 +182,7 @@ export async function getReconciliationReport(
           OR t.target_project_id = $3
           OR $4 = true
         )
+        AND t.matching_status IN ('AUTO_MAPPED', 'MANUAL_MAPPED')
     `;
 
     // ------------------------------------------------------------------
@@ -211,8 +212,9 @@ export async function getReconciliationReport(
     // 4. Raw verified transactions for per-account grouping (in JS)
     // ------------------------------------------------------------------
     const rawTxSql = `
-      SELECT t.ai_amount, t.sender_name
+      SELECT t.ai_amount, t.sender_name, t.project_account_id, pa.account_name
       FROM transactions t
+      LEFT JOIN project_accounts pa ON t.project_account_id = pa.id
       WHERE t.is_amount_verified = true
         AND t.transfer_date::date BETWEEN $1 AND $2
         AND (
@@ -220,6 +222,7 @@ export async function getReconciliationReport(
           OR t.target_project_id = $3
           OR $4 = true
         )
+        AND t.matching_status IN ('AUTO_MAPPED', 'MANUAL_MAPPED')
     `;
 
     // ------------------------------------------------------------------
@@ -273,7 +276,8 @@ export async function getReconciliationReport(
     >();
 
     for (const row of rawTxRes.rows) {
-      const matchedName = matchMasterAccount(row.sender_name as string | null);
+      // Prioritize saved database match, fall back to on-the-fly fuzzy match
+      const matchedName = row.account_name || matchMasterAccount(row.sender_name as string | null);
       const amount = Number(row.ai_amount ?? 0);
       const existing = accountMap.get(matchedName);
       if (existing) {

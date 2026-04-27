@@ -16,6 +16,11 @@ export const MASTER_ACCOUNTS = [
   'ไบแนน',
 ] as const;
 
+/**
+ * NOTE: MASTER_ACCOUNTS is being migrated to the `project_accounts` database table.
+ * Future updates should fetch candidates from the database for better multi-tenant support.
+ */
+
 export type MasterAccount = (typeof MASTER_ACCOUNTS)[number];
 
 // ---------------------------------------------------------------------------

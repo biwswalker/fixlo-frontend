@@ -1,5 +1,5 @@
 import { Suspense } from "react";
-import { AnomaliesTable } from "@/components/dashboard/AnomaliesTable";
+
 import {
   Activity,
   AlertCircle,
@@ -28,7 +28,6 @@ import {
 import { Separator } from "@/components/ui/separator";
 import {
   getDashboardSummary,
-  getPendingAnomalies,
   getDailyChartData,
   getProjectByName,
 } from "@/actions/dashboard";
@@ -107,20 +106,7 @@ export default async function ProjectDashboard({
           <ChartSection projectId={projectId} from={from} to={to} />
         </Suspense>
 
-        <div className="flex flex-col space-y-4">
-          <h2 className="text-xl font-semibold tracking-tight text-gray-900">
-            รายการผิดปกติที่รอการตรวจสอบ
-          </h2>
-          <Suspense fallback={<TableSkeleton />}>
-            <AnomaliesSection
-              projectId={projectId}
-              from={from}
-              to={to}
-              page={currentPage}
-              query={query}
-            />
-          </Suspense>
-        </div>
+
       </div>
     </div>
   );
@@ -215,23 +201,7 @@ async function KPICardsSection({
         </CardContent>
       </Card>
 
-      {/* Anomalies Count Card (Placeholder for now) */}
-      <Card className="border-none shadow-sm rounded-2xl bg-white overflow-hidden">
-        <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-          <CardTitle className="text-sm font-medium text-gray-500">
-            รายการรอกระทบบัญชี
-          </CardTitle>
-          <div className="bg-amber-50 text-amber-600 p-2 rounded-xl">
-            <AlertCircle className="h-4 w-4" strokeWidth={2.5} />
-          </div>
-        </CardHeader>
-        <CardContent>
-          <div className="text-2xl font-bold text-gray-900">เปิดการตรวจสอบ</div>
-          <p className="text-xs mt-1 text-gray-500 font-medium">
-            คลิกเพื่อดูรายการที่ค้างอยู่
-          </p>
-        </CardContent>
-      </Card>
+
     </div>
   );
 }
@@ -465,84 +435,4 @@ async function ChartSection({
   return <CashflowChart data={chartData} />;
 }
 
-/**
- * Anomalies Section (Async with Pagination)
- */
-async function AnomaliesSection({
-  projectId,
-  from,
-  to,
-  page,
-  query,
-}: {
-  projectId: string;
-  from?: string;
-  to?: string;
-  page: number;
-  query?: string;
-}) {
-  const result = await getPendingAnomalies(projectId, from, to, page, query);
 
-  const { data, totalPages, currentPage } = result;
-
-  return (
-    <div className="space-y-4">
-      <AnomaliesTable anomalies={data} />
-
-      {totalPages > 1 && (
-        <div className="flex items-center justify-between bg-white px-6 py-4 rounded-2xl shadow-sm border border-gray-100">
-          <div className="text-sm text-gray-500 font-medium">
-            หน้า {currentPage} จาก {totalPages}
-          </div>
-          <div className="flex items-center gap-2">
-            {currentPage > 1 ? (
-              <Link
-                href={`/dashboard/${projectId}?page=${currentPage - 1}${from ? `&from=${from}` : ""}${to ? `&to=${to}` : ""}${query ? `&query=${query}` : ""}`}
-                className={cn(
-                  buttonVariants({ variant: "outline", size: "sm" }),
-                  "rounded-lg border-gray-100",
-                )}
-              >
-                <ChevronLeft className="h-4 w-4 mr-1" />
-                ก่อนหน้า
-              </Link>
-            ) : (
-              <Button
-                variant="outline"
-                size="sm"
-                className="rounded-lg border-gray-100"
-                disabled
-              >
-                <ChevronLeft className="h-4 w-4 mr-1" />
-                ก่อนหน้า
-              </Button>
-            )}
-
-            {currentPage < totalPages ? (
-              <Link
-                href={`/dashboard/${projectId}?page=${currentPage + 1}${from ? `&from=${from}` : ""}${to ? `&to=${to}` : ""}${query ? `&query=${query}` : ""}`}
-                className={cn(
-                  buttonVariants({ variant: "outline", size: "sm" }),
-                  "rounded-lg border-gray-100",
-                )}
-              >
-                ถัดไป
-                <ChevronRight className="h-4 w-4 ml-1" />
-              </Link>
-            ) : (
-              <Button
-                variant="outline"
-                size="sm"
-                className="rounded-lg border-gray-100"
-                disabled
-              >
-                ถัดไป
-                <ChevronRight className="h-4 w-4 ml-1" />
-              </Button>
-            )}
-          </div>
-        </div>
-      )}
-    </div>
-  );
-}

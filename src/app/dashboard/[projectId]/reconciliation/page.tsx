@@ -25,13 +25,17 @@ import {
   CalendarCheck,
 } from "lucide-react";
 import { ReconciliationSkeleton } from "@/components/dashboard/DashboardSkeletons";
+import { PendingMatchesTable } from "@/components/dashboard/PendingMatchesTable";
+import { ReRunMatchingButton } from "@/components/dashboard/ReRunMatchingButton";
+import { getPendingMatches, getProjectAccounts, batchReRunSmartMatch } from "@/actions/dashboard";
+import { Sparkles } from "lucide-react";
 
 export default async function ReconciliationPage({
   params,
   searchParams,
 }: {
   params: Promise<{ projectId: string }>;
-  searchParams: Promise<{ period?: string; date?: string }>;
+  searchParams: Promise<{ period?: string; date?: string; page?: string; limit?: string }>;
 }) {
   const session = await getServerAuthSession();
 
@@ -44,7 +48,7 @@ export default async function ReconciliationPage({
   }
 
   const { projectId } = await params;
-  const { period = "day", date: targetDateStr } = await searchParams;
+  const { period = "day", date: targetDateStr, page = "1", limit = "50" } = await searchParams;
 
   const validPeriod = ["day", "week", "month"].includes(period)
     ? (period as "day" | "week" | "month")
@@ -101,6 +105,8 @@ export default async function ReconciliationPage({
           projectId={projectId}
           period={validPeriod}
           targetDate={targetDate}
+          page={Number(page)}
+          limit={Number(limit)}
         />
       </Suspense>
     </div>
@@ -114,12 +120,20 @@ async function ReconciliationContent({
   projectId,
   period,
   targetDate,
+  page,
+  limit,
 }: {
   projectId: string;
   period: "day" | "week" | "month";
   targetDate: Date;
+  page: number;
+  limit: number;
 }) {
   const report = await getReconciliationReport(projectId, period, targetDate);
+  const pendingMatchesResult = await getPendingMatches(projectId, page, limit);
+  const projectAccounts = await getProjectAccounts(projectId);
+
+  const { data: pendingMatches, totalPages, totalItems } = pendingMatchesResult;
 
   // Formatting helpers
   const formatPeriodRange = () => {
@@ -235,6 +249,27 @@ async function ReconciliationContent({
           </CardContent>
         </Card>
       </div>
+
+      {/* Pending Matches Section */}
+      {pendingMatches.length > 0 && (
+        <div className="space-y-4">
+          <div className="flex items-center justify-between mt-8">
+            <h2 className="text-xl font-semibold tracking-tight text-gray-900 flex items-center gap-2">
+              <Sparkles className="h-5 w-5 text-amber-500" />
+              รายการรอตรวจสอบการจับคู่บัญชี (Pending Account Matches)
+            </h2>
+            <ReRunMatchingButton projectId={projectId} />
+          </div>
+          <PendingMatchesTable 
+            transactions={pendingMatches} 
+            projectAccounts={projectAccounts} 
+            totalPages={totalPages}
+            totalItems={totalItems}
+            currentPage={page}
+            limit={limit}
+          />
+        </div>
+      )}
 
       {/* Account Breakdown Table */}
       <h2 className="text-xl font-semibold tracking-tight text-gray-900 mt-8 mb-4 flex items-center gap-2">
