@@ -103,14 +103,28 @@ export function PendingMatchesTable({
         <Table>
           <TableHeader className="bg-gray-50/50">
             <TableRow className="border-gray-100">
-              <TableHead className="px-6 py-4 text-gray-500 font-medium">ชื่อ (Sender Name)</TableHead>
-              <TableHead className="text-gray-500 font-medium">ธนาคาร (Bank)</TableHead>
-              <TableHead className="text-gray-500 font-medium">หมายเลขบัญชี (Account)</TableHead>
+              <TableHead className="px-6 py-4 text-gray-500 font-medium">
+                ชื่อ (Sender Name)
+              </TableHead>
+              <TableHead className="text-gray-500 font-medium">
+                ธนาคาร (Bank)
+              </TableHead>
+              <TableHead className="text-gray-500 font-medium">
+                หมายเลขบัญชี (Account)
+              </TableHead>
               <TableHead className="text-gray-500 font-medium">RefId</TableHead>
-              <TableHead className="text-gray-500 font-medium">จำนวนเงิน</TableHead>
-              <TableHead className="text-gray-500 font-medium text-center">สลิป</TableHead>
-              <TableHead className="text-gray-500 font-medium">จับคู่บัญชี</TableHead>
-              <TableHead className="text-right px-6 text-gray-500 font-medium">การจัดการ</TableHead>
+              <TableHead className="text-gray-500 font-medium">
+                จำนวนเงิน
+              </TableHead>
+              <TableHead className="text-gray-500 font-medium text-center">
+                สลิป
+              </TableHead>
+              <TableHead className="text-gray-500 font-medium">
+                จับคู่บัญชี
+              </TableHead>
+              <TableHead className="text-right px-6 text-gray-500 font-medium">
+                การจัดการ
+              </TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -169,7 +183,7 @@ export function PendingMatchesTable({
                             </DialogHeader>
                             <div className="flex justify-center p-4">
                               <img
-                                src={`${process.env.NEXT_PUBLIC_IMAGE_SERVER_URL || "http://localhost:8080"}${txn.image_path.replace("/app/data", "")}`}
+                                src={`${process.env.NEXT_PUBLIC_IMAGE_SERVER_URL}${txn.image_path.replace("/app/data", "")}`}
                                 alt="Slip"
                                 className="max-w-full h-auto rounded-2xl shadow-2xl ring-1 ring-white/20"
                               />
@@ -266,9 +280,7 @@ export function PendingMatchesTable({
                 </SelectContent>
               </Select>
             </div>
-            <p className="text-xs text-gray-400">
-              ทั้งหมด {totalItems} รายการ
-            </p>
+            <p className="text-xs text-gray-400">ทั้งหมด {totalItems} รายการ</p>
           </div>
 
           <div className="flex items-center gap-2">
@@ -282,7 +294,9 @@ export function PendingMatchesTable({
               ก่อนหน้า
             </Button>
             <div className="flex items-center gap-1 mx-2">
-              <span className="text-xs font-bold text-gray-900">{currentPage}</span>
+              <span className="text-xs font-bold text-gray-900">
+                {currentPage}
+              </span>
               <span className="text-xs text-gray-400">/</span>
               <span className="text-xs text-gray-400">{totalPages || 1}</span>
             </div>
