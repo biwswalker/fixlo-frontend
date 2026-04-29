@@ -34,9 +34,7 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
 
           const result = await response.json();
 
-          console.log("result: ", !response.ok, !result.data);
-
-          if (!response.ok || !result.data) {
+          if (!response.ok) {
             logger.error("Auth:authorize", "Auth API rejected login", result);
             // Throwing an error here makes NextAuth pass the error to the frontend
             throw new Error(
@@ -44,15 +42,20 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
             );
           }
 
-          const { user, access_token, refresh_token } = result.data;
+          // The API returns accessToken, refreshToken, and user directly at the root
+          const { user, accessToken, refreshToken } = result;
+
+          if (!user) {
+            throw new Error("ไม่พบข้อมูลผู้ใช้");
+          }
 
           return {
             id: user.id,
             username: user.username,
             role: user.roles?.[0] || "VIEWER", // Fallback role if array
             roles: user.roles || [],
-            accessToken: access_token,
-            refreshToken: refresh_token,
+            accessToken: accessToken,
+            refreshToken: refreshToken,
           };
         } catch (error: any) {
           logger.error("Auth:authorize", "Failed to authenticate user", error);
