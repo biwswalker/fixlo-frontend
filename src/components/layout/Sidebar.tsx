@@ -1,38 +1,35 @@
-'use client';
+"use client";
 
-import Link from 'next/link';
-import { usePathname, useParams } from 'next/navigation';
-import {
-  LayoutDashboard,
-  Scale,
-} from 'lucide-react';
-import { cn } from '@/lib/utils';
+import Link from "next/link";
+import { usePathname, useParams } from "next/navigation";
+import { LayoutDashboard, Scale } from "lucide-react";
+import { cn } from "@/lib/utils";
 
-import { useSession } from 'next-auth/react';
+import { useSession } from "next-auth/react";
 
 export function Sidebar() {
   const pathname = usePathname();
   const params = useParams();
   const { data: session } = useSession();
-  const projectId = (params?.projectId as string) || 'all';
+  const projectId = (params?.projectId as string) || "all";
 
   const userRole = session?.user?.role;
 
   const navItems = [
-    { 
-      label: 'หน้าปัดหลัก', 
-      href: `/dashboard/${projectId}`, 
+    {
+      label: "หน้าปัดหลัก",
+      href: `/dashboard/${projectId}`,
       icon: LayoutDashboard,
-      active: pathname === `/dashboard/${projectId}`
+      active: pathname === `/dashboard/${projectId}`,
     },
-    { 
-      label: 'กระทบยอดบัญชี', 
-      href: `/dashboard/${projectId}/reconciliation`, 
+    {
+      label: "กระทบยอดบัญชี",
+      href: `/dashboard/${projectId}/reconciliation`,
       icon: Scale,
       active: pathname === `/dashboard/${projectId}/reconciliation`,
-      hidden: userRole !== 'ADMIN'
+      hidden: !["OWNER", "ADMIN"].includes(userRole || ""),
     },
-  ].filter(item => !item.hidden);
+  ].filter((item) => !item.hidden);
 
   return (
     <aside className="fixed inset-y-0 left-0 z-10 hidden w-[72px] flex-col border-r bg-white/95 backdrop-blur supports-[backdrop-filter]:bg-white/60 sm:flex">
@@ -49,12 +46,15 @@ export function Sidebar() {
             title={item.label}
             className={cn(
               "group flex h-12 w-12 items-center justify-center rounded-xl transition-all hover:shadow-sm",
-              item.active 
-                ? "bg-blue-600 text-white shadow-md shadow-blue-600/20" 
-                : "text-gray-400 hover:bg-blue-50 hover:text-blue-600"
+              item.active
+                ? "bg-blue-600 text-white shadow-md shadow-blue-600/20"
+                : "text-gray-400 hover:bg-blue-50 hover:text-blue-600",
             )}
           >
-            <item.icon className="h-6 w-6 transition-transform group-hover:scale-110" strokeWidth={1.5} />
+            <item.icon
+              className="h-6 w-6 transition-transform group-hover:scale-110"
+              strokeWidth={1.5}
+            />
             <span className="sr-only">{item.label}</span>
           </Link>
         ))}
