@@ -1,9 +1,9 @@
-import NextAuth from "next-auth"
-import Credentials from "next-auth/providers/credentials"
-import { query } from "@/lib/db"
-import bcrypt from "bcryptjs"
-import authConfig from "./auth.config"
-import { logger } from "@/lib/logger"
+import NextAuth from "next-auth";
+import Credentials from "next-auth/providers/credentials";
+import { query } from "@/lib/db";
+import bcrypt from "bcryptjs";
+import authConfig from "./auth.config";
+import { logger } from "@/lib/logger";
 
 export const { handlers, signIn, signOut, auth } = NextAuth({
   ...authConfig,
@@ -15,37 +15,52 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
         password: { label: "Password", type: "password" },
       },
       async authorize(credentials) {
-        if (!credentials?.username || !credentials?.password) return null
+        if (!credentials?.username || !credentials?.password) return null;
 
         try {
-          // Query user from DB
-          const result = await query(
-            "SELECT id, username, password_hash, role FROM users WHERE username = $1",
-            [credentials.username]
-          )
-          
-          const user = result.rows[0]
+          // Call Central Auth API instead of local DB
+          const authApiUrl =
+            process.env.AUTH_API_URL || "http://localhost:3100";
 
-          if (!user) return null
+          const response = await fetch(`${authApiUrl}/auth/login`, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              username: credentials.username,
+              password: credentials.password,
+              app_source: "fixlo", // Identify which app is logging in
+            }),
+          });
 
-          // Compare password with hash
-          const isPasswordValid = await bcrypt.compare(
-            credentials.password as string,
-            user.password_hash
-          )
+          const result = await response.json();
 
-          if (!isPasswordValid) return null
+          if (!response.ok || result.status !== "success") {
+            logger.error("Auth:authorize", "Auth API rejected login", result);
+            // Throwing an error here makes NextAuth pass the error to the frontend
+            throw new Error(
+              result.message || "รหัสผ่านไม่ถูกต้อง หรือถูกระงับการใช้งาน",
+            );
+          }
+
+          const { user, access_token, refresh_token } = result.data;
 
           return {
             id: user.id,
             username: user.username,
-            role: user.role,
-          }
-        } catch (error) {
-          logger.error('Auth:authorize', 'Failed to authenticate user', error)
-          return null
+            role: user.roles?.[0] || "VIEWER", // Fallback role if array
+            roles: user.roles || [],
+            accessToken: access_token,
+            refreshToken: refresh_token,
+          };
+        } catch (error: any) {
+          logger.error("Auth:authorize", "Failed to authenticate user", error);
+          // If it's a known error from the API, throw it directly
+          if (error.message) throw new Error(error.message);
+          return null;
         }
       },
     }),
   ],
-})
+});
