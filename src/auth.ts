@@ -1,7 +1,5 @@
 import NextAuth from "next-auth";
 import Credentials from "next-auth/providers/credentials";
-import { query } from "@/lib/db";
-import bcrypt from "bcryptjs";
 import authConfig from "./auth.config";
 import { logger } from "@/lib/logger";
 
@@ -36,7 +34,7 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
 
           const result = await response.json();
 
-          if (!response.ok || result.status !== "success") {
+          if (!response.ok || !!!result.accessToken) {
             logger.error("Auth:authorize", "Auth API rejected login", result);
             // Throwing an error here makes NextAuth pass the error to the frontend
             throw new Error(
