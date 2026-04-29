@@ -35,7 +35,15 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
 
           const result = await response.json();
 
-          if (!response.ok || !!!result.data?.access_token) {
+          console.log(
+            "result: ",
+            !response.ok,
+            !!!result.data?.access_token,
+            response,
+            result.data,
+          );
+
+          if (!!!result.data?.access_token) {
             logger.error("Auth:authorize", "Auth API rejected login", result);
             // Throwing an error here makes NextAuth pass the error to the frontend
             throw new Error(
