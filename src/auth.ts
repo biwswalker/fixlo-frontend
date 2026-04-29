@@ -31,13 +31,12 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
               app_source: "fixlo", // Identify which app is logging in
             }),
           });
-          1;
 
           const result = await response.json();
 
-          console.log("result: ", !response.ok, !result.data?.access_token);
+          console.log("result: ", !response.ok, !result.data);
 
-          if (!response.ok || !result.data?.access_token) {
+          if (!response.ok || !result.data) {
             logger.error("Auth:authorize", "Auth API rejected login", result);
             // Throwing an error here makes NextAuth pass the error to the frontend
             throw new Error(
