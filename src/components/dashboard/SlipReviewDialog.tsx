@@ -49,7 +49,7 @@ export function SlipReviewDialog({
   if (!transaction) return null;
 
   const userRole = session?.user?.role;
-  const canApprove = userRole === "ADMIN" || userRole === "SUPPORT";
+  const canApprove = userRole === "admin";
 
   const handleApprove = async () => {
     if (!canApprove) return;

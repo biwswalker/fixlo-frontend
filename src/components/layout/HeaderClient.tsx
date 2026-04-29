@@ -59,9 +59,10 @@ export default function HeaderClient({
 
   const user = session?.user;
   const roleLabels: Record<string, string> = {
-    ADMIN: "ผู้ดูแลระบบ",
-    SUPPORT: "เจ้าหน้าที่เทคนิค",
-    VIEWER: "ผู้เข้าชม",
+    owner: "เจ้าของ",
+    admin: "ผู้ดูแลระบบ",
+    staff: "เจ้าหน้าที่",
+    viewer: "ผู้เข้าชม",
   };
 
   const roleLabel = user?.role
@@ -167,7 +168,7 @@ export default function HeaderClient({
             disabled
             className={cn(
               buttonVariants({ variant: "ghost", size: "icon" }),
-              "relative h-10 w-10 rounded-full opacity-50 cursor-not-allowed text-muted-foreground"
+              "relative h-10 w-10 rounded-full opacity-50 cursor-not-allowed text-muted-foreground",
             )}
           >
             <Bell className="h-5 w-5" strokeWidth={1.5} />
@@ -221,7 +222,7 @@ export default function HeaderClient({
               >
                 ตั้งค่าโปรไฟล์
               </DropdownMenuItem>
-              {user?.role === "ADMIN" && (
+              {user?.role === "admin" && (
                 <DropdownMenuItem
                   disabled
                   className="cursor-not-allowed opacity-60"

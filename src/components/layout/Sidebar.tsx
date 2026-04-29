@@ -27,7 +27,7 @@ export function Sidebar() {
       href: `/dashboard/${projectId}/reconciliation`,
       icon: Scale,
       active: pathname === `/dashboard/${projectId}/reconciliation`,
-      hidden: !["OWNER", "ADMIN"].includes(userRole || ""),
+      hidden: !["owner", "admin"].includes(userRole || ""),
     },
   ].filter((item) => !item.hidden);
 

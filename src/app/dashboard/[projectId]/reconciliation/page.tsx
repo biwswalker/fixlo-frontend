@@ -27,7 +27,11 @@ import {
 import { ReconciliationSkeleton } from "@/components/dashboard/DashboardSkeletons";
 import { PendingMatchesTable } from "@/components/dashboard/PendingMatchesTable";
 import { ReRunMatchingButton } from "@/components/dashboard/ReRunMatchingButton";
-import { getPendingMatches, getProjectAccounts, batchReRunSmartMatch } from "@/actions/dashboard";
+import {
+  getPendingMatches,
+  getProjectAccounts,
+  batchReRunSmartMatch,
+} from "@/actions/dashboard";
 import { Sparkles } from "lucide-react";
 
 export default async function ReconciliationPage({
@@ -35,20 +39,30 @@ export default async function ReconciliationPage({
   searchParams,
 }: {
   params: Promise<{ projectId: string }>;
-  searchParams: Promise<{ period?: string; date?: string; page?: string; limit?: string }>;
+  searchParams: Promise<{
+    period?: string;
+    date?: string;
+    page?: string;
+    limit?: string;
+  }>;
 }) {
   const session = await getServerAuthSession();
 
-  // RBAC Check: Only ADMIN or SUPPORT can access reconciliation
+  // RBAC Check: Only owner or admin can access reconciliation
   if (
     !session ||
-    (session.user.role !== "ADMIN" && session.user.role !== "SUPPORT")
+    !["owner", "admin"].includes(session.user.role || "")
   ) {
     redirect("/dashboard/all");
   }
 
   const { projectId } = await params;
-  const { period = "day", date: targetDateStr, page = "1", limit = "50" } = await searchParams;
+  const {
+    period = "day",
+    date: targetDateStr,
+    page = "1",
+    limit = "50",
+  } = await searchParams;
 
   const validPeriod = ["day", "week", "month"].includes(period)
     ? (period as "day" | "week" | "month")
@@ -91,7 +105,7 @@ export default async function ReconciliationPage({
               currentDate={targetDate}
             />
           </div>
-          {session.user.role === "ADMIN" && (
+          {session.user.role === "admin" && (
             <AddAdjustmentDialog projectId={projectId} />
           )}
         </div>
@@ -260,9 +274,9 @@ async function ReconciliationContent({
             </h2>
             <ReRunMatchingButton projectId={projectId} />
           </div>
-          <PendingMatchesTable 
-            transactions={pendingMatches} 
-            projectAccounts={projectAccounts} 
+          <PendingMatchesTable
+            transactions={pendingMatches}
+            projectAccounts={projectAccounts}
             totalPages={totalPages}
             totalItems={totalItems}
             currentPage={page}

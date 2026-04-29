@@ -3,7 +3,13 @@
 import { query } from "@/lib/db";
 import { matchMasterAccount } from "@/lib/accountMatcher";
 import { logger } from "@/lib/logger";
-import { format, startOfWeek, endOfWeek, startOfMonth, endOfMonth } from "date-fns";
+import {
+  format,
+  startOfWeek,
+  endOfWeek,
+  startOfMonth,
+  endOfMonth,
+} from "date-fns";
 import { getServerAuthSession } from "@/lib/auth";
 import { revalidatePath } from "next/cache";
 
@@ -62,7 +68,11 @@ async function resolveProject(
     if (!result.rows[0]) return null;
     return { id: result.rows[0].id, name: result.rows[0].project_name };
   } catch (err) {
-    logger.error("reconciliation.resolveProject", `Failed to resolve project: ${projectId}`, err);
+    logger.error(
+      "reconciliation.resolveProject",
+      `Failed to resolve project: ${projectId}`,
+      err,
+    );
     return null;
   }
 }
@@ -95,10 +105,7 @@ function resolvePeriod(
 }
 
 /** Empty report used as a safe fallback on errors or unresolvable projects. */
-function emptyReport(
-  startDate: string,
-  endDate: string,
-): ReconciliationReport {
+function emptyReport(startDate: string, endDate: string): ReconciliationReport {
   return {
     startingBalance: 0,
     expectedInflow: 0,
@@ -145,10 +152,7 @@ export async function getReconciliationReport(
 
     // If a specific project was requested but couldn't be resolved, bail early.
     if (!isAll && !project) {
-      logger.warn(
-        "getReconciliationReport",
-        `Project not found: ${projectId}`,
-      );
+      logger.warn("getReconciliationReport", `Project not found: ${projectId}`);
       return emptyReport(startDate, endDate);
     }
 
@@ -258,7 +262,14 @@ export async function getReconciliationReport(
 
     logger.debug("getReconciliationReport", "Executing parallel DB queries");
 
-    const [inflowRes, outflowRes, balanceRes, rawTxRes, startBalRes, extAdjRes] = await Promise.all([
+    const [
+      inflowRes,
+      outflowRes,
+      balanceRes,
+      rawTxRes,
+      startBalRes,
+      extAdjRes,
+    ] = await Promise.all([
       query(inflowSql, [startDate, endDate, isAll, projectName]),
       query(outflowSql, [startDate, endDate, projectUuid, isAll]),
       query(balanceSql, isAll ? [endDate] : [projectName, endDate]),
@@ -277,14 +288,20 @@ export async function getReconciliationReport(
 
     for (const row of rawTxRes.rows) {
       // Prioritize saved database match, fall back to on-the-fly fuzzy match
-      const matchedName = row.account_name || matchMasterAccount(row.sender_name as string | null);
+      const matchedName =
+        row.account_name ||
+        matchMasterAccount(row.sender_name as string | null);
       const amount = Number(row.ai_amount ?? 0);
       const existing = accountMap.get(matchedName);
       if (existing) {
         existing.systemOutflow += amount;
         existing.count += 1;
       } else {
-        accountMap.set(matchedName, { systemOutflow: amount, adjustments: 0, count: 1 });
+        accountMap.set(matchedName, {
+          systemOutflow: amount,
+          adjustments: 0,
+          count: 1,
+        });
       }
     }
 
@@ -295,11 +312,17 @@ export async function getReconciliationReport(
       if (existing) {
         existing.adjustments += amount;
       } else {
-        accountMap.set(acc, { systemOutflow: 0, adjustments: amount, count: 0 });
+        accountMap.set(acc, {
+          systemOutflow: 0,
+          adjustments: amount,
+          count: 0,
+        });
       }
     }
 
-    const accountLevelStats: AccountLevelStat[] = Array.from(accountMap.entries())
+    const accountLevelStats: AccountLevelStat[] = Array.from(
+      accountMap.entries(),
+    )
       .map(([account, { systemOutflow, adjustments, count }]) => ({
         account,
         systemOutflow,
@@ -319,10 +342,17 @@ export async function getReconciliationReport(
     const expectedOutflow = Number(outflowRes.rows[0]?.total ?? 0);
     const actualBalance = Number(balanceRes.rows[0]?.total ?? 0);
 
-    const adjustmentsTotal = accountLevelStats.reduce((sum, s) => sum + s.adjustments, 0);
-    const effectiveOutflowTotal = accountLevelStats.reduce((sum, s) => sum + s.effectiveOutflow, 0);
+    const adjustmentsTotal = accountLevelStats.reduce(
+      (sum, s) => sum + s.adjustments,
+      0,
+    );
+    const effectiveOutflowTotal = accountLevelStats.reduce(
+      (sum, s) => sum + s.effectiveOutflow,
+      0,
+    );
 
-    const expectedBalance = startingBalance + expectedInflow - effectiveOutflowTotal;
+    const expectedBalance =
+      startingBalance + expectedInflow - effectiveOutflowTotal;
     const variance = expectedBalance - actualBalance;
 
     logger.info("getReconciliationReport", "Report generated successfully", {
@@ -377,14 +407,19 @@ export async function addManualAdjustment(data: CreateAdjustmentInput) {
   logger.info("addManualAdjustment", "Adding manual adjustment", data);
   const session = await getServerAuthSession();
 
-  if (!session || session.user.role !== "ADMIN") {
-    logger.warn("addManualAdjustment", "Unauthorized attempt to add adjustment");
+  if (!session || !["owner", "admin"].includes(session.user.role || "")) {
+    logger.warn(
+      "addManualAdjustment",
+      "Unauthorized attempt to add adjustment",
+    );
     return { success: false, error: "Unauthorized" };
   }
 
   try {
     const isAll = data.projectId === "all";
-    const projectUuid = isAll ? null : (await resolveProject(data.projectId))?.id;
+    const projectUuid = isAll
+      ? null
+      : (await resolveProject(data.projectId))?.id;
 
     if (!isAll && !projectUuid) {
       return { success: false, error: "Project not found" };
@@ -405,13 +440,20 @@ export async function addManualAdjustment(data: CreateAdjustmentInput) {
     ];
 
     await query(sql, params);
-    
-    logger.info("addManualAdjustment", "Manual adjustment created successfully");
-    
+
+    logger.info(
+      "addManualAdjustment",
+      "Manual adjustment created successfully",
+    );
+
     revalidatePath("/dashboard/[projectId]/reconciliation", "page");
     return { success: true };
   } catch (error) {
-    logger.error("addManualAdjustment", "Failed to add manual adjustment", error);
+    logger.error(
+      "addManualAdjustment",
+      "Failed to add manual adjustment",
+      error,
+    );
     return { success: false, error: "Failed to add manual adjustment" };
   }
 }

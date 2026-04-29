@@ -52,7 +52,7 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
           return {
             id: user.id,
             username: user.username,
-            role: user.roles?.[0] || "VIEWER", // Fallback role if array
+            role: user.roles?.[0] || "viewer", // Fallback role if array
             roles: user.roles || [],
             accessToken: accessToken,
             refreshToken: refreshToken,
