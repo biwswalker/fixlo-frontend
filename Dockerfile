@@ -16,6 +16,9 @@ WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 
+ARG NEXT_PUBLIC_IMAGE_SERVER_URL
+ENV NEXT_PUBLIC_IMAGE_SERVER_URL=$NEXT_PUBLIC_IMAGE_SERVER_URL
+
 # Next.js telemetry is disabled
 ENV NEXT_TELEMETRY_DISABLED 1
 
