@@ -238,7 +238,12 @@ export async function getDashboardSummary(
       ORDER BY total DESC
     `;
 
-
+    const reportDepositsQuery = `
+      SELECT COALESCE(SUM(amount), 0) as total_deposits
+      FROM report_deposits
+      WHERE status = 'สำเร็จ'
+      AND trans_date::date BETWEEN $1 AND $2
+    `;
 
     logger.debug(
       "getDashboardSummary",
@@ -246,6 +251,7 @@ export async function getDashboardSummary(
       project,
     );
     const projectName = project?.name || "";
+    const projectIdParam = project?.id || null;
     const summaryParams = [projectName, isAll, startDate, endDate];
     const breakdownParams = [startDate, endDate];
 
@@ -254,21 +260,23 @@ export async function getDashboardSummary(
       balanceRes,
       depositsRes,
       withdrawalsRes,
+      txDepositRes,
     ] = await Promise.all([
       query(summaryQuery, summaryParams),
       query(balanceQuery, isAll ? [endDate] : [projectName, endDate]),
       query(depositsBreakdownQuery, breakdownParams),
       query(withdrawalsBreakdownQuery, breakdownParams),
+      query(reportDepositsQuery, [startDate, endDate]),
     ]);
 
-    const trueTotalDeposits = Number(summaryRes.rows[0]?.total_deposits || 0);
+    const trueTotalDeposits = Number(txDepositRes.rows[0]?.total_deposits || 0);
     const trueTotalWithdrawals = Number(summaryRes.rows[0]?.total_withdrawals || 0);
 
     return {
       totalDeposits: trueTotalDeposits,
       totalWithdrawals: trueTotalWithdrawals,
       latestBalance: Number(balanceRes.rows[0]?.latest_balance || 0),
-      deposit: Number(summaryRes.rows[0].deposit || 0),
+      deposit: trueTotalDeposits,
       manualIn: Number(summaryRes.rows[0].manual_in || 0),
       bonus: Number(summaryRes.rows[0].bonus || 0),
       fixedDeposit: Number(summaryRes.rows[0].fixed_deposit || 0),
@@ -323,23 +331,40 @@ export async function getDailyChartData(
     if (!isAll && !project) return [];
 
     const sql = `
-      SELECT 
-        report_date, 
-        SUM(COALESCE(deposit, 0) + COALESCE(manual_in, 0) + COALESCE(bonus, 0) + COALESCE(fixed_deposit, 0)) as deposits,
-        SUM(COALESCE(withdraw, 0) + COALESCE(manual_out, 0) + COALESCE(redeem, 0) + COALESCE(affiliate, 0) + COALESCE(cashback, 0)) as withdrawals,
-        SUM((COALESCE(deposit, 0) + COALESCE(manual_in, 0) + COALESCE(bonus, 0) + COALESCE(fixed_deposit, 0)) - 
-            (COALESCE(withdraw, 0) + COALESCE(manual_out, 0) + COALESCE(redeem, 0) + COALESCE(affiliate, 0) + COALESCE(cashback, 0))) as net_diff
-      FROM report_summary_daily
-      WHERE (project_id ILIKE '%' || $1 || '%' OR $2 = true)
-      AND report_date::date BETWEEN $3 AND $4
-      GROUP BY report_date
+      WITH daily_reports AS (
+        SELECT 
+          report_date::date as day,
+          SUM(COALESCE(withdraw, 0) + COALESCE(manual_out, 0) + COALESCE(redeem, 0) + COALESCE(affiliate, 0) + COALESCE(cashback, 0)) as withdrawals
+        FROM report_summary_daily
+        WHERE (project_id ILIKE '%' || $1 || '%' OR $2 = true)
+        AND report_date::date BETWEEN $3 AND $4
+        GROUP BY report_date::date
+      ),
+      daily_deposits AS (
+        SELECT
+          trans_date::date as day,
+          SUM(COALESCE(amount, 0)) as deposits
+        FROM report_deposits
+        WHERE status = 'สำเร็จ'
+        AND trans_date::date BETWEEN $3 AND $4
+        GROUP BY trans_date::date
+      )
+      SELECT
+        COALESCE(r.day, t.day) as report_date,
+        COALESCE(t.deposits, 0) as deposits,
+        COALESCE(r.withdrawals, 0) as withdrawals,
+        (COALESCE(t.deposits, 0) - COALESCE(r.withdrawals, 0)) as net_diff
+      FROM daily_reports r
+      FULL OUTER JOIN daily_deposits t ON r.day = t.day
       ORDER BY report_date ASC
     `;
 
     const projectName = project?.name || "";
+    const projectIdParam = project?.id || null;
     logger.debug("getDailyChartData", `Fetching chart data`, {
       projectId,
       projectName,
+      projectIdParam,
       startDate,
       endDate,
     });
@@ -436,12 +461,12 @@ export async function getReconciliationStatus(
       AND matching_status IN ('AUTO_MAPPED', 'MANUAL_MAPPED')
     `;
 
-    // 4. Fetch deposits from report_summary_daily
+    // 4. Fetch deposits from report_deposits
     const depositsSql = `
-      SELECT COALESCE(SUM(deposit), 0) as total 
-      FROM report_summary_daily 
-      WHERE (project_id ILIKE '%' || $1 || '%' OR $2 = true)
-      AND report_date = $3
+      SELECT COALESCE(SUM(amount), 0) as total 
+      FROM report_deposits 
+      WHERE status = 'สำเร็จ'
+      AND trans_date::date = $1
     `;
 
     const projectName = project?.name || "";
@@ -461,7 +486,7 @@ export async function getReconciliationStatus(
           isAll ? [targetDate] : [projectName, targetDate],
         ),
         query(withdrawalsSql, [projectIdParam, isAll, targetDate]),
-        query(depositsSql, [projectName, isAll, targetDate]),
+        query(depositsSql, [targetDate]),
       ]);
 
     const todayBalance = Number(todayRes.rows[0]?.total || 0);
