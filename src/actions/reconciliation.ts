@@ -1,7 +1,6 @@
 "use server";
 
 import { query } from "@/lib/db";
-import { matchMasterAccount } from "@/lib/accountMatcher";
 import { logger } from "@/lib/logger";
 import {
   format,
@@ -254,10 +253,11 @@ export async function getReconciliationReport(
     // 6. Manual Adjustments for the period
     // ------------------------------------------------------------------
     const adjustmentsSql = `
-      SELECT master_account, amount 
-      FROM manual_adjustments 
-      WHERE adjustment_date BETWEEN $1 AND $2
-        AND (project_id = $3 OR $4 = true)
+      SELECT pa.account_name, ma.amount
+      FROM manual_adjustments ma
+      LEFT JOIN project_accounts pa ON pa.id::text = ma.master_account
+      WHERE ma.adjustment_date BETWEEN $1 AND $2
+        AND (ma.project_id = $3 OR $4 = true)
     `;
 
     logger.debug("getReconciliationReport", "Executing parallel DB queries");
@@ -287,10 +287,8 @@ export async function getReconciliationReport(
     >();
 
     for (const row of rawTxRes.rows) {
-      // Prioritize saved database match, fall back to on-the-fly fuzzy match
-      const matchedName =
-        row.account_name ||
-        matchMasterAccount(row.sender_name as string | null);
+      // Bucket by saved master account name. UNMAPPED rows fall under "Unmapped".
+      const matchedName: string = row.account_name || "Unmapped";
       const amount = Number(row.ai_amount ?? 0);
       const existing = accountMap.get(matchedName);
       if (existing) {
@@ -306,7 +304,7 @@ export async function getReconciliationReport(
     }
 
     for (const row of extAdjRes.rows) {
-      const acc = row.master_account;
+      const acc: string = row.account_name || "Unmapped";
       const amount = Number(row.amount ?? 0);
       const existing = accountMap.get(acc);
       if (existing) {

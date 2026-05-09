@@ -1,165 +1,163 @@
 import type { ProjectAccount } from "@/types/dashboard";
 
-/**
- * Smart Matching Utility
- * Maps AI-scanned data to project accounts using fuzzy name matching 
- * and account number pattern verification.
- */
+export interface ScannedSlip {
+  name: string | null;
+  account: string | null;
+  bank: string | null;
+}
 
-interface MatchResult {
+export interface MatchResult {
   matchedAccountId: string | null;
   possibleMatches?: string[];
   status: "AUTO_MAPPED" | "PENDING_REVIEW" | "UNMAPPED";
   score: number;
 }
 
-/**
- * Normalizes strings for consistent comparison.
- * Removes spaces, non-alphanumeric characters, and converts to lowercase.
- */
-function normalize(str: string | null): string {
-  if (!str) return "";
-  return str.toLowerCase().replace(/\s+/g, "").replace(/[^a-z0-9\u0E01-\u0E59]/gi, "");
+const GATEWAY_KEYWORDS = ["wealth", "dpay", "apay", "badoo", "binance"];
+
+const AUTO_THRESHOLD = 85;
+const REVIEW_THRESHOLD = 50;
+
+function normalizeBank(name: string | null | undefined): string {
+  if (!name) return "";
+  const n = name.toLowerCase().replace(/[\s.]/g, "");
+  if (n.includes("kbank") || n.includes("กสิกร")) return "kbank";
+  if (n.includes("scb") || n.includes("ไทยพาณิชย์")) return "scb";
+  if (n.includes("bbl") || n.includes("กรุงเทพ")) return "bbl";
+  if (n.includes("ktb") || n.includes("กรุงไทย")) return "ktb";
+  if (n.includes("bay") || n.includes("กรุงศรี")) return "bay";
+  if (n.includes("ttb") || n.includes("ทหารไทย")) return "ttb";
+  if (n.includes("gsb") || n.includes("ออมสิน")) return "gsb";
+  if (n.includes("baac") || n.includes("ธกส")) return "baac";
+  return n;
 }
 
-/**
- * Computes Levenshtein distance similarity (0 to 1).
- */
-function similarity(a: string, b: string): number {
-  if (a === b) return 1;
-  if (a.length === 0 || b.length === 0) return 0;
+function parseAliases(raw: ProjectAccount["aliases"] | string[] | null): string[] {
+  if (!raw) return [];
+  if (Array.isArray(raw)) return raw;
+  try {
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
 
-  const matrix = Array.from({ length: a.length + 1 }, (_, i) => [i]);
-  for (let j = 1; j <= b.length; j++) matrix[0][j] = j;
+function calculateMatchScore(
+  scanned: ScannedSlip,
+  master: ProjectAccount,
+): number {
+  let score = 0;
 
-  for (let i = 1; i <= a.length; i++) {
-    for (let j = 1; j <= b.length; j++) {
-      const cost = a[i - 1] === b[j - 1] ? 0 : 1;
-      matrix[i][j] = Math.min(
-        matrix[i - 1][j] + 1,
-        matrix[i][j - 1] + 1,
-        matrix[i - 1][j - 1] + cost
-      );
+  const masterNameLower = (master.account_name || "").toLowerCase();
+  const isGateway = GATEWAY_KEYWORDS.some((key) =>
+    masterNameLower.includes(key),
+  );
+
+  const sName = (scanned.name || "").toLowerCase().trim();
+  const sBank = (scanned.bank || "").toLowerCase().trim();
+  const sAccount = scanned.account || "";
+  const mName = masterNameLower.trim();
+  const mBankCode = (master.bank_code || "").toLowerCase().trim();
+  const mAliases = parseAliases(master.aliases).map((a) =>
+    a.toLowerCase().trim(),
+  );
+
+  if (isGateway) {
+    // CASE A: Gateway — provider/bank weighted heavier than name (80/20)
+    if (sBank && (sBank === mBankCode || mName.includes(sBank))) {
+      score += 80;
+    }
+    if (
+      sName &&
+      (sName === mName || mAliases.includes(sName) || mName.includes(sName))
+    ) {
+      score += 20;
+    }
+    return score;
+  }
+
+  // CASE B: Person — name dominant (70/20/10), TrueMoney special (85/15/0)
+  let nameWeight = 70;
+  let bankWeight = 10;
+  let accWeight = 20;
+
+  if (sBank.includes("truemoney") || sBank.includes("wallet")) {
+    nameWeight = 85;
+    bankWeight = 15;
+    accWeight = 0;
+  }
+
+  if (sName && (sName === mName || mAliases.includes(sName))) {
+    score += nameWeight;
+  } else if (sName && (mName.includes(sName) || sName.includes(mName))) {
+    score += nameWeight - 20;
+  }
+
+  if (accWeight > 0 && sAccount && master.account_number) {
+    const cleanScanned = sAccount.replace(/[-\s]/g, "");
+    const cleanMaster = master.account_number.replace(/[-\s]/g, "");
+    const pattern = new RegExp(`^${cleanScanned.replace(/[x*]/gi, ".*")}$`);
+    if (cleanScanned === cleanMaster || pattern.test(cleanMaster)) {
+      score += accWeight;
     }
   }
 
-  const distance = matrix[a.length][b.length];
-  return 1 - distance / Math.max(a.length, b.length);
-}
-
-/**
- * Checks if an account number matches, supporting masked patterns (e.g., 123xxxx890).
- */
-function checkAccountNumberMatch(scanned: string, master: string): boolean {
-  const s = scanned.toLowerCase().replace(/[^a-z0-9]/g, "");
-  const m = master.toLowerCase().replace(/[^a-z0-9]/g, "");
-  
-  if (s === m) return true;
-  
-  // Handle masked patterns (e.g., 123xxxx890 or 123****890)
-  if (s.includes("x") || s.includes("*")) {
-    const pattern = s.replace(/[x*]+/g, ".*");
-    const regex = new RegExp(`^${pattern}$`);
-    return regex.test(m);
+  if (
+    sBank &&
+    (sBank === mBankCode ||
+      normalizeBank(sBank) === normalizeBank(master.bank_code))
+  ) {
+    score += bankWeight;
   }
-  
-  return false;
+
+  return score;
 }
 
 /**
- * Runs the smart matching logic against a list of master accounts.
+ * Slip-to-master-account matcher. Mirrors fixlo-spectre/lib/smartMatcher.js so
+ * the UI "Re-run matching" path produces the same results as the worker.
+ * See ADR 0001.
  */
 export function runSmartMatch(
-  scannedName: string | null,
-  scannedAccount: string | null,
-  scannedBank: string | null,
-  masterAccounts: ProjectAccount[]
+  scanned: ScannedSlip,
+  masterAccounts: ProjectAccount[],
 ): MatchResult {
-  const normScannedName = normalize(scannedName);
-  const normScannedBank = normalize(scannedBank);
-  
-  let bestMatch: ProjectAccount | null = null;
-  let bestScore = 0;
-  const potentialMatches: { id: string; score: number }[] = [];
-
-  for (const account of masterAccounts) {
-    let score = 0;
-    const hasAccountNumber = account.account_number && account.account_number.trim() !== "";
-    
-    // 1. Name Match
-    const normMasterName = normalize(account.account_name);
-    const nameSim = similarity(normScannedName, normMasterName);
-    
-    let aliasSim = 0;
-    if (account.aliases) {
-      const aliasList = account.aliases.split(/[, \n]+/).map(a => normalize(a.trim()));
-      for (const alias of aliasList) {
-        if (alias) {
-          aliasSim = Math.max(aliasSim, similarity(normScannedName, alias));
-        }
-      }
-    }
-    
-    const bestNameSim = Math.max(nameSim, aliasSim);
-    
-    // 2. Bank Match
-    let bankPoints = 0;
-    const maxBankPoints = hasAccountNumber ? 10 : 50;
-    
-    if (normScannedBank) {
-      const normBankCode = normalize(account.bank_code || "");
-      if (normBankCode && normScannedBank === normBankCode) {
-        bankPoints = maxBankPoints;
-      } else if (normScannedBank && normMasterName.includes(normScannedBank)) {
-        bankPoints = maxBankPoints;
-      } else if (normBankCode && (normBankCode.includes(normScannedBank) || normScannedBank.includes(normBankCode))) {
-        bankPoints = maxBankPoints * 0.5; // Partial match fallback
-      }
-    }
-
-    // 3. Weight Application
-    if (hasAccountNumber) {
-      if (scannedAccount && checkAccountNumberMatch(scannedAccount, account.account_number!)) {
-        score += 60;
-      }
-      score += bestNameSim * 30;
-      score += bankPoints;
-    } else {
-      score += bestNameSim * 50;
-      score += bankPoints;
-    }
-
-    if (score > bestScore) {
-      bestScore = score;
-      bestMatch = account;
-    }
-    
-    if (score >= 50) {
-      potentialMatches.push({ id: account.id, score });
-    }
+  if (!masterAccounts || masterAccounts.length === 0) {
+    return { matchedAccountId: null, status: "UNMAPPED", score: 0 };
   }
 
-  // Final outcome rules
-  if (bestScore >= 85 && bestMatch) {
+  const scored = masterAccounts.map((account) => ({
+    account,
+    score: calculateMatchScore(scanned, account),
+  }));
+
+  scored.sort((a, b) => b.score - a.score);
+  const best = scored[0];
+
+  if (best.score >= AUTO_THRESHOLD) {
     return {
-      matchedAccountId: bestMatch.id,
+      matchedAccountId: best.account.id,
       status: "AUTO_MAPPED",
-      score: Math.round(bestScore),
-    };
-  } else if (bestScore >= 50) {
-    return {
-      matchedAccountId: null,
-      possibleMatches: potentialMatches
-        .sort((a, b) => b.score - a.score)
-        .map((m) => m.id),
-      status: "PENDING_REVIEW",
-      score: Math.round(bestScore),
-    };
-  } else {
-    return {
-      matchedAccountId: null,
-      status: "UNMAPPED",
-      score: Math.round(bestScore),
+      score: Math.round(best.score),
     };
   }
+
+  if (best.score >= REVIEW_THRESHOLD) {
+    const possibleMatches = scored
+      .filter((s) => s.score >= REVIEW_THRESHOLD)
+      .map((s) => s.account.id);
+    return {
+      matchedAccountId: null,
+      possibleMatches,
+      status: "PENDING_REVIEW",
+      score: Math.round(best.score),
+    };
+  }
+
+  return {
+    matchedAccountId: null,
+    status: "UNMAPPED",
+    score: Math.round(best.score),
+  };
 }

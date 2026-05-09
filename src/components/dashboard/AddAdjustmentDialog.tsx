@@ -1,7 +1,6 @@
 "use client";
 
-import { useState } from "react";
-import { useForm } from "react-hook-form";
+import { useEffect, useState } from "react";
 import { format } from "date-fns";
 import { th } from "date-fns/locale";
 import { CalendarIcon, Loader2, PlusCircle } from "lucide-react";
@@ -31,9 +30,10 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover";
 import { addManualAdjustment } from "@/actions/reconciliation";
-import { MASTER_ACCOUNTS } from "@/lib/accountMatcher";
+import { getProjectAccounts } from "@/actions/dashboard";
+import type { ProjectAccount } from "@/types/dashboard";
 import { cn } from "@/lib/utils";
-import { toast } from "sonner"; // Assuming sonner is used for toasts, standard with shadcn
+import { toast } from "sonner";
 
 interface AddAdjustmentDialogProps {
   projectId: string;
@@ -42,11 +42,23 @@ interface AddAdjustmentDialogProps {
 export function AddAdjustmentDialog({ projectId }: AddAdjustmentDialogProps) {
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [accounts, setAccounts] = useState<ProjectAccount[]>([]);
 
   const [date, setDate] = useState<Date>(new Date());
   const [account, setAccount] = useState<string>("");
   const [amount, setAmount] = useState<string>("");
   const [reason, setReason] = useState<string>("");
+
+  useEffect(() => {
+    if (!open) return;
+    let cancelled = false;
+    getProjectAccounts(projectId).then((rows) => {
+      if (!cancelled) setAccounts(rows);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [open, projectId]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -142,9 +154,9 @@ export function AddAdjustmentDialog({ projectId }: AddAdjustmentDialogProps) {
                   <SelectValue placeholder="เลือกบัญชี..." />
                 </SelectTrigger>
                 <SelectContent>
-                  {MASTER_ACCOUNTS.map((acc) => (
-                    <SelectItem key={acc} value={acc}>
-                      {acc}
+                  {accounts.map((acc) => (
+                    <SelectItem key={acc.id} value={acc.id}>
+                      {acc.account_name}
                     </SelectItem>
                   ))}
                 </SelectContent>

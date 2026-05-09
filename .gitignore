@@ -39,3 +39,10 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# DB dumps (contain PII — sender/receiver names, account numbers, discord ids)
+spectre-*-backup
+*.sql.bak
+
+# editor (per-user)
+.vscode/

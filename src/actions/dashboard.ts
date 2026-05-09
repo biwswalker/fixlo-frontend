@@ -630,9 +630,11 @@ export async function saveTransactionOcrResult(input: OcrResultInput) {
 
     // 2. Run Smart Match
     const match = runSmartMatch(
-      input.sender_name,
-      input.sender_account,
-      input.sender_bank,
+      {
+        name: input.sender_name,
+        account: input.sender_account,
+        bank: input.sender_bank,
+      },
       accounts,
     );
 
@@ -836,9 +838,11 @@ export async function batchReRunSmartMatch(projectId: string) {
     let updateCount = 0;
     for (const txn of transactions) {
       const match = runSmartMatch(
-        txn.sender_name,
-        txn.sender_acc_num,
-        txn.sender_bank,
+        {
+          name: txn.sender_name,
+          account: txn.sender_acc_num,
+          bank: txn.sender_bank,
+        },
         accounts,
       );
 
