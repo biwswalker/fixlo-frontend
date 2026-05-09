@@ -1,0 +1,212 @@
+{
+  "main": {
+    "id": "af7e90e2f10381f3",
+    "type": "split",
+    "children": [
+      {
+        "id": "550553f02d1496c6",
+        "type": "tabs",
+        "children": [
+          {
+            "id": "69e7fafc74d220c5",
+            "type": "leaf",
+            "state": {
+              "type": "markdown",
+              "state": {
+                "file": "docs/db/tables/users.md",
+                "mode": "source",
+                "source": false
+              },
+              "icon": "lucide-file",
+              "title": "users"
+            }
+          }
+        ]
+      }
+    ],
+    "direction": "vertical"
+  },
+  "left": {
+    "id": "a4cede2dcb25af88",
+    "type": "split",
+    "children": [
+      {
+        "id": "986a77f9bf9f226e",
+        "type": "tabs",
+        "children": [
+          {
+            "id": "da5ef5fe05b5c976",
+            "type": "leaf",
+            "state": {
+              "type": "file-explorer",
+              "state": {
+                "sortOrder": "alphabetical",
+                "autoReveal": false
+              },
+              "icon": "lucide-folder-closed",
+              "title": "Files"
+            }
+          },
+          {
+            "id": "28495d3b0bf4fb49",
+            "type": "leaf",
+            "state": {
+              "type": "search",
+              "state": {
+                "query": "",
+                "matchingCase": false,
+                "explainSearch": false,
+                "collapseAll": false,
+                "extraContext": false,
+                "sortOrder": "alphabetical"
+              },
+              "icon": "lucide-search",
+              "title": "Search"
+            }
+          },
+          {
+            "id": "6bbcbdd08fa9b0a0",
+            "type": "leaf",
+            "state": {
+              "type": "bookmarks",
+              "state": {},
+              "icon": "lucide-bookmark",
+              "title": "Bookmarks"
+            }
+          }
+        ]
+      }
+    ],
+    "direction": "horizontal",
+    "width": 300
+  },
+  "right": {
+    "id": "f7bde2a3c73ef98b",
+    "type": "split",
+    "children": [
+      {
+        "id": "9988712752bd31b3",
+        "type": "tabs",
+        "children": [
+          {
+            "id": "cec67e19e48bf163",
+            "type": "leaf",
+            "state": {
+              "type": "backlink",
+              "state": {
+                "file": "docs/db/tables/users.md",
+                "collapseAll": false,
+                "extraContext": false,
+                "sortOrder": "alphabetical",
+                "showSearch": false,
+                "searchQuery": "",
+                "backlinkCollapsed": false,
+                "unlinkedCollapsed": true
+              },
+              "icon": "links-coming-in",
+              "title": "Backlinks for users"
+            }
+          },
+          {
+            "id": "440065967114b017",
+            "type": "leaf",
+            "state": {
+              "type": "outgoing-link",
+              "state": {
+                "file": "docs/db/tables/users.md",
+                "linksCollapsed": false,
+                "unlinkedCollapsed": true
+              },
+              "icon": "links-going-out",
+              "title": "Outgoing links from users"
+            }
+          },
+          {
+            "id": "6f609a7360925865",
+            "type": "leaf",
+            "state": {
+              "type": "tag",
+              "state": {
+                "sortOrder": "frequency",
+                "useHierarchy": true,
+                "showSearch": false,
+                "searchQuery": ""
+              },
+              "icon": "lucide-tags",
+              "title": "Tags"
+            }
+          },
+          {
+            "id": "9e2b26f137c9378f",
+            "type": "leaf",
+            "state": {
+              "type": "all-properties",
+              "state": {
+                "sortOrder": "frequency",
+                "showSearch": false,
+                "searchQuery": ""
+              },
+              "icon": "lucide-archive",
+              "title": "All properties"
+            }
+          },
+          {
+            "id": "41b71a46cd059a9f",
+            "type": "leaf",
+            "state": {
+              "type": "outline",
+              "state": {
+                "file": "docs/db/tables/users.md",
+                "followCursor": false,
+                "showSearch": false,
+                "searchQuery": ""
+              },
+              "icon": "lucide-list",
+              "title": "Outline of users"
+            }
+          }
+        ]
+      }
+    ],
+    "direction": "horizontal",
+    "width": 300,
+    "collapsed": true
+  },
+  "left-ribbon": {
+    "hiddenItems": {
+      "switcher:Open quick switcher": false,
+      "graph:Open graph view": false,
+      "canvas:Create new canvas": false,
+      "daily-notes:Open today's daily note": false,
+      "templates:Insert template": false,
+      "command-palette:Open command palette": false,
+      "bases:Create new base": false
+    }
+  },
+  "active": "69e7fafc74d220c5",
+  "lastOpenFiles": [
+    "CONTEXT.md",
+    "docs/db/tables/report_summary_daily.md",
+    "docs/db/tables/report_manual_credit_out.md",
+    "docs/db/tables/report_manual_credit_in.md",
+    "docs/db/tables/report_manual_bonus_out.md",
+    "docs/db/tables/report_manual_bonus_in.md",
+    "docs/db/tables/report_withdrawals.md",
+    "docs/db/tables/report_deposits.md",
+    "docs/db/tables/manual_adjustments.md",
+    "docs/db/tables/daily_balances.md",
+    "docs/db/tables/transactions.md",
+    "docs/db/tables/raw_uploads.md",
+    "docs/db/tables/project_accounts.md",
+    "docs/db/tables/projects.md",
+    "docs/db/tables/users.md",
+    "docs/db/MOC.md",
+    "docs/db/tables",
+    "docs/db",
+    "CLAUDE.md",
+    "public/vercel.svg",
+    "public/next.svg",
+    "public/globe.svg",
+    "public/file.svg"
+  ]
+}
