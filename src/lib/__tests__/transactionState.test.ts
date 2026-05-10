@@ -25,9 +25,9 @@ describe("nextState — staff can confirm PENDING_REVIEW", () => {
     expect(result).toEqual({ next: "MANUAL_MAPPED" });
   });
 
-  it("staff cannot confirm UNMAPPED", () => {
+  it("staff can confirm UNMAPPED → MANUAL_MAPPED", () => {
     const result = nextState({ current: "UNMAPPED", action: "confirm_mapping", actorRole: "staff" });
-    expect(result).toEqual({ error: "invalid-transition" });
+    expect(result).toEqual({ next: "MANUAL_MAPPED" });
   });
 });
 

@@ -345,13 +345,14 @@ export async function getDailyChartData(
       ORDER BY trans_date::date ASC
     `;
 
+    // Mirror totalWithdrawals KPI: report_summary_daily sums all withdrawal types per day.
     const withdrawalsSql = `
-      SELECT trans_date::date::text AS day_date, COALESCE(SUM(amount), 0) AS total
-      FROM report_withdrawals
-      WHERE status = 'สำเร็จ'
-        AND trans_date::date BETWEEN $1 AND $2
-      GROUP BY trans_date::date
-      ORDER BY trans_date::date ASC
+      SELECT report_date::date::text AS day_date,
+             COALESCE(SUM(withdraw + manual_out + redeem + affiliate + cashback), 0) AS total
+      FROM report_summary_daily
+      WHERE report_date::date BETWEEN $1 AND $2
+      GROUP BY report_date::date
+      ORDER BY report_date::date ASC
     `;
 
     logger.debug("getDailyChartData", `Fetching chart data from report_deposits/report_withdrawals`, { projectId, startDate, endDate });
@@ -447,17 +448,18 @@ export async function getProjectAccounts(
     const isAll = projectId === "all";
     const project = isAll ? null : await resolveProject(projectId);
 
-    // Consistent with other queries, we match by project name/slug
-    const projectName = project?.name || projectId;
+    // project_accounts.project_id stores the integer projects.id as a string (e.g. "1"),
+    // NOT the project name — use exact match on the resolved numeric ID.
+    const projectNumericId = project ? String(project.id) : null;
 
     const sql = `
       SELECT id, project_id, account_name, account_number, bank_code, aliases, created_at
       FROM project_accounts
-      WHERE ${nameOrAll(1, 2)}
+      WHERE (project_id = $1 OR $2 = true)
       ORDER BY account_name ASC
     `;
 
-    const result = await query(sql, [projectName, isAll]);
+    const result = await query(sql, [projectNumericId, isAll]);
 
     return result.rows.map((row) => ({
       ...row,

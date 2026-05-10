@@ -35,7 +35,7 @@ export function nextState(input: NextStateInput): NextStateResult {
 
   if (action === "confirm_mapping") {
     if (!hasPermission(actorRole, "approve_transactions")) return { error: "forbidden" };
-    if (current !== "PENDING_REVIEW") return { error: "invalid-transition" };
+    if (current !== "PENDING_REVIEW" && current !== "UNMAPPED") return { error: "invalid-transition" };
     return { next: "MANUAL_MAPPED" };
   }
 

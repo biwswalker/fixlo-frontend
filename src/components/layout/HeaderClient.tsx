@@ -1,7 +1,7 @@
 "use client";
 
 import { cn } from "@/lib/utils";
-import { useRouter, useParams, useSearchParams } from "next/navigation";
+import { useRouter, useParams, usePathname, useSearchParams } from "next/navigation";
 import { useSession, signOut } from "next-auth/react";
 import {
   Bell,
@@ -43,6 +43,7 @@ export default function HeaderClient({
   const { data: session } = useSession();
   const router = useRouter();
   const params = useParams();
+  const pathname = usePathname();
   const searchParams = useSearchParams();
   const currentProject = (params?.projectId as string) || "all";
 
@@ -64,8 +65,13 @@ export default function HeaderClient({
         <Select
           value={currentProject}
           onValueChange={(val) => {
+            // Preserve current sub-path (e.g. /match, /reconciliation) when switching project.
+            // pathname: /dashboard/juno168/match -> replace segment[2] with new projectId
+            const segments = pathname.split("/");
+            segments[2] = val ?? "all";
+            const newPath = segments.join("/");
             const newParams = new URLSearchParams(searchParams.toString());
-            router.push(`/dashboard/${val}?${newParams.toString()}`);
+            router.push(`${newPath}?${newParams.toString()}`);
           }}
         >
           <SelectTrigger className="w-[180px] h-10 border-transparent bg-gray-50 hover:bg-gray-100 transition-colors shadow-none rounded-2xl focus:ring-2 focus:ring-blue-100">

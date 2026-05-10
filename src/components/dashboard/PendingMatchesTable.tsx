@@ -225,6 +225,9 @@ export function PendingMatchesTable({
               </TableHead>
               <TableHead className="text-gray-500 font-medium">RefId</TableHead>
               <TableHead className="text-gray-500 font-medium">
+                วันที่โอน
+              </TableHead>
+              <TableHead className="text-gray-500 font-medium">
                 จำนวนเงิน
               </TableHead>
               <TableHead className="text-gray-500 font-medium text-center">
@@ -245,7 +248,7 @@ export function PendingMatchesTable({
             {transactions.length === 0 ? (
               <TableRow>
                 <TableCell
-                  colSpan={9}
+                  colSpan={10}
                   className="text-center py-12 text-gray-400 font-medium"
                 >
                   ไม่มีรายการรอตรวจสอบ
@@ -273,6 +276,15 @@ export function PendingMatchesTable({
                     </TableCell>
                     <TableCell className="font-mono text-[10px] text-gray-400">
                       {txn.ref_id || String(txn.id).slice(-8)}
+                    </TableCell>
+                    <TableCell className="text-xs text-gray-500 whitespace-nowrap">
+                      {txn.transfer_at
+                        ? new Date(txn.transfer_at).toLocaleString("th-TH", {
+                            day: "2-digit",
+                            month: "2-digit",
+                            year: "2-digit"
+                          })
+                        : "-"}
                     </TableCell>
                     <TableCell className="font-bold text-blue-600">
                       {formatBaht(txn.ai_amount)}
