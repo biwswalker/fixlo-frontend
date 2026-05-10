@@ -10,6 +10,10 @@ import { hasPermission } from "@/lib/rbac";
 import { computeKpi } from "@/lib/reconciliationFormula";
 import { nextState } from "@/lib/transactionState";
 import { buildTransferAt } from "@/lib/transferAt";
+import { resolveProject } from "@/lib/projects";
+import { aggregateBreakdown } from "@/lib/accountFormatters";
+import { nameOrAll } from "@/lib/projectFilter";
+import { mergeDailyChartRows } from "@/lib/cashflowChart";
 import { ProjectAccount } from "./dashboard";
 import { TransactionRecord } from "./dashboard";
 import { DashboardSummary } from "./dashboard";
@@ -31,83 +35,7 @@ function getDateRange(from?: string, to?: string) {
   return { startDate, endDate };
 }
 
-/**
- * Aggregates results by formatted account name and sorts by total DESC.
- */
-function aggregateBreakdown(rows: any[]): AccountBreakdown[] {
-  const map = new Map<string, number>();
 
-  rows.forEach((row) => {
-    const rawAccount = row.account || "Unknown";
-    const formattedName = formatAccountName(rawAccount);
-    const amount = Number(row.total || 0);
-
-    map.set(formattedName, (map.get(formattedName) || 0) + amount);
-  });
-
-  return Array.from(map.entries())
-    .map(([account, total]) => ({ account, total }))
-    .sort((a, b) => b.total - a.total);
-}
-
-/**
- * Formats account names from "ID | Name" to "Name (ID)".
- */
-function formatAccountName(webAcc: string): string {
-  const trimmed = webAcc.trim();
-
-  // Pattern 1: Pipe (ID | Name) -> Name (ID)
-  if (trimmed.includes("|")) {
-    const [id, name] = trimmed.split("|").map((s) => s.trim());
-    return name ? `${name} (${id})` : id;
-  }
-
-  // Pattern 3: Numeric only -> Default Bank (Account)
-  if (/^\d+$/.test(trimmed)) {
-    return `ธนาคารไทยพาณิชย์ (${trimmed})`;
-  }
-
-  // Pattern 2: Combined (DigitsText) -> Text (Digits)
-  const combinedMatch = trimmed.match(/^(\d+)(.+)$/);
-  if (combinedMatch) {
-    const [, id, name] = combinedMatch;
-    return `${name.trim()} (${id.trim()})`;
-  }
-
-  return trimmed;
-}
-
-/**
- * Resolves a project identifier (from the URL) to its UUID AND canonical name.
- */
-async function getProjectIdentifiers(
-  projectName: string,
-): Promise<{ id: string; name: string } | null> {
-  if (projectName === "all" || !projectName) return null;
-  try {
-    logger.debug(
-      "getProjectIdentifiers",
-      `Resolving identifiers for projectName: ${projectName}`,
-    );
-    const result = await query(
-      "SELECT id, project_name FROM projects WHERE project_name ILIKE '%' || $1 || '%' AND status = 'ACTIVE' LIMIT 1",
-      [projectName],
-    );
-    logger.debug("getProjectIdentifiers", "Resolve result", result.rows[0]);
-    if (!result.rows[0]) return null;
-    return {
-      id: result.rows[0].id,
-      name: result.rows[0].project_name,
-    };
-  } catch (error) {
-    logger.error(
-      "getProjectIdentifiers",
-      `Failed to resolve identifiers for project: ${projectName}`,
-      error,
-    );
-    return null;
-  }
-}
 
 /**
  * Fetches all active projects for the switcher.
@@ -215,7 +143,7 @@ export async function getDashboardSummary(
     const { startDate, endDate } = getDateRange(from, to);
 
     // Resolve identifiers
-    const project = isAll ? null : await getProjectIdentifiers(projectId);
+    const project = isAll ? null : await resolveProject(projectId);
     if (!isAll && !project) {
       return {
         totalDeposits: 0,
@@ -250,7 +178,7 @@ export async function getDashboardSummary(
         COALESCE(SUM(affiliate), 0) as affiliate,
         COALESCE(SUM(cashback), 0) as cashback
       FROM report_summary_daily
-      WHERE (project_id ILIKE '%' || $1 || '%' OR $2 = true)
+      WHERE ${nameOrAll(1, 2)}
       AND report_date::date BETWEEN $3 AND $4
     `;
 
@@ -266,11 +194,11 @@ export async function getDashboardSummary(
         ) as latest_balances
       `
       : `
-        SELECT COALESCE(balance, 0) as latest_balance 
-        FROM report_summary_daily 
-        WHERE project_id ILIKE '%' || $1 || '%' 
+        SELECT COALESCE(balance, 0) as latest_balance
+        FROM report_summary_daily
+        WHERE project_id ILIKE '%' || $1 || '%'
         AND report_date <= $2
-        ORDER BY report_date DESC 
+        ORDER BY report_date DESC
         LIMIT 1
       `;
 
@@ -408,35 +336,7 @@ export async function getDailyChartData(
       query(withdrawalsSql, [startDate, endDate]),
     ]);
 
-    const depositsByDay = new Map<string, number>();
-    for (const row of depositsRes.rows) {
-      depositsByDay.set(row.day_date, Number(row.total));
-    }
-
-    const withdrawalsByDay = new Map<string, number>();
-    for (const row of withdrawalsRes.rows) {
-      withdrawalsByDay.set(row.day_date, Number(row.total));
-    }
-
-    // Collect all dates from both sets
-    const allDates = Array.from(
-      new Set([...depositsByDay.keys(), ...withdrawalsByDay.keys()]),
-    ).sort();
-
-    return allDates.map((date) => {
-      const deposits = depositsByDay.get(date) ?? 0;
-      const withdrawals = withdrawalsByDay.get(date) ?? 0;
-      const d = new Date(date);
-      return {
-        day: isNaN(d.getTime())
-          ? "N/A"
-          : new Intl.DateTimeFormat("en-US", { weekday: "short" }).format(d),
-        deposits,
-        withdrawals,
-        netDiff: deposits - withdrawals,
-        date,
-      };
-    });
+    return mergeDailyChartRows(depositsRes.rows, withdrawalsRes.rows);
   } catch (error) {
     logger.error(
       "getDailyChartData",
@@ -520,7 +420,7 @@ export async function getProjectAccounts(
 ): Promise<ProjectAccount[]> {
   try {
     const isAll = projectId === "all";
-    const project = isAll ? null : await getProjectIdentifiers(projectId);
+    const project = isAll ? null : await resolveProject(projectId);
 
     // Consistent with other queries, we match by project name/slug
     const projectName = project?.name || projectId;
@@ -528,7 +428,7 @@ export async function getProjectAccounts(
     const sql = `
       SELECT id, project_id, account_name, account_number, bank_code, aliases, created_at
       FROM project_accounts
-      WHERE (project_id ILIKE '%' || $1 || '%' OR $2 = true)
+      WHERE ${nameOrAll(1, 2)}
       ORDER BY account_name ASC
     `;
 
@@ -649,7 +549,7 @@ export async function saveTransactionOcrResult(input: OcrResultInput) {
 export async function getPendingMatchCount(projectId: string): Promise<number> {
   try {
     const isAll = projectId === "all";
-    const project = isAll ? null : await getProjectIdentifiers(projectId);
+    const project = isAll ? null : await resolveProject(projectId);
     const res = await query(
       `SELECT COUNT(*) as total FROM transactions
        WHERE (source_project_id = $1 OR $2 = true)
@@ -675,7 +575,7 @@ export async function getPendingMatches(
 }> {
   try {
     const isAll = projectId === "all";
-    const project = isAll ? null : await getProjectIdentifiers(projectId);
+    const project = isAll ? null : await resolveProject(projectId);
 
     const OFFSET = (page - 1) * limit;
     const searchFilter = search ? `%${search}%` : null;
@@ -779,7 +679,7 @@ export async function confirmTransactionMapping(
 export async function batchReRunSmartMatch(projectId: string) {
   try {
     const isAll = projectId === "all";
-    const project = isAll ? null : await getProjectIdentifiers(projectId);
+    const project = isAll ? null : await resolveProject(projectId);
     const projectIdParam = project?.id || null;
 
     // 1. Fetch project accounts
@@ -877,7 +777,7 @@ export async function getFailedSlips(
 
   try {
     const isAll = projectId === "all";
-    const project = isAll ? null : await getProjectIdentifiers(projectId);
+    const project = isAll ? null : await resolveProject(projectId);
     const projectId_ = project?.id || null;
     const OFFSET = (page - 1) * limit;
 

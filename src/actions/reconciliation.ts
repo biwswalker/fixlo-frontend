@@ -2,16 +2,12 @@
 
 import { query } from "@/lib/db";
 import { logger } from "@/lib/logger";
-import {
-  format,
-  startOfWeek,
-  endOfWeek,
-  startOfMonth,
-  endOfMonth,
-} from "date-fns";
+import { format } from "date-fns";
 import { getServerAuthSession } from "@/lib/auth";
 import { hasPermission } from "@/lib/rbac";
 import { revalidatePath } from "next/cache";
+import { resolveProject } from "@/lib/projects";
+import { resolvePeriodToDateRange } from "@/lib/periodUtils";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -52,61 +48,8 @@ export interface ReconciliationReport {
 // Internal helpers
 // ---------------------------------------------------------------------------
 
-/**
- * Resolves a project URL identifier (e.g. 'juno168') to its UUID and canonical
- * name. Returns null for the 'all' aggregate view.
- */
-async function resolveProject(
-  projectId: string,
-): Promise<{ id: string; name: string } | null> {
-  if (projectId === "all" || !projectId) return null;
-  try {
-    const result = await query(
-      `SELECT id, project_name
-       FROM projects
-       WHERE project_name ILIKE '%' || $1 || '%'
-         AND status = 'ACTIVE'
-       LIMIT 1`,
-      [projectId],
-    );
-    if (!result.rows[0]) return null;
-    return { id: result.rows[0].id, name: result.rows[0].project_name };
-  } catch (err) {
-    logger.error(
-      "reconciliation.resolveProject",
-      `Failed to resolve project: ${projectId}`,
-      err,
-    );
-    return null;
-  }
-}
 
-/**
- * Computes the inclusive [startDate, endDate] strings for the requested period.
- */
-function resolvePeriod(
-  period: "day" | "week" | "month",
-  date: Date,
-): { startDate: string; endDate: string } {
-  switch (period) {
-    case "day":
-      return {
-        startDate: format(date, "yyyy-MM-dd"),
-        endDate: format(date, "yyyy-MM-dd"),
-      };
-    case "week":
-      return {
-        // ISO week: Monday → Sunday
-        startDate: format(startOfWeek(date, { weekStartsOn: 1 }), "yyyy-MM-dd"),
-        endDate: format(endOfWeek(date, { weekStartsOn: 1 }), "yyyy-MM-dd"),
-      };
-    case "month":
-      return {
-        startDate: format(startOfMonth(date), "yyyy-MM-dd"),
-        endDate: format(endOfMonth(date), "yyyy-MM-dd"),
-      };
-  }
-}
+
 
 /** Empty report used as a safe fallback on errors or unresolvable projects. */
 function emptyReport(startDate: string, endDate: string): ReconciliationReport {
@@ -143,7 +86,8 @@ export async function getReconciliationReport(
   period: "day" | "week" | "month",
   date: Date,
 ): Promise<ReconciliationReport> {
-  const { startDate, endDate } = resolvePeriod(period, date);
+  const dateStr = format(date, "yyyy-MM-dd");
+  const { from: startDate, to: endDate } = resolvePeriodToDateRange(period, dateStr);
 
   logger.info("getReconciliationReport", "Starting reconciliation report", {
     projectId,
