@@ -853,6 +853,154 @@ export async function getFailedSlips(
   }
 }
 
+export type { DailyBalanceRecord } from "@/types/dashboard";
+
+// ---------------------------------------------------------------------------
+// Daily balance match actions (#41)
+// ---------------------------------------------------------------------------
+
+export async function getPendingBalanceMatches(
+  projectId: string,
+  page: number = 1,
+  limit: number = 50,
+  search?: string,
+): Promise<{
+  data: import("@/types/dashboard").DailyBalanceRecord[];
+  totalItems: number;
+  totalPages: number;
+  currentPage: number;
+}> {
+  try {
+    const isAll = projectId === "all";
+    const project = isAll ? null : await resolveProject(projectId);
+    const OFFSET = (page - 1) * limit;
+    const searchFilter = search ? `%${search}%` : null;
+
+    const sql = `
+      SELECT db.*
+      FROM daily_balances db
+      LEFT JOIN project_accounts pa ON db.project_account_id = pa.id
+      WHERE (pa.project_id = $1 OR $2 = true OR (db.project_name IS NOT NULL AND $2 = false AND pa.id IS NULL))
+        AND db.matching_status IN ('PENDING_REVIEW', 'UNMATCHED')
+        AND ($5::text IS NULL OR db.account_name ILIKE $5 OR db.platform ILIKE $5)
+      ORDER BY db.date DESC, db.created_at DESC
+      LIMIT $3 OFFSET $4
+    `;
+
+    const countSql = `
+      SELECT COUNT(*) as total
+      FROM daily_balances db
+      LEFT JOIN project_accounts pa ON db.project_account_id = pa.id
+      WHERE (pa.project_id = $1 OR $2 = true OR (db.project_name IS NOT NULL AND $2 = false AND pa.id IS NULL))
+        AND db.matching_status IN ('PENDING_REVIEW', 'UNMATCHED')
+        AND ($3::text IS NULL OR db.account_name ILIKE $3 OR db.platform ILIKE $3)
+    `;
+
+    const [result, countRes] = await Promise.all([
+      query(sql, [project?.id || null, isAll, limit, OFFSET, searchFilter]),
+      query(countSql, [project?.id || null, isAll, searchFilter]),
+    ]);
+
+    const totalItems = Number(countRes.rows[0]?.total || 0);
+    const totalPages = Math.ceil(totalItems / limit);
+
+    const data = result.rows.map((row) => ({
+      ...row,
+      id: Number(row.id),
+      balance_amount: row.balance_amount !== null ? Number(row.balance_amount) : null,
+      created_at: row.created_at?.toISOString() || "",
+      date: row.date?.toISOString?.()?.slice(0, 10) ?? String(row.date),
+      match_breakdown: row.match_breakdown ?? null,
+    }));
+
+    return { data, totalItems, totalPages, currentPage: page };
+  } catch (error) {
+    logger.error("getPendingBalanceMatches", "Failed to fetch pending balance matches", error);
+    return { data: [], totalItems: 0, totalPages: 0, currentPage: page };
+  }
+}
+
+export async function confirmBalanceMapping(
+  dailyBalanceId: number,
+  projectAccountId: string,
+): Promise<{ success: boolean; error?: string }> {
+  const session = await getServerAuthSession();
+  if (!session || !hasPermission(session.user.role, "approve_transactions")) {
+    return { success: false, error: "Unauthorized" };
+  }
+
+  try {
+    await query(
+      `UPDATE daily_balances
+       SET project_account_id = $1,
+           matching_status    = 'MANUAL_MAPPED',
+           matched_by         = $2
+       WHERE id = $3`,
+      [projectAccountId, session.user.username ?? session.user.name ?? "admin", dailyBalanceId],
+    );
+    revalidatePath("/dashboard/[projectId]/match", "page");
+    return { success: true };
+  } catch (error) {
+    logger.error("confirmBalanceMapping", "Failed to confirm balance mapping", error);
+    return { success: false, error: "Failed to confirm mapping" };
+  }
+}
+
+export async function batchReRunBalanceMatch(projectId: string) {
+  const session = await getServerAuthSession();
+  if (!session || !hasPermission(session.user.role, "approve_transactions")) {
+    return { success: false, error: "Unauthorized" };
+  }
+
+  try {
+    const isAll = projectId === "all";
+    const project = isAll ? null : await resolveProject(projectId);
+    const accounts = await getProjectAccounts(projectId);
+
+    const sql = `
+      SELECT db.id, db.account_name, db.platform
+      FROM daily_balances db
+      LEFT JOIN project_accounts pa ON pa.project_id = $1
+      WHERE ($2 = true OR pa.project_id = $1)
+        AND db.matching_status IN ('UNMATCHED', 'PENDING_REVIEW')
+    `;
+    const result = await query(sql, [project?.id || null, isAll]);
+    const rows = result.rows;
+
+    if (rows.length === 0) return { success: true, count: 0 };
+
+    const { runBalanceMatch } = await import("@/lib/balanceMatcher");
+    let updateCount = 0;
+
+    for (const row of rows) {
+      const match = runBalanceMatch(
+        { account_name: row.account_name, platform: row.platform },
+        accounts,
+      );
+      await query(
+        `UPDATE daily_balances
+         SET project_account_id = $1,
+             matching_status    = $2,
+             match_breakdown    = $3
+         WHERE id = $4`,
+        [
+          match.matchedAccountId,
+          match.status,
+          JSON.stringify(match.breakdown),
+          row.id,
+        ],
+      );
+      updateCount++;
+    }
+
+    revalidatePath("/dashboard/[projectId]/match", "page");
+    return { success: true, count: updateCount };
+  } catch (error) {
+    logger.error("batchReRunBalanceMatch", "Failed to re-run balance matching", error);
+    return { success: false, error: "Failed to re-run balance matching" };
+  }
+}
+
 /**
  * Marks a raw_upload as PROCESSED after successful manual entry.
  */

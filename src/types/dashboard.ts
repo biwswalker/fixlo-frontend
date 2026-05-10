@@ -60,3 +60,19 @@ export interface ProjectAccount {
   aliases?: string;
   created_at: string;
 }
+
+export interface DailyBalanceRecord {
+  id: number;
+  date: string;
+  image_path: string;
+  project_name: string | null;
+  balance_amount: number | null;
+  account_name: string | null;
+  platform: string | null;
+  discord_message_id: string | null;
+  created_at: string;
+  project_account_id: string | null;
+  matching_status: "UNMATCHED" | "PENDING_REVIEW" | "AUTO_MAPPED" | "MANUAL_MAPPED";
+  matched_by: string | null;
+  match_breakdown: import("@/lib/balanceMatcher").BalanceMatchBreakdown | null;
+}

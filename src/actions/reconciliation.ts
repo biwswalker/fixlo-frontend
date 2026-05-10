@@ -24,6 +24,8 @@ export interface AccountLevelStat {
   effectiveOutflow: number;
   /** Number of system transactions */
   count: number;
+  /** Most recent matched daily_balance for this account within the period; null = no snapshot */
+  closingBalance: number | null;
 }
 
 export interface ReconciliationReport {
@@ -214,6 +216,23 @@ export async function getReconciliationReport(
         AND (ma.project_id = $3 OR $4 = true)
     `;
 
+    // ------------------------------------------------------------------
+    // 7. Per-account closing balances from matched daily_balances
+    //    Uses most recent row (by date) per account within period.
+    // ------------------------------------------------------------------
+    const closingBalSql = `
+      SELECT DISTINCT ON (db.project_account_id)
+        pa.account_name,
+        db.project_account_id,
+        db.balance_amount AS closing_balance
+      FROM daily_balances db
+      JOIN project_accounts pa ON pa.id = db.project_account_id
+      WHERE db.matching_status IN ('AUTO_MAPPED', 'MANUAL_MAPPED')
+        AND db.date <= $1
+        AND (pa.project_id = $2 OR $3 = true)
+      ORDER BY db.project_account_id, db.date DESC
+    `;
+
     logger.debug("getReconciliationReport", "Executing parallel DB queries");
 
     const [
@@ -223,6 +242,7 @@ export async function getReconciliationReport(
       rawTxRes,
       startBalRes,
       extAdjRes,
+      closingBalRes,
     ] = await Promise.all([
       query(inflowSql, [startDate, endDate]),
       query(outflowSql, [startDate, endDate, projectUuid, isAll]),
@@ -230,14 +250,15 @@ export async function getReconciliationReport(
       query(rawTxSql, [startDate, endDate, projectUuid, isAll]),
       query(startBalSql, isAll ? [startDate] : [projectName, startDate]),
       query(adjustmentsSql, [startDate, endDate, projectUuid, isAll]),
+      query(closingBalSql, [endDate, projectUuid, isAll]),
     ]);
 
     // ------------------------------------------------------------------
-    // 7. Aggregate outflow and adjustments by matched Master Account
+    // 8. Aggregate outflow and adjustments by matched Master Account
     // ------------------------------------------------------------------
     const accountMap = new Map<
       string,
-      { systemOutflow: number; adjustments: number; count: number }
+      { systemOutflow: number; adjustments: number; count: number; closingBalance: number | null }
     >();
 
     for (const row of rawTxRes.rows) {
@@ -253,6 +274,7 @@ export async function getReconciliationReport(
           systemOutflow: amount,
           adjustments: 0,
           count: 1,
+          closingBalance: null,
         });
       }
     }
@@ -268,6 +290,25 @@ export async function getReconciliationReport(
           systemOutflow: 0,
           adjustments: amount,
           count: 0,
+          closingBalance: null,
+        });
+      }
+    }
+
+    // Merge closing balances from matched daily_balances.
+    // Accounts with a snapshot but no transactions are added with systemOutflow = 0.
+    for (const row of closingBalRes.rows) {
+      const acc: string = row.account_name || "Unmapped";
+      const closingBalance = row.closing_balance !== null ? Number(row.closing_balance) : null;
+      const existing = accountMap.get(acc);
+      if (existing) {
+        existing.closingBalance = closingBalance;
+      } else {
+        accountMap.set(acc, {
+          systemOutflow: 0,
+          adjustments: 0,
+          count: 0,
+          closingBalance,
         });
       }
     }
@@ -275,12 +316,13 @@ export async function getReconciliationReport(
     const accountLevelStats: AccountLevelStat[] = Array.from(
       accountMap.entries(),
     )
-      .map(([account, { systemOutflow, adjustments, count }]) => ({
+      .map(([account, { systemOutflow, adjustments, count, closingBalance }]) => ({
         account,
         systemOutflow,
         adjustments,
         effectiveOutflow: systemOutflow - adjustments,
         count,
+        closingBalance,
       }))
       .sort((a, b) => b.effectiveOutflow - a.effectiveOutflow);
 

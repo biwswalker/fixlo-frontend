@@ -25,10 +25,19 @@ aliases: [daily balance]
 | `discord_message_id` | text | NULL | — | |
 | `platform` | text | NULL | — | platform อะไร? |
 
+## New columns (migration pending)
+
+| Column | Type | Null | Note |
+|---|---|---|---|
+| `project_account_id` | uuid | NULL | FK → `project_accounts.id` — set by spectre matcher |
+| `matching_status` | text | NOT NULL default `'UNMATCHED'` | `UNMATCHED / PENDING_REVIEW / AUTO_MAPPED / MANUAL_MAPPED` |
+| `matched_by` | text | NULL | username ของ admin ที่ match manual |
+| `match_breakdown` | jsonb | NULL | top-3 candidates + component scores (nameMatched, bankMatched) — เหมือน [[transactions]].match_breakdown |
+
 ## Constraints
 
 - PK: `id`
-- ไม่มี FK
+- FK: `project_account_id` → `project_accounts.id` (nullable)
 
 ## Sequence
 
@@ -49,8 +58,11 @@ Set โดย Gemini AI ใน worker (จาก prompt — ดู [worker.js:15
 
 ⚠️ Case ไม่ normalize (`Apay` vs `BBL` vs `TrueMoney`).
 
+## Dedup constraint (migration pending)
+
+`UNIQUE(date, discord_message_id)` — ป้องกัน staff ส่งภาพเดิมซ้ำใน Discord. เทียบเท่า `ref_id` UNIQUE ใน [[transactions]].
+
 ## ต้อง grill
 
 - อยากบังคับ enum ของ `platform`? Worker.js prompt มี allow-list อยู่แล้ว — เพิ่ม CHECK constraint ใน DB ป้องกัน drift
 - ทำไมใช้ `project_name` text แทน FK? legacy data
-- **1 row = 1 บัญชี ต่อ 1 วัน** (multiple accounts → multiple rows ต่อ date) — แต่ไม่มี UNIQUE constraint บังคับ. ควรเพิ่ม `UNIQUE (date, account_name)`?

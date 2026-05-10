@@ -5,18 +5,22 @@ import { getProjectByName } from "@/actions/dashboard";
 import {
   getPendingMatches,
   getProjectAccounts,
+  getPendingBalanceMatches,
 } from "@/actions/dashboard";
 import { PendingMatchesTable } from "@/components/dashboard/PendingMatchesTable";
+import { PendingBalanceMatchesTable } from "@/components/dashboard/PendingBalanceMatchesTable";
 import { ReRunMatchingButton } from "@/components/dashboard/ReRunMatchingButton";
+import { ReRunBalanceMatchingButton } from "@/components/dashboard/ReRunBalanceMatchingButton";
 import { MatchSearchBar } from "@/components/dashboard/MatchSearchBar";
 import { GitMerge } from "lucide-react";
+import Link from "next/link";
 
 export default async function ManualMatchPage({
   params,
   searchParams,
 }: {
   params: Promise<{ projectId: string }>;
-  searchParams: Promise<{ page?: string; limit?: string; query?: string }>;
+  searchParams: Promise<{ page?: string; limit?: string; query?: string; tab?: string }>;
 }) {
   const session = await getServerAuthSession();
 
@@ -25,7 +29,7 @@ export default async function ManualMatchPage({
   }
 
   const { projectId } = await params;
-  const { page = "1", limit = "50", query } = await searchParams;
+  const { page = "1", limit = "50", query, tab = "slip" } = await searchParams;
 
   const project = await getProjectByName(projectId);
   if (!project && projectId !== "all") {
@@ -35,14 +39,20 @@ export default async function ManualMatchPage({
   const displayTitle =
     project?.project_name || (projectId === "all" ? "ทุกโปรเจกต์" : projectId);
 
-  const pendingMatchesResult = await getPendingMatches(
-    projectId,
-    Number(page),
-    Number(limit),
-    query,
-  );
   const projectAccounts = await getProjectAccounts(projectId);
-  const { data: pendingMatches, totalPages, totalItems } = pendingMatchesResult;
+
+  const isBalanceTab = tab === "balance";
+
+  const [slipResult, balanceResult] = await Promise.all([
+    !isBalanceTab
+      ? getPendingMatches(projectId, Number(page), Number(limit), query)
+      : Promise.resolve({ data: [], totalPages: 0, totalItems: 0, currentPage: 1 }),
+    isBalanceTab
+      ? getPendingBalanceMatches(projectId, Number(page), Number(limit), query)
+      : Promise.resolve({ data: [], totalPages: 0, totalItems: 0, currentPage: 1 }),
+  ]);
+
+  const tabBase = `/dashboard/${projectId}/match`;
 
   return (
     <div className="grid gap-6 animate-in fade-in duration-500">
@@ -60,30 +70,75 @@ export default async function ManualMatchPage({
           <Suspense>
             <MatchSearchBar />
           </Suspense>
-          <ReRunMatchingButton projectId={projectId} />
+          {!isBalanceTab ? (
+            <ReRunMatchingButton projectId={projectId} />
+          ) : (
+            <ReRunBalanceMatchingButton projectId={projectId} />
+          )}
         </div>
       </div>
 
+      {/* Tab selector */}
+      <div className="flex gap-1 p-1 bg-gray-100 rounded-xl w-fit">
+        <Link
+          href={`${tabBase}?tab=slip`}
+          className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
+            !isBalanceTab
+              ? "bg-white text-gray-900 shadow-sm"
+              : "text-gray-500 hover:text-gray-700"
+          }`}
+        >
+          สลิป
+        </Link>
+        <Link
+          href={`${tabBase}?tab=balance`}
+          className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
+            isBalanceTab
+              ? "bg-white text-gray-900 shadow-sm"
+              : "text-gray-500 hover:text-gray-700"
+          }`}
+        >
+          ยอดบัญชีรายวัน
+        </Link>
+      </div>
+
       <Suspense fallback={null}>
-        {pendingMatches.length === 0 ? (
-          <div className="flex flex-col items-center justify-center py-24 text-center text-muted-foreground gap-3">
-            <GitMerge className="h-12 w-12 text-muted/30" />
-            <p className="font-medium">ไม่มีรายการรอตรวจสอบ</p>
-            <p className="text-sm opacity-70">
-              ทุกรายการได้รับการจับคู่เรียบร้อยแล้ว
-            </p>
-          </div>
+        {!isBalanceTab ? (
+          slipResult.data.length === 0 ? (
+            <EmptyState />
+          ) : (
+            <PendingMatchesTable
+              transactions={slipResult.data}
+              projectAccounts={projectAccounts}
+              totalPages={slipResult.totalPages}
+              totalItems={slipResult.totalItems}
+              currentPage={Number(page)}
+              limit={Number(limit)}
+            />
+          )
+        ) : balanceResult.data.length === 0 ? (
+          <EmptyState />
         ) : (
-          <PendingMatchesTable
-            transactions={pendingMatches}
+          <PendingBalanceMatchesTable
+            records={balanceResult.data}
             projectAccounts={projectAccounts}
-            totalPages={totalPages}
-            totalItems={totalItems}
+            totalPages={balanceResult.totalPages}
+            totalItems={balanceResult.totalItems}
             currentPage={Number(page)}
             limit={Number(limit)}
           />
         )}
       </Suspense>
+    </div>
+  );
+}
+
+function EmptyState() {
+  return (
+    <div className="flex flex-col items-center justify-center py-24 text-center text-muted-foreground gap-3">
+      <GitMerge className="h-12 w-12 text-muted/30" />
+      <p className="font-medium">ไม่มีรายการรอตรวจสอบ</p>
+      <p className="text-sm opacity-70">ทุกรายการได้รับการจับคู่เรียบร้อยแล้ว</p>
     </div>
   );
 }
