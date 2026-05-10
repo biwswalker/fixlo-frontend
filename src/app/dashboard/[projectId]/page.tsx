@@ -1,31 +1,12 @@
 import { Suspense } from "react";
 
 import {
-  Activity,
-  AlertCircle,
-  CheckCircle2,
   TrendingUp,
   TrendingDown,
-  Wallet,
-  ArrowUpRight,
-  ArrowDownRight,
-  ChevronLeft,
-  ChevronRight,
 } from "lucide-react";
-import Link from "next/link";
 import { CashflowChart } from "@/components/dashboard/CashflowChart";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Button, buttonVariants } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
-import { Separator } from "@/components/ui/separator";
+import { Button } from "@/components/ui/button";
 import {
   getDashboardSummary,
   getDailyChartData,
@@ -33,14 +14,17 @@ import {
   getFailedSlips,
 } from "@/actions/dashboard";
 import { FailedSlipsTable } from "@/components/dashboard/FailedSlipsTable";
-import { formatBaht, cn } from "@/lib/utils";
+import { PeriodSelector } from "@/components/dashboard/PeriodSelector";
+import type { Period } from "@/components/dashboard/PeriodSelector";
+import { formatBaht } from "@/lib/utils";
 import {
   KPISkeleton,
   ChartSkeleton,
-  TableSkeleton,
 } from "@/components/dashboard/DashboardSkeletons";
-import { format } from "date-fns";
+import { Separator } from "@/components/ui/separator";
+import { format, subDays } from "date-fns";
 import { redirect } from "next/navigation";
+import { resolvePeriodToDateRange } from "@/lib/periodUtils";
 
 export default async function ProjectDashboard({
   params,
@@ -48,26 +32,32 @@ export default async function ProjectDashboard({
 }: {
   params: Promise<{ projectId: string }>;
   searchParams: Promise<{
-    from?: string;
-    to?: string;
+    period?: string;
+    date?: string;
     page?: string;
-    query?: string;
   }>;
 }) {
   const { projectId } = await params;
-  const { from, to, page, query, failedPage } = await searchParams as any;
-  const currentPage = Number(page) || 1;
+  const { period, date, failedPage } = await searchParams as any;
 
-  // Resolve project details dynamically
+  const validPeriod = (["day", "week", "month", "year"].includes(period ?? "")
+    ? period
+    : "day") as Period;
+
+  const yesterday = format(subDays(new Date(), 1), "yyyy-MM-dd");
+  const validDate = date || yesterday;
+
+  const { from, to } = resolvePeriodToDateRange(validPeriod, validDate);
+
   const project = await getProjectByName(projectId);
-
-  // If project is invalid (and not 'all'), redirect to 'all'
   if (!project && projectId !== "all") {
     redirect("/dashboard/all");
   }
 
   const displayTitle =
     project?.project_name || (projectId === "all" ? "ทุกโปรเจกต์" : projectId);
+
+  const currentDate = new Date(validDate);
 
   return (
     <div className="grid gap-6 animate-in fade-in duration-500">
@@ -81,6 +71,17 @@ export default async function ProjectDashboard({
           </p>
         </div>
         <div className="flex items-center gap-3">
+          <div className="flex items-center gap-3 bg-white p-2 text-sm rounded-3xl shadow-sm border border-gray-100">
+            <span className="text-muted-foreground font-medium pl-2 hidden sm:inline-block">
+              มุมมอง:
+            </span>
+            <Suspense>
+              <PeriodSelector
+                currentPeriod={validPeriod}
+                currentDate={currentDate}
+              />
+            </Suspense>
+          </div>
           <Button
             variant="outline"
             className="bg-white border-gray-200 font-medium"
@@ -93,12 +94,10 @@ export default async function ProjectDashboard({
         </div>
       </div>
 
-      {/* KPI Overviews */}
       <Suspense fallback={<KPISkeleton />}>
         <KPICardsSection projectId={projectId} from={from} to={to} />
       </Suspense>
 
-      {/* Analytics & Table */}
       <div className="grid gap-6 lg:grid-cols-1">
         <Suspense fallback={<KPISkeleton />}>
           <IncomeExpenseSection projectId={projectId} from={from} to={to} />
@@ -116,9 +115,6 @@ export default async function ProjectDashboard({
   );
 }
 
-/**
- * KPI Cards Section (Async)
- */
 async function KPICardsSection({
   projectId,
   from,
@@ -134,7 +130,6 @@ async function KPICardsSection({
 
   return (
     <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-4">
-      {/* Net Cashflow Card */}
       <Card className="border-none shadow-sm rounded-2xl bg-white overflow-hidden relative">
         <div
           className={`absolute top-0 left-0 w-1 h-full ${netCashflow >= 0 ? "bg-emerald-500" : "bg-rose-500"}`}
@@ -165,7 +160,6 @@ async function KPICardsSection({
         </CardContent>
       </Card>
 
-      {/* Total Deposit Card */}
       <Card className="border-none shadow-sm rounded-2xl bg-white overflow-hidden flex flex-col">
         <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
           <CardTitle className="text-sm font-medium text-gray-500">
@@ -185,7 +179,6 @@ async function KPICardsSection({
         </CardContent>
       </Card>
 
-      {/* Total Withdrawal Card */}
       <Card className="border-none shadow-sm rounded-2xl bg-white overflow-hidden flex flex-col">
         <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
           <CardTitle className="text-sm font-medium text-gray-500">
@@ -204,8 +197,6 @@ async function KPICardsSection({
           </p>
         </CardContent>
       </Card>
-
-
     </div>
   );
 }
@@ -270,13 +261,11 @@ async function IncomeExpenseSection({
       </CardHeader>
       <CardContent>
         <div className="grid gap-8 md:grid-cols-2">
-          {/* Income Column */}
           <div className="space-y-4">
             <h3 className="font-semibold text-emerald-600 border-b pb-2">
               รายรับ (Income)
             </h3>
             <div className="space-y-6">
-              {/* Deposit Section & Breakdown */}
               <div className="flex flex-col">
                 <ProgressBar
                   label="ฝากเงิน (Deposit)"
@@ -291,10 +280,7 @@ async function IncomeExpenseSection({
                         key={idx}
                         className="flex justify-between items-center text-xs"
                       >
-                        <span
-                          className="text-gray-500 truncate pr-2"
-                          title={item.account}
-                        >
+                        <span className="text-gray-500 truncate pr-2" title={item.account}>
                           {item.account}
                         </span>
                         <span className="font-medium text-emerald-700 flex-shrink-0 tabular-nums">
@@ -309,44 +295,24 @@ async function IncomeExpenseSection({
                   </div>
                 )}
               </div>
-
               <Separator className="my-4" />
-
-              {/* Other Income Categories */}
               <div className="flex flex-col">
-                <ProgressBar
-                  label="เติมมือ (Manual In)"
-                  amount={summary.manualIn || 0}
-                  total={totalIncome}
-                  colorClass="bg-emerald-400"
-                />
+                <ProgressBar label="เติมมือ (Manual In)" amount={summary.manualIn || 0} total={totalIncome} colorClass="bg-emerald-400" />
               </div>
               <div className="flex flex-col">
-                <ProgressBar
-                  label="โบนัส (Bonus)"
-                  amount={summary.bonus || 0}
-                  total={totalIncome}
-                  colorClass="bg-emerald-300"
-                />
+                <ProgressBar label="โบนัส (Bonus)" amount={summary.bonus || 0} total={totalIncome} colorClass="bg-emerald-300" />
               </div>
               <div className="flex flex-col">
-                <ProgressBar
-                  label="ฝากประจำ (Fixed Deposit)"
-                  amount={summary.fixedDeposit || 0}
-                  total={totalIncome}
-                  colorClass="bg-emerald-200"
-                />
+                <ProgressBar label="ฝากประจำ (Fixed Deposit)" amount={summary.fixedDeposit || 0} total={totalIncome} colorClass="bg-emerald-200" />
               </div>
             </div>
           </div>
 
-          {/* Expense Column */}
           <div className="space-y-4">
             <h3 className="font-semibold text-rose-600 border-b pb-2">
               รายจ่าย (Expense)
             </h3>
             <div className="space-y-6">
-              {/* Withdraw Section & Breakdown */}
               <div className="flex flex-col">
                 <ProgressBar
                   label="ถอนเงิน (Withdraw)"
@@ -361,10 +327,7 @@ async function IncomeExpenseSection({
                         key={idx}
                         className="flex justify-between items-center text-xs"
                       >
-                        <span
-                          className="text-gray-500 truncate pr-2"
-                          title={item.account}
-                        >
+                        <span className="text-gray-500 truncate pr-2" title={item.account}>
                           {item.account}
                         </span>
                         <span className="font-medium text-rose-700 flex-shrink-0 tabular-nums">
@@ -379,41 +342,18 @@ async function IncomeExpenseSection({
                   </div>
                 )}
               </div>
-
               <Separator className="my-4" />
-
-              {/* Other Expense Categories */}
               <div className="flex flex-col">
-                <ProgressBar
-                  label="ถอนมือ (Manual Out)"
-                  amount={summary.manualOut || 0}
-                  total={totalExpense}
-                  colorClass="bg-rose-400"
-                />
+                <ProgressBar label="ถอนมือ (Manual Out)" amount={summary.manualOut || 0} total={totalExpense} colorClass="bg-rose-400" />
               </div>
               <div className="flex flex-col">
-                <ProgressBar
-                  label="แลกรางวัล (Redeem)"
-                  amount={summary.redeem || 0}
-                  total={totalExpense}
-                  colorClass="bg-rose-300"
-                />
+                <ProgressBar label="แลกรางวัล (Redeem)" amount={summary.redeem || 0} total={totalExpense} colorClass="bg-rose-300" />
               </div>
               <div className="flex flex-col">
-                <ProgressBar
-                  label="พันธมิตร (Affiliate)"
-                  amount={summary.affiliate || 0}
-                  total={totalExpense}
-                  colorClass="bg-rose-200"
-                />
+                <ProgressBar label="พันธมิตร (Affiliate)" amount={summary.affiliate || 0} total={totalExpense} colorClass="bg-rose-200" />
               </div>
               <div className="flex flex-col">
-                <ProgressBar
-                  label="คืนยอดเสีย (Cashback)"
-                  amount={summary.cashback || 0}
-                  total={totalExpense}
-                  colorClass="bg-rose-100"
-                />
+                <ProgressBar label="คืนยอดเสีย (Cashback)" amount={summary.cashback || 0} total={totalExpense} colorClass="bg-rose-100" />
               </div>
             </div>
           </div>
@@ -448,5 +388,3 @@ async function FailedSlipsSection({ projectId, page }: { projectId: string; page
     />
   );
 }
-
-

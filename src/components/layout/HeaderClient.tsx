@@ -1,25 +1,16 @@
 "use client";
 
-import { useState, useEffect } from "react";
 import { cn } from "@/lib/utils";
 import { useRouter, useParams, useSearchParams } from "next/navigation";
 import { useSession, signOut } from "next-auth/react";
 import {
-  Search,
   Bell,
-  Loader2,
-  User,
-  Settings,
-  Users,
   LogOut,
   ChevronDown,
   GitMerge,
 } from "lucide-react";
-import { DateRangePicker } from "@/components/dashboard/DateRangePicker";
-import ExportButton from "@/components/dashboard/ExportButton";
-import { Input } from "@/components/ui/input";
-import { Button, buttonVariants } from "@/components/ui/button";
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { buttonVariants } from "@/components/ui/button";
+import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -67,37 +58,6 @@ export default function HeaderClient({
     ? roleLabels[user.role] || user.role
     : "ผู้ใช้งาน";
 
-  // Search State
-  const [searchValue, setSearchValue] = useState(
-    searchParams.get("query") || "",
-  );
-  const [isSearching, setIsSearching] = useState(false);
-
-  // Debounced Search Sync to URL
-  useEffect(() => {
-    const delayDebounceFn = setTimeout(() => {
-      const currentParams = new URLSearchParams(searchParams.toString());
-      if (searchValue) {
-        currentParams.set("query", searchValue);
-      } else {
-        currentParams.delete("query");
-      }
-
-      const newQueryString = currentParams.toString();
-      const oldQueryString = searchParams.toString();
-
-      if (newQueryString !== oldQueryString) {
-        setIsSearching(true);
-        // Using window.history or router.push to update search params
-        router.push(`?${newQueryString}`);
-        // Reset searching state after a short delay
-        setTimeout(() => setIsSearching(false), 500);
-      }
-    }, 400); // 400ms debounce
-
-    return () => clearTimeout(delayDebounceFn);
-  }, [searchValue, router, searchParams]);
-
   return (
     <header className="sticky top-0 z-30 flex h-20 items-center justify-between border-b border-gray-100 bg-white/95 px-6 backdrop-blur supports-[backdrop-filter]:bg-white/60">
       <div className="flex items-center flex-1 gap-4">
@@ -130,24 +90,6 @@ export default function HeaderClient({
             ))}
           </SelectContent>
         </Select>
-
-        <DateRangePicker />
-        <ExportButton />
-
-        <div className="relative w-full max-w-md group font-sans">
-          {isSearching ? (
-            <Loader2 className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-blue-500 animate-spin" />
-          ) : (
-            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400 transition-colors group-focus-within:text-blue-500" />
-          )}
-          <Input
-            type="search"
-            placeholder="ค้นหาชื่อผู้โอน, ผู้รับ, หรือ ID..."
-            value={searchValue}
-            onChange={(e) => setSearchValue(e.target.value)}
-            className="w-full rounded-2xl bg-gray-50 pl-10 border-transparent shadow-none hover:bg-gray-100 hover:border-gray-200 focus-visible:bg-white focus-visible:ring-2 focus-visible:ring-blue-100 transition-all h-10"
-          />
-        </div>
       </div>
 
       <div className="flex items-center gap-5">
@@ -216,17 +158,6 @@ export default function HeaderClient({
                   className="cursor-not-allowed opacity-60"
                 >
                   จัดการผู้ใช้
-                </DropdownMenuItem>
-              )}
-              {["owner", "admin"].includes(user?.role ?? "") && (
-                <DropdownMenuItem
-                  className="cursor-pointer"
-                  onClick={() =>
-                    router.push(`/dashboard/${currentProject}/match`)
-                  }
-                >
-                  <GitMerge className="mr-2 h-4 w-4" />
-                  จับคู่บัญชีด้วยตนเอง
                 </DropdownMenuItem>
               )}
               <DropdownMenuSeparator />

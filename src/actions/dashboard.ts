@@ -652,6 +652,7 @@ export async function getPendingMatches(
   projectId: string,
   page: number = 1,
   limit: number = 50,
+  search?: string,
 ): Promise<{
   data: TransactionRecord[];
   totalItems: number;
@@ -663,6 +664,7 @@ export async function getPendingMatches(
     const project = isAll ? null : await getProjectIdentifiers(projectId);
 
     const OFFSET = (page - 1) * limit;
+    const searchFilter = search ? `%${search}%` : null;
 
     const sql = `
       SELECT t.*, p.project_name
@@ -670,6 +672,7 @@ export async function getPendingMatches(
       LEFT JOIN projects p ON t.source_project_id = p.id
       WHERE (t.source_project_id = $1 OR $2 = true)
       AND t.matching_status IN ('PENDING_REVIEW', 'UNMAPPED')
+      AND ($5::text IS NULL OR t.ref_id ILIKE $5 OR t.sender_name ILIKE $5 OR t.sender_acc_num ILIKE $5)
       ORDER BY t.created_at DESC
       LIMIT $3 OFFSET $4
     `;
@@ -679,11 +682,12 @@ export async function getPendingMatches(
       FROM transactions t
       WHERE (t.source_project_id = $1 OR $2 = true)
       AND t.matching_status IN ('PENDING_REVIEW', 'UNMAPPED')
+      AND ($3::text IS NULL OR t.ref_id ILIKE $3 OR t.sender_name ILIKE $3 OR t.sender_acc_num ILIKE $3)
     `;
 
     const [result, countRes] = await Promise.all([
-      query(sql, [project?.id || null, isAll, limit, OFFSET]),
-      query(countSql, [project?.id || null, isAll]),
+      query(sql, [project?.id || null, isAll, limit, OFFSET, searchFilter]),
+      query(countSql, [project?.id || null, isAll, searchFilter]),
     ]);
 
     const totalItems = Number(countRes.rows[0]?.total || 0);

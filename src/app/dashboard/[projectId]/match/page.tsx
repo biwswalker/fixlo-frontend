@@ -8,6 +8,7 @@ import {
 } from "@/actions/dashboard";
 import { PendingMatchesTable } from "@/components/dashboard/PendingMatchesTable";
 import { ReRunMatchingButton } from "@/components/dashboard/ReRunMatchingButton";
+import { MatchSearchBar } from "@/components/dashboard/MatchSearchBar";
 import { GitMerge } from "lucide-react";
 
 export default async function ManualMatchPage({
@@ -15,7 +16,7 @@ export default async function ManualMatchPage({
   searchParams,
 }: {
   params: Promise<{ projectId: string }>;
-  searchParams: Promise<{ page?: string; limit?: string }>;
+  searchParams: Promise<{ page?: string; limit?: string; query?: string }>;
 }) {
   const session = await getServerAuthSession();
 
@@ -24,7 +25,7 @@ export default async function ManualMatchPage({
   }
 
   const { projectId } = await params;
-  const { page = "1", limit = "50" } = await searchParams;
+  const { page = "1", limit = "50", query } = await searchParams;
 
   const project = await getProjectByName(projectId);
   if (!project && projectId !== "all") {
@@ -38,6 +39,7 @@ export default async function ManualMatchPage({
     projectId,
     Number(page),
     Number(limit),
+    query,
   );
   const projectAccounts = await getProjectAccounts(projectId);
   const { data: pendingMatches, totalPages, totalItems } = pendingMatchesResult;
@@ -54,7 +56,12 @@ export default async function ManualMatchPage({
             รายการที่ระบบไม่สามารถจับคู่อัตโนมัติได้ — admin ต้องยืนยันด้วยตนเอง
           </p>
         </div>
-        <ReRunMatchingButton projectId={projectId} />
+        <div className="flex items-center gap-3">
+          <Suspense>
+            <MatchSearchBar />
+          </Suspense>
+          <ReRunMatchingButton projectId={projectId} />
+        </div>
       </div>
 
       <Suspense fallback={null}>

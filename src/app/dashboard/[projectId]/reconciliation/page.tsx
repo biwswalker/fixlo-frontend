@@ -15,7 +15,8 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { formatBaht, cn } from "@/lib/utils";
-import { ReconciliationPeriodSelector } from "@/components/dashboard/ReconciliationPeriodSelector";
+import { PeriodSelector } from "@/components/dashboard/PeriodSelector";
+import type { Period } from "@/components/dashboard/PeriodSelector";
 import { AddAdjustmentDialog } from "@/components/dashboard/AddAdjustmentDialog";
 import {
   ArrowDownToLine,
@@ -57,9 +58,9 @@ export default async function ReconciliationPage({
     date: targetDateStr,
   } = await searchParams;
 
-  const validPeriod = ["day", "week", "month"].includes(period)
-    ? (period as "day" | "week" | "month")
-    : "day";
+  const validPeriod = (["day", "week", "month", "year"].includes(period)
+    ? period
+    : "day") as Period;
 
   // Resolve project details dynamically
   const project = await getProjectByName(projectId);
@@ -72,7 +73,9 @@ export default async function ReconciliationPage({
   const displayTitle =
     project?.project_name || (projectId === "all" ? "ทุกโปรเจกต์" : projectId);
 
-  const targetDate = targetDateStr ? new Date(targetDateStr) : new Date();
+  const yesterday = new Date();
+  yesterday.setDate(yesterday.getDate() - 1);
+  const targetDate = targetDateStr ? new Date(targetDateStr) : yesterday;
   const pendingCount = await getPendingMatchCount(projectId);
 
   return (
@@ -94,7 +97,7 @@ export default async function ReconciliationPage({
             <span className="text-muted-foreground font-medium pl-2 hidden sm:inline-block">
               มุมมอง:
             </span>
-            <ReconciliationPeriodSelector
+            <PeriodSelector
               currentPeriod={validPeriod}
               currentDate={targetDate}
             />
@@ -130,11 +133,12 @@ async function ReconciliationContent({
   pendingCount,
 }: {
   projectId: string;
-  period: "day" | "week" | "month";
+  period: Period;
   targetDate: Date;
   pendingCount: number;
 }) {
-  const report = await getReconciliationReport(projectId, period, targetDate);
+  const reconPeriod = period === "year" ? "month" : period;
+  const report = await getReconciliationReport(projectId, reconPeriod, targetDate);
 
   // Formatting helpers
   const formatPeriodRange = () => {
