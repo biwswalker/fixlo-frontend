@@ -15,6 +15,7 @@ import {
   TransactionRecord,
   forceApproveTransaction,
 } from "@/actions/dashboard";
+import { hasPermission } from "@/lib/rbac";
 import { formatBaht, formatThaiDate } from "@/lib/utils";
 import {
   AlertCircle,
@@ -49,7 +50,7 @@ export function SlipReviewDialog({
   if (!transaction) return null;
 
   const userRole = session?.user?.role;
-  const canApprove = userRole === "admin";
+  const canApprove = hasPermission(userRole, 'manage_projects');
 
   const handleApprove = async () => {
     if (!canApprove) return;
@@ -82,28 +83,12 @@ export function SlipReviewDialog({
               ตรวจสอบความถูกต้องของรายการที่ระบบตรวจพบความผิดปกติ
             </DialogDescription>
             <div className="flex flex-wrap gap-2 mt-2">
-              {transaction.is_amount_mismatch && (
-                <Badge
-                  variant="destructive"
-                  className="bg-rose-50 text-rose-700 border-transparent rounded-full px-3 py-1 font-bold text-xs uppercase tracking-wider"
-                >
-                  ยอดไม่ตรง
-                </Badge>
-              )}
               {transaction.is_duplicate && (
                 <Badge
                   variant="secondary"
                   className="bg-orange-50 text-orange-700 border-transparent rounded-full px-3 py-1 font-bold text-xs uppercase tracking-wider"
                 >
                   สลิปซ้ำ
-                </Badge>
-              )}
-              {transaction.is_time_anomaly && (
-                <Badge
-                  variant="secondary"
-                  className="bg-amber-50 text-amber-700 border-transparent rounded-full px-3 py-1 font-bold text-xs uppercase tracking-wider"
-                >
-                  เวลาผิดปกติ
                 </Badge>
               )}
             </div>
@@ -156,10 +141,11 @@ export function SlipReviewDialog({
                     icon={<Calendar className="h-4 w-4" />}
                     label="วันที่โอน"
                     value={
-                      formatThaiDate(transaction.transfer_date) +
-                      (transaction.transfer_time
-                        ? ` ${transaction.transfer_time}`
-                        : "")
+                      transaction.transfer_at
+                        ? formatThaiDate(transaction.transfer_at.slice(0, 10)) +
+                          " " +
+                          transaction.transfer_at.slice(11, 16)
+                        : "—"
                     }
                   />
                   <DetailItem
@@ -195,7 +181,7 @@ export function SlipReviewDialog({
                       ยอดเงินที่ AI อ่านได้
                     </span>
                     <span
-                      className={`text-lg font-bold ${transaction.is_amount_mismatch ? "text-rose-600" : "text-emerald-600"}`}
+                      className="text-lg font-bold text-emerald-600"
                     >
                       {formatBaht(transaction.ai_amount)}
                     </span>
@@ -210,9 +196,7 @@ export function SlipReviewDialog({
                         <p className="text-sm text-rose-500">
                           {transaction.is_duplicate
                             ? "รายการนี้มีหมายเลขอ้างอิง (Ref ID) ซ้ำกับรายการอื่นในฐานข้อมูล"
-                            : transaction.is_amount_mismatch
-                              ? "ยอดเงินในสลิปที่ AI อ่านได้ ไม่ตรงกับยอดที่ทำรายการในระบบ"
-                              : "พบความล่าช้าของเวลาในการโอนเกินกำหนด"}
+                            : "พบรายการผิดปกติ"}
                         </p>
                       </div>
                     </div>

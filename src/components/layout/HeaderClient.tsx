@@ -13,6 +13,7 @@ import {
   Users,
   LogOut,
   ChevronDown,
+  GitMerge,
 } from "lucide-react";
 import { DateRangePicker } from "@/components/dashboard/DateRangePicker";
 import ExportButton from "@/components/dashboard/ExportButton";
@@ -41,15 +42,12 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 
-interface Project {
-  id: string;
-  project_name: string;
-}
+import type { ProjectOption } from "@/actions/dashboard";
 
 export default function HeaderClient({
-  activeProjects,
+  projectOptions,
 }: {
-  activeProjects: Project[];
+  projectOptions: ProjectOption[];
 }) {
   const { data: session } = useSession();
   const router = useRouter();
@@ -114,29 +112,19 @@ export default function HeaderClient({
             <SelectValue placeholder="เลือกโปรเจกต์" />
           </SelectTrigger>
           <SelectContent className="rounded-xl border-gray-100 shadow-lg">
-            <SelectItem value="all" className="cursor-pointer rounded-lg py-2">
-              <div className="flex items-center gap-2.5">
-                <div className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[10px] font-bold text-white shadow-sm bg-gray-700">
-                  A
-                </div>
-                <span className="font-medium text-gray-700">ทุกโปรเจกต์</span>
-              </div>
-            </SelectItem>
-            {activeProjects.map((project) => (
+            {projectOptions.map((option) => (
               <SelectItem
-                key={project.id}
-                value={project.project_name}
+                key={option.id}
+                value={option.id === "all" ? "all" : option.name}
                 className="cursor-pointer rounded-lg py-2"
               >
                 <div className="flex items-center gap-2.5">
                   <div
-                    className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[10px] font-bold text-white shadow-sm bg-blue-600`}
+                    className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[10px] font-bold text-white shadow-sm ${option.color}`}
                   >
-                    {project.project_name.charAt(0).toUpperCase()}
+                    {option.name.charAt(0).toUpperCase()}
                   </div>
-                  <span className="font-medium text-gray-700">
-                    {project.project_name}
-                  </span>
+                  <span className="font-medium text-gray-700">{option.name}</span>
                 </div>
               </SelectItem>
             ))}
@@ -228,6 +216,17 @@ export default function HeaderClient({
                   className="cursor-not-allowed opacity-60"
                 >
                   จัดการผู้ใช้
+                </DropdownMenuItem>
+              )}
+              {["owner", "admin"].includes(user?.role ?? "") && (
+                <DropdownMenuItem
+                  className="cursor-pointer"
+                  onClick={() =>
+                    router.push(`/dashboard/${currentProject}/match`)
+                  }
+                >
+                  <GitMerge className="mr-2 h-4 w-4" />
+                  จับคู่บัญชีด้วยตนเอง
                 </DropdownMenuItem>
               )}
               <DropdownMenuSeparator />

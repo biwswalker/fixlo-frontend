@@ -8,7 +8,7 @@ generated: 2026-05-09
 
 # Fixlo Database — Map of Content
 
-แผนผังโครงสร้าง DB ทั้งหมด. ดู [[CONTEXT]] สำหรับ glossary และ domain.
+แผนผังโครงสร้าง DB ทั้งหมด. ดู [[CONTEXT]] สำหรับ glossary และ domain. ดู [[../system/MOC|System MOC]] สำหรับ frontend/UI guide (หน้าจอ + ที่มาตัวเลข).
 
 > Source: `spectre-090526-backup` (pg_dump v18.0, db v17.9, owner=`fixlo`).
 > ⚠️ ชื่อ dump เป็น "spectre" แต่ owner เป็น `fixlo` — ต้อง grill ว่า spectre คืออะไร (codename? legacy name?).

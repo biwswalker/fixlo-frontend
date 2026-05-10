@@ -36,6 +36,7 @@ tags: [domain, glossary]
   - `viewer` — read-only. view_reports
 - **Slip** — ภาพสลิปธนาคาร — เก็บ [[raw_uploads]] → [[transactions]]
 - **Matching** — process จับคู่สลิปกับ project_account ([[transactions]].matching_status)
+- **Match breakdown** ([[transactions]].`match_breakdown` jsonb) — top-3 candidate accounts พร้อม component score (nameMatched, accountMatched, bankMatched) ที่ smartMatcher เก็บตอน matching รัน ใช้โชว์ admin ใน Pending Account Matches table ว่าทำไมสลิปไม่ AUTO_MAPPED
 - **Daily balance** — yอด snapshot ใน [[daily_balances]]
 - **Bonus** — ของแถม/โปรโมชัน. ฟรีเครดิต, มีเงื่อนไข turn over
   - [[report_manual_bonus_in]] = จ่ายโบนัสให้ player
@@ -171,6 +172,10 @@ Migration SQL (ordered by dependency):
    - Drop `record_date`, `transfer_date`, `transfer_time`
 
 4. **Project rename**: `UPDATE projects SET project_name='juno168' WHERE id=1` (audit other projects ก่อน)
+
+4.5. **Add match_breakdown column** (`transactions`):
+   - `ALTER TABLE transactions ADD COLUMN IF NOT EXISTS match_breakdown jsonb`
+   - หลัง deploy: admin กด "Re-run matching" เพื่อ backfill existing PENDING_REVIEW/UNMAPPED rows
 
 5. **Add UNIQUE constraints**:
    - `projects (discord_channel_id)` (1:1 binding)

@@ -6,16 +6,37 @@ export interface ScannedSlip {
   bank: string | null;
 }
 
+export interface CandidateBreakdown {
+  accountId: string;
+  score: number;
+  nameMatched: "exact" | "partial" | "alias" | "none";
+  accountMatched: boolean;
+  bankMatched: boolean;
+}
+
+export interface MatchBreakdown {
+  topScore: number;
+  candidates: CandidateBreakdown[];
+}
+
 export interface MatchResult {
   matchedAccountId: string | null;
   possibleMatches?: string[];
   status: "AUTO_MAPPED" | "PENDING_REVIEW" | "UNMAPPED";
   score: number;
+  breakdown: MatchBreakdown;
+}
+
+interface ScoreDetail {
+  score: number;
+  nameMatched: "exact" | "partial" | "alias" | "none";
+  accountMatched: boolean;
+  bankMatched: boolean;
 }
 
 const GATEWAY_KEYWORDS = ["wealth", "dpay", "apay", "badoo", "binance"];
 
-const AUTO_THRESHOLD = 85;
+const AUTO_THRESHOLD = 75;
 const REVIEW_THRESHOLD = 50;
 
 function normalizeBank(name: string | null | undefined): string {
@@ -46,8 +67,11 @@ function parseAliases(raw: ProjectAccount["aliases"] | string[] | null): string[
 function calculateMatchScore(
   scanned: ScannedSlip,
   master: ProjectAccount,
-): number {
+): ScoreDetail {
   let score = 0;
+  let nameMatched: "exact" | "partial" | "alias" | "none" = "none";
+  let accountMatched = false;
+  let bankMatched = false;
 
   const masterNameLower = (master.account_name || "").toLowerCase();
   const isGateway = GATEWAY_KEYWORDS.some((key) =>
@@ -67,31 +91,25 @@ function calculateMatchScore(
     // CASE A: Gateway — provider/bank weighted heavier than name (80/20)
     if (sBank && (sBank === mBankCode || mName.includes(sBank))) {
       score += 80;
+      bankMatched = true;
     }
-    if (
-      sName &&
-      (sName === mName || mAliases.includes(sName) || mName.includes(sName))
-    ) {
-      score += 20;
+    if (sName) {
+      if (sName === mName) { score += 20; nameMatched = "exact"; }
+      else if (mAliases.includes(sName)) { score += 20; nameMatched = "alias"; }
+      else if (mName.includes(sName)) { score += 20; nameMatched = "partial"; }
     }
-    return score;
+    return { score, nameMatched, accountMatched, bankMatched };
   }
 
-  // CASE B: Person — name dominant (70/20/10), TrueMoney special (85/15/0)
-  let nameWeight = 70;
-  let bankWeight = 10;
-  let accWeight = 20;
+  // CASE B: Person — name 60 / account 40. TrueMoney: name 100 (no account number).
+  const isTrueMoney = sBank.includes("truemoney") || sBank.includes("wallet");
+  const nameWeight = isTrueMoney ? 100 : 60;
+  const accWeight = isTrueMoney ? 0 : 40;
 
-  if (sBank.includes("truemoney") || sBank.includes("wallet")) {
-    nameWeight = 85;
-    bankWeight = 15;
-    accWeight = 0;
-  }
-
-  if (sName && (sName === mName || mAliases.includes(sName))) {
-    score += nameWeight;
-  } else if (sName && (mName.includes(sName) || sName.includes(mName))) {
-    score += nameWeight - 20;
+  if (sName) {
+    if (sName === mName) { score += nameWeight; nameMatched = "exact"; }
+    else if (mAliases.includes(sName)) { score += nameWeight; nameMatched = "alias"; }
+    else if (mName.includes(sName) || sName.includes(mName)) { score += Math.round(nameWeight * 0.6); nameMatched = "partial"; }
   }
 
   if (accWeight > 0 && sAccount && master.account_number) {
@@ -100,18 +118,11 @@ function calculateMatchScore(
     const pattern = new RegExp(`^${cleanScanned.replace(/[x*]/gi, ".*")}$`);
     if (cleanScanned === cleanMaster || pattern.test(cleanMaster)) {
       score += accWeight;
+      accountMatched = true;
     }
   }
 
-  if (
-    sBank &&
-    (sBank === mBankCode ||
-      normalizeBank(sBank) === normalizeBank(master.bank_code))
-  ) {
-    score += bankWeight;
-  }
-
-  return score;
+  return { score, nameMatched, accountMatched, bankMatched };
 }
 
 /**
@@ -124,22 +135,41 @@ export function runSmartMatch(
   masterAccounts: ProjectAccount[],
 ): MatchResult {
   if (!masterAccounts || masterAccounts.length === 0) {
-    return { matchedAccountId: null, status: "UNMAPPED", score: 0 };
+    return {
+      matchedAccountId: null,
+      status: "UNMAPPED",
+      score: 0,
+      breakdown: { topScore: 0, candidates: [] },
+    };
   }
 
-  const scored = masterAccounts.map((account) => ({
-    account,
-    score: calculateMatchScore(scanned, account),
-  }));
+  const scored = masterAccounts.map((account) => {
+    const detail = calculateMatchScore(scanned, account);
+    return { account, ...detail };
+  });
 
   scored.sort((a, b) => b.score - a.score);
   const best = scored[0];
+
+  const candidates: CandidateBreakdown[] = scored.slice(0, 3).map((s) => ({
+    accountId: s.account.id,
+    score: Math.round(s.score),
+    nameMatched: s.nameMatched,
+    accountMatched: s.accountMatched,
+    bankMatched: s.bankMatched,
+  }));
+
+  const breakdown: MatchBreakdown = {
+    topScore: Math.round(best.score),
+    candidates,
+  };
 
   if (best.score >= AUTO_THRESHOLD) {
     return {
       matchedAccountId: best.account.id,
       status: "AUTO_MAPPED",
       score: Math.round(best.score),
+      breakdown,
     };
   }
 
@@ -152,6 +182,7 @@ export function runSmartMatch(
       possibleMatches,
       status: "PENDING_REVIEW",
       score: Math.round(best.score),
+      breakdown,
     };
   }
 
@@ -159,5 +190,6 @@ export function runSmartMatch(
     matchedAccountId: null,
     status: "UNMAPPED",
     score: Math.round(best.score),
+    breakdown,
   };
 }

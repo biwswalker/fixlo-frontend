@@ -15,7 +15,7 @@ aliases: [report deposit]
 | Column | Type | Null | Default | Note |
 |---|---|---|---|---|
 | `id` | integer | NOT NULL | seq | PK |
-| `bank_acc` | text | NULL | — | บัญชีธนาคาร format `/X<10 digits>` — ⚠️ prefix `/X` ไม่เหมือน [[report_withdrawals]].`bank_info` (plain) |
+| `bank_acc` | text | NULL | — | เลขบัญชีลูกค้า (sender). format ผสม: `/X<10 digits>` หรือ plain 10 digits. user ไม่ทราบที่มา `/X` — ปะปนแม้ใน wallet เดียวกัน. น่าจะ scrape artifact จาก HTML markup ที่ฝั่งเว็บใส่ marker บางอย่าง |
 | `full_name` | text | NULL | — | ชื่อเต็ม |
 | `username` | text | NULL | — | member username (ผู้เล่น) |
 | `amb_user` | text | NULL | — | ambassador code |

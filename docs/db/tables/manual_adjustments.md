@@ -39,7 +39,7 @@ aliases: [manual adjustment]
 
 ทางเลือกที่ตัดทิ้ง: เพิ่ม `direction` enum (DEBIT/CREDIT) — แยก concern แต่เพิ่ม column ที่ derive จาก sign ได้.
 
-## ต้อง grill ต่อ
+## Plan
 
-- ทำไม `created_by` ไม่ทำ FK กับ [[users]]? — เพราะ users deprecated → uuid ใน `created_by` ก็ไม่ได้มาจาก users table จริงแล้ว. ต้อง backfill จาก external API user id?
-- adjustment_date vs created_at — lag ปกติเท่าไหร่? (back-dated entry?)
+- Convert `created_by uuid` → `created_by text` เก็บ username จาก external API (users table deprecated, uuid ไม่มี source แล้ว)
+- adjustment_date vs created_at — back-date support: user ไม่ระบุ. ปล่อยไว้ adjustment_date < created_at อนุญาตได้

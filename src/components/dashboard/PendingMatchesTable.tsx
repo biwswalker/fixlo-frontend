@@ -30,6 +30,7 @@ import {
   Sparkles,
   Eye,
   FileImage,
+  HelpCircle,
 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import {
@@ -39,6 +40,116 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
+import type { MatchBreakdown } from "@/lib/smartMatcher";
+
+function BreakdownPopover({
+  breakdown,
+  projectAccounts,
+}: {
+  breakdown: MatchBreakdown;
+  projectAccounts: ProjectAccount[];
+}) {
+  const nameLabel: Record<string, string> = {
+    exact: "ชื่อตรง",
+    alias: "alias ตรง",
+    partial: "ชื่อตรงบางส่วน",
+    none: "ชื่อไม่ตรง",
+  };
+
+  const summary =
+    breakdown.candidates.length === 0
+      ? "ไม่พบบัญชีที่ตรงกัน"
+      : `คะแนนสูงสุด ${breakdown.topScore}% • ${breakdown.candidates.length} ตัวเลือก`;
+
+  return (
+    <Popover>
+      <PopoverTrigger
+        render={
+          <button className="flex items-center gap-1.5 text-xs text-gray-500 hover:text-gray-800 transition-colors" />
+        }
+      >
+        <HelpCircle className="h-3.5 w-3.5 shrink-0" />
+        <span className="whitespace-nowrap">{summary}</span>
+      </PopoverTrigger>
+      <PopoverContent className="w-[420px] p-3" side="left" align="start">
+        <p className="text-xs font-semibold text-gray-700 mb-2">
+          Top {breakdown.candidates.length} candidates (threshold: AUTO=85%, REVIEW=50%)
+        </p>
+        {breakdown.candidates.length === 0 ? (
+          <p className="text-xs text-gray-400">ไม่มี candidate ที่ scorer ≥ 0</p>
+        ) : (
+          <div className="space-y-1.5">
+            {breakdown.candidates.map((c, i) => {
+              const acc = projectAccounts.find((a) => a.id === c.accountId);
+              return (
+                <div
+                  key={c.accountId}
+                  className="flex items-start gap-2 p-2 rounded-lg bg-gray-50 border border-gray-100"
+                >
+                  <span className="text-[10px] font-bold text-gray-400 w-4 shrink-0 pt-0.5">
+                    {i + 1}
+                  </span>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center justify-between gap-2 mb-1">
+                      <span className="text-xs font-semibold text-gray-900 truncate">
+                        {acc?.account_name ?? c.accountId.slice(-8)}
+                      </span>
+                      <span
+                        className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full shrink-0 ${
+                          c.score >= 85
+                            ? "bg-emerald-100 text-emerald-700"
+                            : c.score >= 50
+                              ? "bg-amber-100 text-amber-700"
+                              : "bg-gray-100 text-gray-500"
+                        }`}
+                      >
+                        {c.score}%
+                      </span>
+                    </div>
+                    <div className="flex flex-wrap gap-1">
+                      <span
+                        className={`text-[9px] px-1.5 py-0.5 rounded-full font-medium ${
+                          c.nameMatched !== "none"
+                            ? "bg-blue-50 text-blue-700"
+                            : "bg-gray-100 text-gray-400"
+                        }`}
+                      >
+                        {nameLabel[c.nameMatched]}
+                      </span>
+                      <span
+                        className={`text-[9px] px-1.5 py-0.5 rounded-full font-medium ${
+                          c.accountMatched
+                            ? "bg-blue-50 text-blue-700"
+                            : "bg-gray-100 text-gray-400"
+                        }`}
+                      >
+                        {c.accountMatched ? "เลขบัญชีตรง" : "เลขบัญชีไม่ตรง"}
+                      </span>
+                      <span
+                        className={`text-[9px] px-1.5 py-0.5 rounded-full font-medium ${
+                          c.bankMatched
+                            ? "bg-blue-50 text-blue-700"
+                            : "bg-gray-100 text-gray-400"
+                        }`}
+                      >
+                        {c.bankMatched ? "ธนาคารตรง" : "ธนาคารไม่ตรง"}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </PopoverContent>
+    </Popover>
+  );
+}
 
 interface PendingMatchesTableProps {
   transactions: TransactionRecord[];
@@ -122,6 +233,9 @@ export function PendingMatchesTable({
               <TableHead className="text-gray-500 font-medium">
                 จับคู่บัญชี
               </TableHead>
+              <TableHead className="text-gray-500 font-medium">
+                เหตุผล
+              </TableHead>
               <TableHead className="text-right px-6 text-gray-500 font-medium">
                 การจัดการ
               </TableHead>
@@ -131,7 +245,7 @@ export function PendingMatchesTable({
             {transactions.length === 0 ? (
               <TableRow>
                 <TableCell
-                  colSpan={5}
+                  colSpan={9}
                   className="text-center py-12 text-gray-400 font-medium"
                 >
                   ไม่มีรายการรอตรวจสอบ
@@ -239,6 +353,18 @@ export function PendingMatchesTable({
                           })}
                         </SelectContent>
                       </Select>
+                    </TableCell>
+                    <TableCell className="min-w-[160px]">
+                      {txn.match_breakdown ? (
+                        <BreakdownPopover
+                          breakdown={txn.match_breakdown}
+                          projectAccounts={projectAccounts}
+                        />
+                      ) : (
+                        <span className="text-[10px] text-gray-300 italic">
+                          กด Re-run เพื่อดู
+                        </span>
+                      )}
                     </TableCell>
                     <TableCell className="text-right px-6">
                       <Button

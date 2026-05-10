@@ -2,10 +2,10 @@ export type AppRole = 'owner' | 'admin' | 'staff' | 'viewer';
 
 // Define the permissions mapping for each role
 export const ROLE_PERMISSIONS: Record<AppRole, string[]> = {
-  owner: ['manage_users', 'view_reports', 'manage_projects', 'approve_transactions'],
+  owner: ['manage_users', 'view_reports', 'manage_projects', 'approve_transactions', 'manage_admins', 'manage_billing'],
   admin: ['manage_users', 'view_reports', 'manage_projects', 'approve_transactions'],
   staff: ['view_reports', 'approve_transactions'],
-  viewer: ['view_reports']
+  viewer: ['view_reports'],
 };
 
 /**

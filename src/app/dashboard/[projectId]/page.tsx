@@ -30,7 +30,9 @@ import {
   getDashboardSummary,
   getDailyChartData,
   getProjectByName,
+  getFailedSlips,
 } from "@/actions/dashboard";
+import { FailedSlipsTable } from "@/components/dashboard/FailedSlipsTable";
 import { formatBaht, cn } from "@/lib/utils";
 import {
   KPISkeleton,
@@ -53,7 +55,7 @@ export default async function ProjectDashboard({
   }>;
 }) {
   const { projectId } = await params;
-  const { from, to, page, query } = await searchParams;
+  const { from, to, page, query, failedPage } = await searchParams as any;
   const currentPage = Number(page) || 1;
 
   // Resolve project details dynamically
@@ -106,7 +108,9 @@ export default async function ProjectDashboard({
           <ChartSection projectId={projectId} from={from} to={to} />
         </Suspense>
 
-
+        <Suspense fallback={null}>
+          <FailedSlipsSection projectId={projectId} page={Number(failedPage) || 1} />
+        </Suspense>
       </div>
     </div>
   );
@@ -419,9 +423,6 @@ async function IncomeExpenseSection({
   );
 }
 
-/**
- * Chart Section (Async)
- */
 async function ChartSection({
   projectId,
   from,
@@ -433,6 +434,19 @@ async function ChartSection({
 }) {
   const chartData = await getDailyChartData(projectId, from, to);
   return <CashflowChart data={chartData} />;
+}
+
+async function FailedSlipsSection({ projectId, page }: { projectId: string; page: number }) {
+  const result = await getFailedSlips(projectId, page, 50);
+  if (result.totalItems === 0) return null;
+  return (
+    <FailedSlipsTable
+      slips={result.data}
+      totalItems={result.totalItems}
+      totalPages={result.totalPages}
+      currentPage={result.currentPage}
+    />
+  );
 }
 
 

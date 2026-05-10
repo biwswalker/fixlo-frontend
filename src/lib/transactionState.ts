@@ -1,0 +1,43 @@
+import { hasPermission } from "./rbac";
+import type { AppRole } from "./rbac";
+
+export type TxnStatus = "AUTO_MAPPED" | "PENDING_REVIEW" | "MANUAL_MAPPED" | "UNMAPPED";
+export type TxnAction = "auto_match" | "confirm_mapping" | "force_approve";
+
+export interface NextStateInput {
+  current: TxnStatus;
+  action: TxnAction;
+  actorRole: AppRole | string;
+  score?: number;
+}
+
+export type NextStateResult =
+  | { next: TxnStatus }
+  | { error: "forbidden" | "invalid-transition" };
+
+const AUTO_THRESHOLD = 75;
+const REVIEW_THRESHOLD = 50;
+
+export function nextState(input: NextStateInput): NextStateResult {
+  const { current, action, actorRole, score } = input;
+
+  if (action === "auto_match") {
+    const s = score ?? 0;
+    if (s >= AUTO_THRESHOLD) return { next: "AUTO_MAPPED" };
+    if (s >= REVIEW_THRESHOLD) return { next: "PENDING_REVIEW" };
+    return { next: "UNMAPPED" };
+  }
+
+  if (action === "force_approve") {
+    if (!hasPermission(actorRole, "manage_projects")) return { error: "forbidden" };
+    return { next: "MANUAL_MAPPED" };
+  }
+
+  if (action === "confirm_mapping") {
+    if (!hasPermission(actorRole, "approve_transactions")) return { error: "forbidden" };
+    if (current !== "PENDING_REVIEW") return { error: "invalid-transition" };
+    return { next: "MANUAL_MAPPED" };
+  }
+
+  return { error: "invalid-transition" };
+}

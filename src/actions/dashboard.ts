@@ -5,6 +5,11 @@ import { subDays, format } from "date-fns";
 import { revalidatePath } from "next/cache";
 import { logger } from "@/lib/logger";
 import { runSmartMatch } from "@/lib/smartMatcher";
+import { getServerAuthSession } from "@/lib/auth";
+import { hasPermission } from "@/lib/rbac";
+import { computeKpi } from "@/lib/reconciliationFormula";
+import { nextState } from "@/lib/transactionState";
+import { buildTransferAt } from "@/lib/transferAt";
 import { ProjectAccount } from "./dashboard";
 import { TransactionRecord } from "./dashboard";
 import { DashboardSummary } from "./dashboard";
@@ -118,6 +123,56 @@ export async function getActiveProjects(): Promise<
   } catch (error) {
     logger.error("getActiveProjects", "Failed to fetch active projects", error);
     return [];
+  }
+}
+
+export interface ProjectOption {
+  id: string;
+  name: string;
+  color: string;
+}
+
+// Deterministic color palette — stable across renders for the same project name.
+const PROJECT_COLORS = [
+  "bg-blue-600",
+  "bg-emerald-600",
+  "bg-violet-600",
+  "bg-rose-600",
+  "bg-amber-600",
+  "bg-cyan-600",
+  "bg-indigo-600",
+  "bg-pink-600",
+];
+
+function projectColor(name: string): string {
+  let hash = 0;
+  for (let i = 0; i < name.length; i++) {
+    hash = (hash * 31 + name.charCodeAt(i)) >>> 0;
+  }
+  return PROJECT_COLORS[hash % PROJECT_COLORS.length];
+}
+
+/**
+ * Returns one ProjectOption per active project plus the 'all' aggregate.
+ * Replaces the removed PROJECTS_MAP constant — adding a project only requires a DB insert.
+ */
+export async function getProjectOptions(): Promise<ProjectOption[]> {
+  try {
+    const sql =
+      "SELECT id, project_name FROM projects WHERE status = 'ACTIVE' ORDER BY project_name ASC";
+    const result = await query(sql);
+    const projects: ProjectOption[] = result.rows.map((row) => ({
+      id: row.id,
+      name: row.project_name,
+      color: projectColor(row.project_name),
+    }));
+    return [
+      { id: "all", name: "ทุกโปรเจกต์", color: "bg-gray-700" },
+      ...projects,
+    ];
+  } catch (error) {
+    logger.error("getProjectOptions", "Failed to fetch project options", error);
+    return [{ id: "all", name: "ทุกโปรเจกต์", color: "bg-gray-700" }];
   }
 }
 
@@ -330,59 +385,43 @@ export async function getDailyChartData(
     const project = isAll ? null : await getProjectIdentifiers(projectId);
     if (!isAll && !project) return [];
 
+    // Fetch all KPI columns so computeKpi can apply the canonical formula.
     const sql = `
-      WITH daily_reports AS (
-        SELECT 
-          report_date::date as day,
-          SUM(COALESCE(withdraw, 0) + COALESCE(manual_out, 0) + COALESCE(redeem, 0) + COALESCE(affiliate, 0) + COALESCE(cashback, 0)) as withdrawals
-        FROM report_summary_daily
-        WHERE (project_id ILIKE '%' || $1 || '%' OR $2 = true)
-        AND report_date::date BETWEEN $3 AND $4
-        GROUP BY report_date::date
-      ),
-      daily_deposits AS (
-        SELECT
-          trans_date::date as day,
-          SUM(COALESCE(amount, 0)) as deposits
-        FROM report_deposits
-        WHERE status = 'สำเร็จ'
-        AND trans_date::date BETWEEN $3 AND $4
-        GROUP BY trans_date::date
-      )
       SELECT
-        COALESCE(r.day, t.day) as report_date,
-        COALESCE(t.deposits, 0) as deposits,
-        COALESCE(r.withdrawals, 0) as withdrawals,
-        (COALESCE(t.deposits, 0) - COALESCE(r.withdrawals, 0)) as net_diff
-      FROM daily_reports r
-      FULL OUTER JOIN daily_deposits t ON r.day = t.day
+        report_date::date::text AS report_date,
+        project_id,
+        COALESCE(deposit, 0) AS deposit,
+        COALESCE(manual_in, 0) AS manual_in,
+        COALESCE(bonus, 0) AS bonus,
+        COALESCE(fixed_deposit, 0) AS fixed_deposit,
+        COALESCE(withdraw, 0) AS withdraw,
+        COALESCE(manual_out, 0) AS manual_out,
+        COALESCE(redeem, 0) AS redeem,
+        COALESCE(affiliate, 0) AS affiliate,
+        COALESCE(cashback, 0) AS cashback,
+        COALESCE(balance, 0) AS balance
+      FROM report_summary_daily
+      WHERE (project_id ILIKE '%' || $1 || '%' OR $2 = true)
+        AND report_date::date BETWEEN $3 AND $4
       ORDER BY report_date ASC
     `;
 
     const projectName = project?.name || "";
-    const projectIdParam = project?.id || null;
-    logger.debug("getDailyChartData", `Fetching chart data`, {
-      projectId,
-      projectName,
-      projectIdParam,
-      startDate,
-      endDate,
-    });
+    logger.debug("getDailyChartData", `Fetching chart data`, { projectId, projectName, startDate, endDate });
     const result = await query(sql, [projectName, isAll, startDate, endDate]);
 
-    return result.rows.map((row) => ({
+    const { byDay } = computeKpi(result.rows);
+
+    return byDay.map(({ date, deposits, withdrawals, netDiff }) => ({
       day: (() => {
-        const d = new Date(row.report_date);
+        const d = new Date(date);
         if (isNaN(d.getTime())) return "N/A";
         return new Intl.DateTimeFormat("en-US", { weekday: "short" }).format(d);
       })(),
-      deposits: Number(row.deposits),
-      withdrawals: Number(row.withdrawals),
-      netDiff: Number(row.net_diff),
-      date:
-        typeof row.report_date === "string"
-          ? row.report_date
-          : row.report_date.toISOString().split("T")[0],
+      deposits,
+      withdrawals,
+      netDiff,
+      date,
     }));
   } catch (error) {
     logger.error(
@@ -394,143 +433,32 @@ export async function getDailyChartData(
   }
 }
 
-export interface ReconciliationStatus {
-  todayBalance: number;
-  yesterdayBalance: number;
-  totalWithdrawals: number;
-  totalDeposits: number;
-  variance: number;
-  targetDate: string;
-}
+// getReconciliationStatus removed — use getReconciliationReport from @/actions/reconciliation instead.
+// period='day' produces single-day status; todayBalance and yesterdayBalance are included in ReconciliationReport.
 
 /**
- * Calculates the reconciliation status based on the accounting equation.
- */
-export async function getReconciliationStatus(
-  projectId: string,
-  targetDate: string,
-): Promise<ReconciliationStatus> {
-  try {
-    const isAll = projectId === "all";
-    const project = isAll ? null : await getProjectIdentifiers(projectId);
-    if (!isAll && !project) {
-      return {
-        todayBalance: 0,
-        yesterdayBalance: 0,
-        totalWithdrawals: 0,
-        totalDeposits: 0,
-        variance: 0,
-        targetDate,
-      };
-    }
-
-    // 1. Fetch Today's Balance
-    const todayBalanceSql = `
-      SELECT COALESCE(SUM(db.balance_amount), 0) as total 
-      FROM daily_balances db
-      JOIN projects p ON db.project_name = p.project_name
-      WHERE (p.project_name ILIKE '%' || $1 || '%' OR $2 = true)
-      AND db.date = $3
-    `;
-
-    // 2. Fetch Yesterday's Balance (Most recent before targetDate)
-    const yesterdayBalanceSql = isAll
-      ? `
-        SELECT COALESCE(SUM(balance_amount), 0) as total 
-        FROM (
-          SELECT DISTINCT ON (project_name) balance_amount 
-          FROM daily_balances 
-          WHERE date < $1
-          ORDER BY project_name, date DESC
-        ) as prev_balances
-      `
-      : `
-        SELECT COALESCE(db.balance_amount, 0) as total 
-        FROM daily_balances db
-        JOIN projects p ON db.project_name = p.project_name
-        WHERE p.project_name ILIKE '%' || $1 || '%' AND db.date < $2
-        ORDER BY db.date DESC LIMIT 1
-      `;
-
-    // 3. Fetch withdrawals from transactions table
-    const withdrawalsSql = `
-      SELECT COALESCE(SUM(amount), 0) as total 
-      FROM transactions 
-      WHERE (source_project_id = $1 OR $2 = true)
-      AND transfer_date = $3
-      AND matching_status IN ('AUTO_MAPPED', 'MANUAL_MAPPED')
-    `;
-
-    // 4. Fetch deposits from report_deposits
-    const depositsSql = `
-      SELECT COALESCE(SUM(amount), 0) as total 
-      FROM report_deposits 
-      WHERE status = 'สำเร็จ'
-      AND trans_date::date = $1
-    `;
-
-    const projectName = project?.name || "";
-    const projectIdParam = project?.id || null;
-    logger.debug("getReconciliationStatus", `Fetching reconciliation status`, {
-      projectId,
-      uuid: projectIdParam,
-      projectName,
-      targetDate,
-    });
-
-    const [todayRes, yesterdayRes, withdrawalsRes, depositsRes] =
-      await Promise.all([
-        query(todayBalanceSql, [projectName, isAll, targetDate]),
-        query(
-          yesterdayBalanceSql,
-          isAll ? [targetDate] : [projectName, targetDate],
-        ),
-        query(withdrawalsSql, [projectIdParam, isAll, targetDate]),
-        query(depositsSql, [targetDate]),
-      ]);
-
-    const todayBalance = Number(todayRes.rows[0]?.total || 0);
-    const yesterdayBalance = Number(yesterdayRes.rows[0]?.total || 0);
-    const totalWithdrawals = Number(withdrawalsRes.rows[0]?.total || 0);
-    const totalDeposits = Number(depositsRes.rows[0]?.total || 0);
-
-    // Equation: Variance = ((Today - Yesterday) + Withdrawals) - Deposits
-    const variance =
-      todayBalance - yesterdayBalance + totalWithdrawals - totalDeposits;
-
-    return {
-      todayBalance,
-      yesterdayBalance,
-      totalWithdrawals,
-      totalDeposits,
-      variance,
-      targetDate,
-    };
-  } catch (error) {
-    logger.error(
-      "getReconciliationStatus",
-      "Failed to fetch reconciliation status",
-      error,
-    );
-    return {
-      todayBalance: 0,
-      yesterdayBalance: 0,
-      totalWithdrawals: 0,
-      totalDeposits: 0,
-      variance: 0,
-      targetDate,
-    };
-  }
-}
-
-/**
- * Approves a transaction by marking it as verified.
+ * Approves a transaction (PENDING_REVIEW → MANUAL_MAPPED).
+ * Requires approve_transactions permission (staff, admin, owner).
  */
 export async function approveTransaction(id: string) {
+  const session = await getServerAuthSession();
+  if (!session) return { success: false, error: "Unauthorized" };
+
+  const currentRes = await query(
+    "SELECT matching_status FROM transactions WHERE id = $1",
+    [id],
+  ).catch(() => null);
+  const current = currentRes?.rows[0]?.matching_status ?? "UNMAPPED";
+
+  const transition = nextState({ current, action: "confirm_mapping", actorRole: session.user.role ?? "" });
+  if ("error" in transition) {
+    return { success: false, error: transition.error === "forbidden" ? "Unauthorized" : "Invalid transition" };
+  }
+
   try {
     await query(
-      "UPDATE transactions SET is_amount_verified = true WHERE id = $1",
-      [id],
+      "UPDATE transactions SET matching_status = $1 WHERE id = $2",
+      [transition.next, id],
     );
     return { success: true };
   } catch (error) {
@@ -540,31 +468,32 @@ export async function approveTransaction(id: string) {
 }
 
 /**
- * Force approves a transaction by clearing all anomaly flags and marking it as verified.
+ * Force approves a transaction from any state (admin/owner only).
  */
 export async function forceApproveTransaction(id: string) {
+  const session = await getServerAuthSession();
+  if (!session) return { success: false, error: "Unauthorized" };
+
+  const currentRes = await query(
+    "SELECT matching_status FROM transactions WHERE id = $1",
+    [id],
+  ).catch(() => null);
+  const current = currentRes?.rows[0]?.matching_status ?? "UNMAPPED";
+
+  const transition = nextState({ current, action: "force_approve", actorRole: session.user.role ?? "" });
+  if ("error" in transition) {
+    return { success: false, error: transition.error === "forbidden" ? "Unauthorized" : "Invalid transition" };
+  }
+
   try {
     await query(
-      `
-      UPDATE transactions 
-      SET is_amount_verified = true, 
-          is_amount_mismatch = false, 
-          is_duplicate = false 
-      WHERE id = $1
-    `,
-      [id],
+      `UPDATE transactions SET matching_status = $1, is_duplicate = false WHERE id = $2`,
+      [transition.next, id],
     );
-
-    // Refresh the dashboard data
     revalidatePath("/dashboard/[projectId]", "page");
-
     return { success: true };
   } catch (error) {
-    logger.error(
-      "forceApproveTransaction",
-      "Failed to force approve transaction",
-      error,
-    );
+    logger.error("forceApproveTransaction", "Failed to force approve transaction", error);
     return { success: false, error: "Failed to force approve transaction" };
   }
 }
@@ -614,8 +543,8 @@ export interface OcrResultInput {
   sender_account: string;
   sender_bank: string;
   receiver_name: string;
-  transfer_date: string;
-  transfer_time?: string;
+  /** naive local timestamp, e.g. "2026-01-15 14:30:00" — use buildTransferAt() to construct */
+  transfer_at: string;
   image_path: string;
 }
 
@@ -638,30 +567,24 @@ export async function saveTransactionOcrResult(input: OcrResultInput) {
       accounts,
     );
 
-    // 3. Determine if there's an anomaly (amount mismatch or duplicate)
-    // For simplicity, we just set the flags based on input here
-    const isAmountMismatch = Math.abs(input.amount - input.ai_amount) > 0.01;
-
-    // 4. Insert into transactions
+    // 3. Insert into transactions
     const sql = `
       INSERT INTO transactions (
-        source_project_id, 
-        target_project_id, 
-        amount, 
+        source_project_id,
+        target_project_id,
+        amount,
         ai_amount,
-        sender_name, 
-        receiver_name, 
-        sender_bank, 
-        transfer_date, 
-        transfer_time, 
+        sender_name,
+        receiver_name,
+        sender_bank,
+        transfer_at,
         image_path,
-        is_amount_mismatch,
-        project_account_id, 
-        matching_status, 
+        project_account_id,
+        matching_status,
         matching_confidence,
         possible_matches,
         sender_acc_num
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
       RETURNING id
     `;
 
@@ -673,10 +596,8 @@ export async function saveTransactionOcrResult(input: OcrResultInput) {
       input.sender_name,
       input.receiver_name,
       input.sender_bank,
-      input.transfer_date,
-      input.transfer_time || null,
+      input.transfer_at,
       input.image_path,
-      isAmountMismatch,
       match.matchedAccountId,
       match.status,
       match.score,
@@ -711,6 +632,22 @@ export async function saveTransactionOcrResult(input: OcrResultInput) {
 /**
  * Fetches transactions that need manual matching review.
  */
+export async function getPendingMatchCount(projectId: string): Promise<number> {
+  try {
+    const isAll = projectId === "all";
+    const project = isAll ? null : await getProjectIdentifiers(projectId);
+    const res = await query(
+      `SELECT COUNT(*) as total FROM transactions
+       WHERE (source_project_id = $1 OR $2 = true)
+       AND matching_status IN ('PENDING_REVIEW', 'UNMAPPED')`,
+      [project?.id || null, isAll],
+    );
+    return Number(res.rows[0]?.total || 0);
+  } catch {
+    return 0;
+  }
+}
+
 export async function getPendingMatches(
   projectId: string,
   page: number = 1,
@@ -760,8 +697,9 @@ export async function getPendingMatches(
       amount: Number(row.amount || 0),
       ai_amount: Number(row.ai_amount || 0),
       matching_confidence: Number(row.matching_confidence || 0),
+      match_breakdown: row.match_breakdown ?? null,
       created_at: row.created_at?.toISOString() || "",
-      transfer_date: row.transfer_date ? row.transfer_date.toString() : "",
+      transfer_at: row.transfer_at ? row.transfer_at.toISOString() : "",
     }));
 
     return {
@@ -787,23 +725,32 @@ export async function confirmTransactionMapping(
   transactionId: string,
   selectedAccountId: string,
 ) {
+  const session = await getServerAuthSession();
+  if (!session) return { success: false, error: "Unauthorized" };
+
+  const currentRes = await query(
+    "SELECT matching_status FROM transactions WHERE id = $1",
+    [transactionId],
+  ).catch(() => null);
+  const current = currentRes?.rows[0]?.matching_status ?? "PENDING_REVIEW";
+
+  const transition = nextState({ current, action: "confirm_mapping", actorRole: session.user.role ?? "" });
+  if ("error" in transition) {
+    return { success: false, error: transition.error === "forbidden" ? "Unauthorized" : "Invalid transition" };
+  }
+
   try {
     const sql = `
       UPDATE transactions
       SET project_account_id = $1,
-          matching_status = 'MANUAL_MAPPED'
-      WHERE id = $2
+          matching_status = $2
+      WHERE id = $3
     `;
-    await query(sql, [selectedAccountId, transactionId]);
-
+    await query(sql, [selectedAccountId, transition.next, transactionId]);
     revalidatePath("/dashboard/[projectId]/reconciliation", "page");
     return { success: true };
   } catch (error) {
-    logger.error(
-      "confirmTransactionMapping",
-      "Failed to confirm mapping",
-      error,
-    );
+    logger.error("confirmTransactionMapping", "Failed to confirm mapping", error);
     return { success: false, error: "Failed to confirm mapping" };
   }
 }
@@ -834,7 +781,7 @@ export async function batchReRunSmartMatch(projectId: string) {
       return { success: true, count: 0 };
     }
 
-    // 3. Process each transaction
+    // 3. Process each transaction via state machine
     let updateCount = 0;
     for (const txn of transactions) {
       const match = runSmartMatch(
@@ -846,19 +793,30 @@ export async function batchReRunSmartMatch(projectId: string) {
         accounts,
       );
 
+      const transition = nextState({
+        current: txn.matching_status ?? "UNMAPPED",
+        action: "auto_match",
+        actorRole: "admin",
+        score: match.score,
+      });
+
+      const newStatus = "next" in transition ? transition.next : match.status;
+
       const updateSql = `
         UPDATE transactions
         SET project_account_id = $1,
             matching_status = $2,
             matching_confidence = $3,
-            possible_matches = $4
-        WHERE id = $5
+            possible_matches = $4,
+            match_breakdown = $5
+        WHERE id = $6
       `;
       await query(updateSql, [
         match.matchedAccountId,
-        match.status,
+        newStatus,
         match.score,
         match.possibleMatches || null,
+        JSON.stringify(match.breakdown),
         txn.id,
       ]);
       updateCount++;
@@ -871,5 +829,102 @@ export async function batchReRunSmartMatch(projectId: string) {
   } catch (error) {
     logger.error("batchReRunSmartMatch", "Failed to re-run matching", error);
     return { success: false, error: "Failed to re-run matching" };
+  }
+}
+
+export interface FailedSlip {
+  id: number;
+  image_path: string;
+  discord_message_id: string | null;
+  source_project_id: number | null;
+  target_project_id: number | null;
+  source_project_name: string | null;
+  target_project_name: string | null;
+  created_at: string;
+}
+
+/**
+ * Fetches raw_uploads rows with ai_status='ERROR', paginated.
+ * Requires approve_transactions permission.
+ */
+export async function getFailedSlips(
+  projectId: string,
+  page: number = 1,
+  limit: number = 50,
+): Promise<{ data: FailedSlip[]; totalItems: number; totalPages: number; currentPage: number }> {
+  const session = await getServerAuthSession();
+  if (!session || !hasPermission(session.user.role, 'approve_transactions')) {
+    return { data: [], totalItems: 0, totalPages: 0, currentPage: page };
+  }
+
+  try {
+    const isAll = projectId === "all";
+    const project = isAll ? null : await getProjectIdentifiers(projectId);
+    const projectId_ = project?.id || null;
+    const OFFSET = (page - 1) * limit;
+
+    const sql = `
+      SELECT
+        ru.id, ru.image_path, ru.discord_message_id,
+        ru.source_project_id, ru.target_project_id,
+        sp.project_name AS source_project_name,
+        tp.project_name AS target_project_name,
+        ru.created_at
+      FROM raw_uploads ru
+      LEFT JOIN projects sp ON ru.source_project_id = sp.id
+      LEFT JOIN projects tp ON ru.target_project_id = tp.id
+      WHERE ru.ai_status = 'ERROR'
+        AND ($1 = true OR ru.source_project_id::text = $2)
+      ORDER BY ru.created_at DESC
+      LIMIT $3 OFFSET $4
+    `;
+
+    const countSql = `
+      SELECT COUNT(*) AS total FROM raw_uploads ru
+      WHERE ru.ai_status = 'ERROR'
+        AND ($1 = true OR ru.source_project_id::text = $2)
+    `;
+
+    const [result, countRes] = await Promise.all([
+      query(sql, [isAll, projectId_, limit, OFFSET]),
+      query(countSql, [isAll, projectId_]),
+    ]);
+
+    const totalItems = Number(countRes.rows[0]?.total || 0);
+    const totalPages = Math.ceil(totalItems / limit);
+
+    return {
+      data: result.rows.map((row) => ({
+        ...row,
+        created_at: row.created_at?.toISOString() || "",
+      })),
+      totalItems,
+      totalPages,
+      currentPage: page,
+    };
+  } catch (error) {
+    logger.error("getFailedSlips", "Failed to fetch failed slips", error);
+    return { data: [], totalItems: 0, totalPages: 0, currentPage: page };
+  }
+}
+
+/**
+ * Marks a raw_upload as PROCESSED after successful manual entry.
+ */
+export async function markUploadProcessed(uploadId: number) {
+  const session = await getServerAuthSession();
+  if (!session || !hasPermission(session.user.role, 'approve_transactions')) {
+    return { success: false, error: "Unauthorized" };
+  }
+  try {
+    await query(
+      "UPDATE raw_uploads SET ai_status = 'PROCESSED' WHERE id = $1",
+      [uploadId],
+    );
+    revalidatePath("/dashboard/[projectId]", "page");
+    return { success: true };
+  } catch (error) {
+    logger.error("markUploadProcessed", "Failed to mark upload processed", error);
+    return { success: false, error: "Failed to update upload status" };
   }
 }

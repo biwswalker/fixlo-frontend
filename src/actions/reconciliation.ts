@@ -10,6 +10,7 @@ import {
   endOfMonth,
 } from "date-fns";
 import { getServerAuthSession } from "@/lib/auth";
+import { hasPermission } from "@/lib/rbac";
 import { revalidatePath } from "next/cache";
 
 // ---------------------------------------------------------------------------
@@ -41,6 +42,10 @@ export interface ReconciliationReport {
   accountLevelStats: AccountLevelStat[];
   periodStart: string;
   periodEnd: string;
+  /** Alias of actualBalance — useful for single-day status view */
+  todayBalance: number;
+  /** Alias of startingBalance — the balance just before the period */
+  yesterdayBalance: number;
 }
 
 // ---------------------------------------------------------------------------
@@ -117,6 +122,8 @@ function emptyReport(startDate: string, endDate: string): ReconciliationReport {
     accountLevelStats: [],
     periodStart: startDate,
     periodEnd: endDate,
+    todayBalance: 0,
+    yesterdayBalance: 0,
   };
 }
 
@@ -178,8 +185,7 @@ export async function getReconciliationReport(
     const outflowSql = `
       SELECT COALESCE(SUM(t.ai_amount), 0) AS total
       FROM transactions t
-      WHERE t.is_amount_verified = true
-        AND t.transfer_date::date BETWEEN $1 AND $2
+      WHERE t.transfer_at::date BETWEEN $1 AND $2
         AND (
           t.source_project_id = $3
           OR t.target_project_id = $3
@@ -218,8 +224,7 @@ export async function getReconciliationReport(
       SELECT t.ai_amount, t.sender_name, t.project_account_id, pa.account_name
       FROM transactions t
       LEFT JOIN project_accounts pa ON t.project_account_id = pa.id
-      WHERE t.is_amount_verified = true
-        AND t.transfer_date::date BETWEEN $1 AND $2
+      WHERE t.transfer_at::date BETWEEN $1 AND $2
         AND (
           t.source_project_id = $3
           OR t.target_project_id = $3
@@ -374,6 +379,8 @@ export async function getReconciliationReport(
       accountLevelStats,
       periodStart: startDate,
       periodEnd: endDate,
+      todayBalance: actualBalance,
+      yesterdayBalance: startingBalance,
     };
   } catch (error) {
     logger.error(
@@ -405,7 +412,7 @@ export async function addManualAdjustment(data: CreateAdjustmentInput) {
   logger.info("addManualAdjustment", "Adding manual adjustment", data);
   const session = await getServerAuthSession();
 
-  if (!session || !["owner", "admin"].includes(session.user.role || "")) {
+  if (!session || !hasPermission(session.user.role, 'manage_projects')) {
     logger.warn(
       "addManualAdjustment",
       "Unauthorized attempt to add adjustment",
@@ -434,7 +441,7 @@ export async function addManualAdjustment(data: CreateAdjustmentInput) {
       data.amount,
       data.reason,
       data.adjustmentDate,
-      session.user.id,
+      session.user.username,
     ];
 
     await query(sql, params);

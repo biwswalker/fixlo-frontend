@@ -67,19 +67,9 @@ export function AnomaliesTable({ anomalies }: AnomaliesTableProps) {
                       <TableCell className="text-gray-500">{formatBaht(txn.ai_amount)}</TableCell>
                       <TableCell>
                         <div className="flex flex-wrap gap-1.5">
-                          {txn.is_amount_mismatch && (
-                            <Badge variant="destructive" className="bg-rose-50 text-rose-700 border-transparent rounded-full px-2.5 py-0.5 font-medium whitespace-nowrap">
-                              ยอดไม่ตรง
-                            </Badge>
-                          )}
                           {txn.is_duplicate && (
                             <Badge variant="secondary" className="bg-orange-50 text-orange-700 border-transparent rounded-full px-2.5 py-0.5 font-medium whitespace-nowrap">
                               สลิปซ้ำ
-                            </Badge>
-                          )}
-                          {txn.is_time_anomaly && (
-                            <Badge variant="secondary" className="bg-amber-50 text-amber-700 border-transparent rounded-full px-2.5 py-0.5 font-medium whitespace-nowrap">
-                              เวลาผิดปกติ
                             </Badge>
                           )}
                         </div>

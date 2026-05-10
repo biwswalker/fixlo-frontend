@@ -23,16 +23,11 @@ import {
   Landmark,
   Scale,
   CalendarCheck,
+  GitMerge,
 } from "lucide-react";
 import { ReconciliationSkeleton } from "@/components/dashboard/DashboardSkeletons";
-import { PendingMatchesTable } from "@/components/dashboard/PendingMatchesTable";
-import { ReRunMatchingButton } from "@/components/dashboard/ReRunMatchingButton";
-import {
-  getPendingMatches,
-  getProjectAccounts,
-  batchReRunSmartMatch,
-} from "@/actions/dashboard";
-import { Sparkles } from "lucide-react";
+import { getPendingMatchCount } from "@/actions/dashboard";
+import Link from "next/link";
 
 export default async function ReconciliationPage({
   params,
@@ -60,8 +55,6 @@ export default async function ReconciliationPage({
   const {
     period = "day",
     date: targetDateStr,
-    page = "1",
-    limit = "50",
   } = await searchParams;
 
   const validPeriod = ["day", "week", "month"].includes(period)
@@ -80,6 +73,7 @@ export default async function ReconciliationPage({
     project?.project_name || (projectId === "all" ? "ทุกโปรเจกต์" : projectId);
 
   const targetDate = targetDateStr ? new Date(targetDateStr) : new Date();
+  const pendingCount = await getPendingMatchCount(projectId);
 
   return (
     <div className="grid gap-6 animate-in fade-in duration-500">
@@ -119,8 +113,7 @@ export default async function ReconciliationPage({
           projectId={projectId}
           period={validPeriod}
           targetDate={targetDate}
-          page={Number(page)}
-          limit={Number(limit)}
+          pendingCount={pendingCount}
         />
       </Suspense>
     </div>
@@ -134,20 +127,14 @@ async function ReconciliationContent({
   projectId,
   period,
   targetDate,
-  page,
-  limit,
+  pendingCount,
 }: {
   projectId: string;
   period: "day" | "week" | "month";
   targetDate: Date;
-  page: number;
-  limit: number;
+  pendingCount: number;
 }) {
   const report = await getReconciliationReport(projectId, period, targetDate);
-  const pendingMatchesResult = await getPendingMatches(projectId, page, limit);
-  const projectAccounts = await getProjectAccounts(projectId);
-
-  const { data: pendingMatches, totalPages, totalItems } = pendingMatchesResult;
 
   // Formatting helpers
   const formatPeriodRange = () => {
@@ -265,24 +252,28 @@ async function ReconciliationContent({
       </div>
 
       {/* Pending Matches Section */}
-      {pendingMatches.length > 0 && (
-        <div className="space-y-4">
-          <div className="flex items-center justify-between mt-8">
-            <h2 className="text-xl font-semibold tracking-tight text-gray-900 flex items-center gap-2">
-              <Sparkles className="h-5 w-5 text-amber-500" />
-              รายการรอตรวจสอบการจับคู่บัญชี (Pending Account Matches)
-            </h2>
-            <ReRunMatchingButton projectId={projectId} />
+      {pendingCount > 0 && (
+        <Link
+          href={`/dashboard/${projectId}/match`}
+          className="flex items-center justify-between gap-4 mt-4 p-4 rounded-2xl border border-amber-200 bg-amber-50 hover:bg-amber-100 transition-colors group"
+        >
+          <div className="flex items-center gap-3">
+            <div className="bg-amber-100 group-hover:bg-amber-200 p-2.5 rounded-xl transition-colors">
+              <GitMerge className="h-5 w-5 text-amber-600" />
+            </div>
+            <div>
+              <p className="font-semibold text-amber-900 text-sm">
+                มีรายการรอจับคู่บัญชีด้วยตนเอง
+              </p>
+              <p className="text-xs text-amber-700 mt-0.5">
+                {pendingCount} รายการ — คลิกเพื่อไปจัดการ
+              </p>
+            </div>
           </div>
-          <PendingMatchesTable
-            transactions={pendingMatches}
-            projectAccounts={projectAccounts}
-            totalPages={totalPages}
-            totalItems={totalItems}
-            currentPage={page}
-            limit={limit}
-          />
-        </div>
+          <div className="text-amber-600 text-sm font-semibold group-hover:translate-x-1 transition-transform">
+            ไปจัดการ →
+          </div>
+        </Link>
       )}
 
       {/* Account Breakdown Table */}

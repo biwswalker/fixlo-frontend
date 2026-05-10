@@ -1,3 +1,5 @@
+export type { CandidateBreakdown, MatchBreakdown } from "@/lib/smartMatcher";
+
 export interface AccountBreakdown {
   account: string;
   total: number;
@@ -29,16 +31,13 @@ export interface TransactionRecord {
   amount: number;
   ai_amount: number;
   is_duplicate: boolean;
-  is_amount_mismatch: boolean;
   sender_name: string;
   receiver_name: string;
   sender_bank?: string;
   receiver_bank?: string;
   sender_account?: string;
-  transfer_date: string;
-  transfer_time?: string;
+  transfer_at: string;
   image_path?: string;
-  is_time_anomaly: boolean;
   created_at: string;
   project_account_id?: string;
   matching_status?:
@@ -48,6 +47,7 @@ export interface TransactionRecord {
     | "UNMAPPED";
   matching_confidence?: number;
   possible_matches?: string[]; // UUIDs
+  match_breakdown?: import("@/lib/smartMatcher").MatchBreakdown;
   ref_id?: string;
 }
 
