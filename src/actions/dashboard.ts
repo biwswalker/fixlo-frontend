@@ -379,50 +379,64 @@ export async function getDailyChartData(
   to?: string,
 ) {
   try {
-    const isAll = projectId === "all";
     const { startDate, endDate } = getDateRange(from, to);
 
-    const project = isAll ? null : await getProjectIdentifiers(projectId);
-    if (!isAll && !project) return [];
-
-    // Fetch all KPI columns so computeKpi can apply the canonical formula.
-    const sql = `
-      SELECT
-        report_date::date::text AS report_date,
-        project_id,
-        COALESCE(deposit, 0) AS deposit,
-        COALESCE(manual_in, 0) AS manual_in,
-        COALESCE(bonus, 0) AS bonus,
-        COALESCE(fixed_deposit, 0) AS fixed_deposit,
-        COALESCE(withdraw, 0) AS withdraw,
-        COALESCE(manual_out, 0) AS manual_out,
-        COALESCE(redeem, 0) AS redeem,
-        COALESCE(affiliate, 0) AS affiliate,
-        COALESCE(cashback, 0) AS cashback,
-        COALESCE(balance, 0) AS balance
-      FROM report_summary_daily
-      WHERE (project_id ILIKE '%' || $1 || '%' OR $2 = true)
-        AND report_date::date BETWEEN $3 AND $4
-      ORDER BY report_date ASC
+    // Mirror the same source as totalDeposits / totalWithdrawals KPI:
+    // report_deposits (status=สำเร็จ) and report_withdrawals (status=สำเร็จ), grouped by date.
+    const depositsSql = `
+      SELECT trans_date::date::text AS day_date, COALESCE(SUM(amount), 0) AS total
+      FROM report_deposits
+      WHERE status = 'สำเร็จ'
+        AND trans_date::date BETWEEN $1 AND $2
+      GROUP BY trans_date::date
+      ORDER BY trans_date::date ASC
     `;
 
-    const projectName = project?.name || "";
-    logger.debug("getDailyChartData", `Fetching chart data`, { projectId, projectName, startDate, endDate });
-    const result = await query(sql, [projectName, isAll, startDate, endDate]);
+    const withdrawalsSql = `
+      SELECT trans_date::date::text AS day_date, COALESCE(SUM(amount), 0) AS total
+      FROM report_withdrawals
+      WHERE status = 'สำเร็จ'
+        AND trans_date::date BETWEEN $1 AND $2
+      GROUP BY trans_date::date
+      ORDER BY trans_date::date ASC
+    `;
 
-    const { byDay } = computeKpi(result.rows);
+    logger.debug("getDailyChartData", `Fetching chart data from report_deposits/report_withdrawals`, { projectId, startDate, endDate });
 
-    return byDay.map(({ date, deposits, withdrawals, netDiff }) => ({
-      day: (() => {
-        const d = new Date(date);
-        if (isNaN(d.getTime())) return "N/A";
-        return new Intl.DateTimeFormat("en-US", { weekday: "short" }).format(d);
-      })(),
-      deposits,
-      withdrawals,
-      netDiff,
-      date,
-    }));
+    const [depositsRes, withdrawalsRes] = await Promise.all([
+      query(depositsSql, [startDate, endDate]),
+      query(withdrawalsSql, [startDate, endDate]),
+    ]);
+
+    const depositsByDay = new Map<string, number>();
+    for (const row of depositsRes.rows) {
+      depositsByDay.set(row.day_date, Number(row.total));
+    }
+
+    const withdrawalsByDay = new Map<string, number>();
+    for (const row of withdrawalsRes.rows) {
+      withdrawalsByDay.set(row.day_date, Number(row.total));
+    }
+
+    // Collect all dates from both sets
+    const allDates = Array.from(
+      new Set([...depositsByDay.keys(), ...withdrawalsByDay.keys()]),
+    ).sort();
+
+    return allDates.map((date) => {
+      const deposits = depositsByDay.get(date) ?? 0;
+      const withdrawals = withdrawalsByDay.get(date) ?? 0;
+      const d = new Date(date);
+      return {
+        day: isNaN(d.getTime())
+          ? "N/A"
+          : new Intl.DateTimeFormat("en-US", { weekday: "short" }).format(d),
+        deposits,
+        withdrawals,
+        netDiff: deposits - withdrawals,
+        date,
+      };
+    });
   } catch (error) {
     logger.error(
       "getDailyChartData",
