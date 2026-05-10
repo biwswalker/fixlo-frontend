@@ -44,7 +44,7 @@ export function ReRunMatchingButton({ projectId }: ReRunMatchingButtonProps) {
         onOpenChange={() => {}}
       >
         <DialogContent
-          className="max-w-sm rounded-2xl border-none shadow-2xl"
+          className="w-auto max-w-sm rounded-2xl border-none shadow-2xl"
           showCloseButton={false}
         >
           <DialogHeader className="items-center text-center gap-3 pt-2">

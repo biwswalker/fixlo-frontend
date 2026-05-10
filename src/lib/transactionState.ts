@@ -15,8 +15,8 @@ export type NextStateResult =
   | { next: TxnStatus }
   | { error: "forbidden" | "invalid-transition" };
 
-const AUTO_THRESHOLD = 75;
-const REVIEW_THRESHOLD = 50;
+const AUTO_THRESHOLD = 80;
+const REVIEW_THRESHOLD = 40;
 
 export function nextState(input: NextStateInput): NextStateResult {
   const { current, action, actorRole, score } = input;

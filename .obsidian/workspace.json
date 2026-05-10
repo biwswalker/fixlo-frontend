@@ -4,21 +4,17 @@
     "type": "split",
     "children": [
       {
-        "id": "550553f02d1496c6",
+        "id": "50a69c3284b1c78e",
         "type": "tabs",
         "children": [
           {
-            "id": "69e7fafc74d220c5",
+            "id": "ef759e46468c855e",
             "type": "leaf",
             "state": {
-              "type": "markdown",
-              "state": {
-                "file": "docs/db/tables/users.md",
-                "mode": "source",
-                "source": false
-              },
-              "icon": "lucide-file",
-              "title": "users"
+              "type": "graph",
+              "state": {},
+              "icon": "lucide-git-fork",
+              "title": "Graph view"
             }
           }
         ]
@@ -183,14 +179,15 @@
       "bases:Create new base": false
     }
   },
-  "active": "69e7fafc74d220c5",
+  "active": "ef759e46468c855e",
   "lastOpenFiles": [
+    "docs/db/tables/report_manual_bonus_in.md",
+    "docs/db/tables/users.md",
     "CONTEXT.md",
     "docs/db/tables/report_summary_daily.md",
     "docs/db/tables/report_manual_credit_out.md",
     "docs/db/tables/report_manual_credit_in.md",
     "docs/db/tables/report_manual_bonus_out.md",
-    "docs/db/tables/report_manual_bonus_in.md",
     "docs/db/tables/report_withdrawals.md",
     "docs/db/tables/report_deposits.md",
     "docs/db/tables/manual_adjustments.md",
@@ -199,7 +196,6 @@
     "docs/db/tables/raw_uploads.md",
     "docs/db/tables/project_accounts.md",
     "docs/db/tables/projects.md",
-    "docs/db/tables/users.md",
     "docs/db/MOC.md",
     "docs/db/tables",
     "docs/db",

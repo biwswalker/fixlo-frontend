@@ -1,9 +1,9 @@
 {
-  "_comment": "Shared cross-repo regression fixtures for runSmartMatch / smartMatcher.js. Both fixlo-frontend and fixlo-spectre must assert all cases pass. AUTO=75, REVIEW=50. Gateway: bank=80pts, name=20pts. Person: name=60pts, account=40pts (no bank). TrueMoney: name=100pts.",
+  "_comment": "Shared cross-repo regression fixtures for runSmartMatch / smartMatcher.js. Both fixlo-frontend and fixlo-spectre must assert all cases pass. Algorithm: Person/TrueWallet uses sequential P1 (account wildcard, score 100) → P2 (exact/alias 100, partial 80) → PENDING_REVIEW (never UNMAPPED). Gateway: bank_code match → 100 → AUTO_MAPPED, else PENDING_REVIEW. AUTO_THRESHOLD=80. REVIEW_THRESHOLD retained in transactionState only.",
   "cases": [
     {
       "id": "gateway-wealth-wave-full-match",
-      "description": "Gateway: Wealth.wave bank match (80) + name contains bank (20) → 100 → AUTO_MAPPED",
+      "description": "Gateway: bank_code 'wealth.wave' matches → score 100 → AUTO_MAPPED",
       "scanned": { "name": "wealth.wave", "account": null, "bank": "wealth.wave" },
       "masterAccounts": [
         { "id": "uuid-gw-1", "project_id": "proj-1", "account_name": "Wealth.wave Gateway", "account_number": "", "bank_code": "wealth.wave", "aliases": "[]", "created_at": "2026-01-01T00:00:00Z" }
@@ -12,8 +12,8 @@
       "expectedId": "uuid-gw-1"
     },
     {
-      "id": "gateway-apay-bank-only-pending",
-      "description": "Gateway: Apay bank match only (80) → AUTO_MAPPED (80 ≥ 75)",
+      "id": "gateway-apay-bank-only",
+      "description": "Gateway: bank_code 'apay' matches, name irrelevant → score 100 → AUTO_MAPPED",
       "scanned": { "name": "other agent", "account": null, "bank": "apay" },
       "masterAccounts": [
         { "id": "uuid-gw-2", "project_id": "proj-1", "account_name": "Apay Gateway", "account_number": "", "bank_code": "apay", "aliases": "[]", "created_at": "2026-01-01T00:00:00Z" }
@@ -23,7 +23,7 @@
     },
     {
       "id": "gateway-apay-full-match",
-      "description": "Gateway: Apay bank (80) + name contains bank keyword (20) → AUTO_MAPPED",
+      "description": "Gateway: bank_code 'apay' matches → score 100 → AUTO_MAPPED",
       "scanned": { "name": "apay", "account": null, "bank": "apay" },
       "masterAccounts": [
         { "id": "uuid-gw-3", "project_id": "proj-1", "account_name": "Apay Gateway", "account_number": "", "bank_code": "apay", "aliases": "[]", "created_at": "2026-01-01T00:00:00Z" }
@@ -32,8 +32,8 @@
       "expectedId": "uuid-gw-3"
     },
     {
-      "id": "gateway-dpay-no-name-pending",
-      "description": "Gateway: DPay bank match only, null name → score=80 → AUTO_MAPPED (80 ≥ 75)",
+      "id": "gateway-dpay-no-name",
+      "description": "Gateway: bank_code 'dpay' matches, null name → score 100 → AUTO_MAPPED",
       "scanned": { "name": null, "account": null, "bank": "dpay" },
       "masterAccounts": [
         { "id": "uuid-gw-4", "project_id": "proj-1", "account_name": "DPay Gateway", "account_number": "", "bank_code": "dpay", "aliases": "[]", "created_at": "2026-01-01T00:00:00Z" }
@@ -42,18 +42,28 @@
       "expectedId": "uuid-gw-4"
     },
     {
-      "id": "person-exact-name-bank-only",
-      "description": "Person: exact name (60), no bank = 60 → PENDING_REVIEW (60 < 75)",
-      "scanned": { "name": "สมชาย ใจดี", "account": null, "bank": "kbank" },
+      "id": "gateway-bank-mismatch-pending",
+      "description": "Gateway: scanned bank 'kbank' does not match bank_code 'wealth.wave' → score 0 → PENDING_REVIEW",
+      "scanned": { "name": null, "account": null, "bank": "kbank" },
       "masterAccounts": [
-        { "id": "uuid-p-1", "project_id": "proj-1", "account_name": "สมชาย ใจดี", "account_number": "1234567890", "bank_code": "kbank", "aliases": "[]", "created_at": "2026-01-01T00:00:00Z" }
+        { "id": "uuid-gw-6", "project_id": "proj-1", "account_name": "Wealth.wave Gateway", "account_number": "", "bank_code": "wealth.wave", "aliases": "[]", "created_at": "2026-01-01T00:00:00Z" }
       ],
       "expectedStatus": "PENDING_REVIEW",
       "expectedId": null
     },
     {
+      "id": "person-exact-name-bank-only",
+      "description": "Person: exact name match (P2) → score 100 → AUTO_MAPPED (no account needed)",
+      "scanned": { "name": "สมชาย ใจดี", "account": null, "bank": "kbank" },
+      "masterAccounts": [
+        { "id": "uuid-p-1", "project_id": "proj-1", "account_name": "สมชาย ใจดี", "account_number": "1234567890", "bank_code": "kbank", "aliases": "[]", "created_at": "2026-01-01T00:00:00Z" }
+      ],
+      "expectedStatus": "AUTO_MAPPED",
+      "expectedId": "uuid-p-1"
+    },
+    {
       "id": "person-exact-name-plus-account",
-      "description": "Person: exact name (60) + exact account (40) = 100 → AUTO_MAPPED",
+      "description": "Person: account match (P1) → score 100 → AUTO_MAPPED",
       "scanned": { "name": "สมหญิง แสนดี", "account": "0987654321", "bank": "xyz" },
       "masterAccounts": [
         { "id": "uuid-p-2", "project_id": "proj-1", "account_name": "สมหญิง แสนดี", "account_number": "0987654321", "bank_code": "scb", "aliases": "[]", "created_at": "2026-01-01T00:00:00Z" }
@@ -63,7 +73,7 @@
     },
     {
       "id": "person-exact-name-account-bank",
-      "description": "Person: exact name (60) + account (40) = 100 → AUTO_MAPPED (bank ignored)",
+      "description": "Person: account match (P1) → score 100 → AUTO_MAPPED (bank ignored for person)",
       "scanned": { "name": "สมหญิง แสนดี", "account": "0987654321", "bank": "scb" },
       "masterAccounts": [
         { "id": "uuid-p-3", "project_id": "proj-1", "account_name": "สมหญิง แสนดี", "account_number": "0987654321", "bank_code": "scb", "aliases": "[]", "created_at": "2026-01-01T00:00:00Z" }
@@ -73,17 +83,17 @@
     },
     {
       "id": "person-alias-match-bank",
-      "description": "Person: alias name match (60), no bank = 60 → PENDING_REVIEW (60 < 75)",
+      "description": "Person: alias name match (P2) → score 100 → AUTO_MAPPED (no account needed)",
       "scanned": { "name": "ต้อย", "account": null, "bank": "bbl" },
       "masterAccounts": [
         { "id": "uuid-p-4", "project_id": "proj-1", "account_name": "ประพันธ์ ทองดี", "account_number": "1111111111", "bank_code": "bbl", "aliases": "[\"ต้อย\",\"p.thongdee\"]", "created_at": "2026-01-01T00:00:00Z" }
       ],
-      "expectedStatus": "PENDING_REVIEW",
-      "expectedId": null
+      "expectedStatus": "AUTO_MAPPED",
+      "expectedId": "uuid-p-4"
     },
     {
       "id": "person-alias-plus-account",
-      "description": "Person: alias (60) + exact account (40) = 100 → AUTO_MAPPED",
+      "description": "Person: account match (P1) → score 100 → AUTO_MAPPED",
       "scanned": { "name": "ต้อย", "account": "1111111111", "bank": "xyz" },
       "masterAccounts": [
         { "id": "uuid-p-5", "project_id": "proj-1", "account_name": "ประพันธ์ ทองดี", "account_number": "1111111111", "bank_code": "bbl", "aliases": "[\"ต้อย\"]", "created_at": "2026-01-01T00:00:00Z" }
@@ -92,8 +102,38 @@
       "expectedId": "uuid-p-5"
     },
     {
+      "id": "person-partial-name-only",
+      "description": "Person: partial name match (P2, substring) → score 80 → AUTO_MAPPED",
+      "scanned": { "name": "สมชาย", "account": null, "bank": "kbank" },
+      "masterAccounts": [
+        { "id": "uuid-partial-1", "project_id": "proj-1", "account_name": "สมชาย ใจดี", "account_number": "1234509999", "bank_code": "kbank", "aliases": "[]", "created_at": "2026-01-01T00:00:00Z" }
+      ],
+      "expectedStatus": "AUTO_MAPPED",
+      "expectedId": "uuid-partial-1"
+    },
+    {
+      "id": "person-account-only-auto",
+      "description": "Person: account matches (P1), name totally wrong → score 100 → AUTO_MAPPED",
+      "scanned": { "name": "ไม่รู้จัก คนแปลก", "account": "5555555555", "bank": "xyz" },
+      "masterAccounts": [
+        { "id": "uuid-acc-p1", "project_id": "proj-1", "account_name": "ลีน่า มาเรีย", "account_number": "5555555555", "bank_code": "scb", "aliases": "[]", "created_at": "2026-01-01T00:00:00Z" }
+      ],
+      "expectedStatus": "AUTO_MAPPED",
+      "expectedId": "uuid-acc-p1"
+    },
+    {
+      "id": "person-both-fail-pending",
+      "description": "Person: no account, name no match → score 0 → PENDING_REVIEW (never UNMAPPED for person)",
+      "scanned": { "name": "ซูซาน", "account": null, "bank": "gsb" },
+      "masterAccounts": [
+        { "id": "uuid-fail-1", "project_id": "proj-1", "account_name": "อนุชา วิริยะ", "account_number": "6666666666", "bank_code": "gsb", "aliases": "[]", "created_at": "2026-01-01T00:00:00Z" }
+      ],
+      "expectedStatus": "PENDING_REVIEW",
+      "expectedId": null
+    },
+    {
       "id": "truemoney-exact-name",
-      "description": "TrueMoney: exact name (100) → AUTO_MAPPED",
+      "description": "TrueWallet: exact name match (P2), no account → score 100 → AUTO_MAPPED",
       "scanned": { "name": "วิชาญ ดีมาก", "account": null, "bank": "truemoney wallet" },
       "masterAccounts": [
         { "id": "uuid-tm-1", "project_id": "proj-1", "account_name": "วิชาญ ดีมาก", "account_number": "0991234567", "bank_code": "truemoney", "aliases": "[]", "created_at": "2026-01-01T00:00:00Z" }
@@ -102,8 +142,8 @@
       "expectedId": "uuid-tm-1"
     },
     {
-      "id": "truemoney-name-plus-bank",
-      "description": "TrueMoney: exact name (100) → AUTO_MAPPED (bank/account ignored)",
+      "id": "truemoney-name-plus-account",
+      "description": "TrueWallet: account (phone) match (P1) → score 100 → AUTO_MAPPED",
       "scanned": { "name": "วิชาญ ดีมาก", "account": "0991234567", "bank": "truemoney" },
       "masterAccounts": [
         { "id": "uuid-tm-2", "project_id": "proj-1", "account_name": "วิชาญ ดีมาก", "account_number": "0991234567", "bank_code": "truemoney", "aliases": "[]", "created_at": "2026-01-01T00:00:00Z" }
@@ -112,18 +152,28 @@
       "expectedId": "uuid-tm-2"
     },
     {
-      "id": "truemoney-partial-name-bank",
-      "description": "TrueMoney: partial name mismatch, no account = score 0 → UNMAPPED",
+      "id": "truemoney-partial-name-no-account",
+      "description": "TrueWallet: partial name no match (วิทย์ not substring of วิทยา เด็ดขาด), no account → PENDING_REVIEW",
       "scanned": { "name": "วิทย์", "account": null, "bank": "truemoney" },
       "masterAccounts": [
         { "id": "uuid-tm-3", "project_id": "proj-1", "account_name": "วิทยา เด็ดขาด", "account_number": "0991111111", "bank_code": "truemoney", "aliases": "[]", "created_at": "2026-01-01T00:00:00Z" }
       ],
-      "expectedStatus": "UNMAPPED",
+      "expectedStatus": "PENDING_REVIEW",
       "expectedId": null
     },
     {
+      "id": "truewallet-phone-as-account-p1",
+      "description": "TrueWallet: phone number in account field (P1) matches master account_number → score 100 → AUTO_MAPPED despite name mismatch",
+      "scanned": { "name": "ผิดชื่อ", "account": "0912345678", "bank": "truemoney" },
+      "masterAccounts": [
+        { "id": "uuid-tw-p1", "project_id": "proj-1", "account_name": "วิษณุ ดีจริง", "account_number": "0912345678", "bank_code": "truemoney", "aliases": "[]", "created_at": "2026-01-01T00:00:00Z" }
+      ],
+      "expectedStatus": "AUTO_MAPPED",
+      "expectedId": "uuid-tw-p1"
+    },
+    {
       "id": "masked-account-x-wildcard",
-      "description": "Person: masked account x* wildcard + name match → AUTO_MAPPED",
+      "description": "Person: masked account xxxx5678 wildcard matches 12345678 (P1) → AUTO_MAPPED",
       "scanned": { "name": "นารี ดวงดี", "account": "xxxx5678", "bank": "kbank" },
       "masterAccounts": [
         { "id": "uuid-mask-1", "project_id": "proj-1", "account_name": "นารี ดวงดี", "account_number": "12345678", "bank_code": "kbank", "aliases": "[]", "created_at": "2026-01-01T00:00:00Z" }
@@ -133,7 +183,7 @@
     },
     {
       "id": "masked-account-star-wildcard",
-      "description": "Person: masked account * wildcard + name + bank → AUTO_MAPPED",
+      "description": "Person: masked account ****1234 wildcard matches 99991234 (P1) → AUTO_MAPPED",
       "scanned": { "name": "บุญมี รักดี", "account": "****1234", "bank": "ktb" },
       "masterAccounts": [
         { "id": "uuid-mask-2", "project_id": "proj-1", "account_name": "บุญมี รักดี", "account_number": "99991234", "bank_code": "ktb", "aliases": "[]", "created_at": "2026-01-01T00:00:00Z" }
@@ -143,7 +193,7 @@
     },
     {
       "id": "masked-account-dash-separator",
-      "description": "Person: dashes in account cleaned before comparison → name+account match → AUTO_MAPPED",
+      "description": "Person: dashes in account cleaned → 1234567890 matches (P1) → AUTO_MAPPED",
       "scanned": { "name": "สุภาพ ใจงาม", "account": "123-456-7890", "bank": "xyz" },
       "masterAccounts": [
         { "id": "uuid-mask-3", "project_id": "proj-1", "account_name": "สุภาพ ใจงาม", "account_number": "1234567890", "bank_code": "bay", "aliases": "[]", "created_at": "2026-01-01T00:00:00Z" }
@@ -153,12 +203,12 @@
     },
     {
       "id": "no-match-low-score",
-      "description": "No name/bank/account overlap → score=0 → UNMAPPED",
+      "description": "Person: no account match, no name match → score 0 → PENDING_REVIEW (never UNMAPPED for person)",
       "scanned": { "name": "ไม่รู้จัก", "account": "0000000000", "bank": "xyz" },
       "masterAccounts": [
         { "id": "uuid-nm-1", "project_id": "proj-1", "account_name": "สมศรี รักดี", "account_number": "1234567890", "bank_code": "scb", "aliases": "[]", "created_at": "2026-01-01T00:00:00Z" }
       ],
-      "expectedStatus": "UNMAPPED",
+      "expectedStatus": "PENDING_REVIEW",
       "expectedId": null
     },
     {
@@ -171,7 +221,7 @@
     },
     {
       "id": "bank-normalize-thai-kbank",
-      "description": "Thai bank name normalization: 'กสิกรไทย' → 'kbank' → bank match contributes score",
+      "description": "Person: account matches (P1) → AUTO_MAPPED (bank normalization in place but not used for person scoring)",
       "scanned": { "name": "มาลี สุขใจ", "account": "2222222222", "bank": "กสิกรไทย" },
       "masterAccounts": [
         { "id": "uuid-bn-1", "project_id": "proj-1", "account_name": "มาลี สุขใจ", "account_number": "2222222222", "bank_code": "kbank", "aliases": "[]", "created_at": "2026-01-01T00:00:00Z" }
@@ -181,7 +231,7 @@
     },
     {
       "id": "bank-normalize-thai-scb",
-      "description": "Thai bank name normalization: 'ไทยพาณิชย์' → 'scb' → bank match contributes score",
+      "description": "Person: account matches (P1) → AUTO_MAPPED",
       "scanned": { "name": "อนันต์ ใจดี", "account": "3333333333", "bank": "ไทยพาณิชย์" },
       "masterAccounts": [
         { "id": "uuid-bn-2", "project_id": "proj-1", "account_name": "อนันต์ ใจดี", "account_number": "3333333333", "bank_code": "scb", "aliases": "[]", "created_at": "2026-01-01T00:00:00Z" }
@@ -191,7 +241,7 @@
     },
     {
       "id": "multiple-accounts-best-match-wins",
-      "description": "Multiple accounts — highest score wins; irrelevant account scores near zero",
+      "description": "Multiple accounts: account match (P1) on uuid-multi-2 → AUTO_MAPPED",
       "scanned": { "name": "สมพร แข็งแกร่ง", "account": "7777777777", "bank": "gsb" },
       "masterAccounts": [
         { "id": "uuid-multi-1", "project_id": "proj-1", "account_name": "ไม่ใช่คนนี้", "account_number": "0000000000", "bank_code": "kbank", "aliases": "[]", "created_at": "2026-01-01T00:00:00Z" },
@@ -202,7 +252,7 @@
     },
     {
       "id": "json-array-aliases-with-account",
-      "description": "Aliases as JSON array string + account match → AUTO_MAPPED",
+      "description": "Person: account matches (P1) → AUTO_MAPPED",
       "scanned": { "name": "joe", "account": "4444444444", "bank": "xyz" },
       "masterAccounts": [
         { "id": "uuid-alias-1", "project_id": "proj-1", "account_name": "โจ สุรศักดิ์", "account_number": "4444444444", "bank_code": "bbl", "aliases": "[\"joe\",\"jo\",\"โจ้\"]", "created_at": "2026-01-01T00:00:00Z" }
@@ -211,14 +261,54 @@
       "expectedId": "uuid-alias-1"
     },
     {
-      "id": "gateway-badoo-bank-only-pending",
-      "description": "Gateway: Badoo bank match only (80), null name → AUTO_MAPPED (80 ≥ 75)",
+      "id": "gateway-badoo-bank-only",
+      "description": "Gateway: bank_code 'badoo' matches, null name → score 100 → AUTO_MAPPED",
       "scanned": { "name": null, "account": null, "bank": "badoo" },
       "masterAccounts": [
         { "id": "uuid-gw-5", "project_id": "proj-1", "account_name": "Badoo Gateway", "account_number": "", "bank_code": "badoo", "aliases": "[]", "created_at": "2026-01-01T00:00:00Z" }
       ],
       "expectedStatus": "AUTO_MAPPED",
       "expectedId": "uuid-gw-5"
+    },
+    {
+      "id": "person-title-prefix-account-match",
+      "description": "Person: OCR name has น.ส. prefix + typo (ศุนิษา vs ศุณิษา) but account matches (P1) → score 100 → AUTO_MAPPED",
+      "scanned": { "name": "น.ส. ศุนิษา", "account": "1234567890", "bank": "kbank" },
+      "masterAccounts": [
+        { "id": "uuid-title-1", "project_id": "proj-1", "account_name": "ศุณิษา", "account_number": "1234567890", "bank_code": "kbank", "aliases": "[]", "created_at": "2026-01-01T00:00:00Z" }
+      ],
+      "expectedStatus": "AUTO_MAPPED",
+      "expectedId": "uuid-title-1"
+    },
+    {
+      "id": "person-title-prefix-exact-name-account",
+      "description": "Person: นาย prefix stripped → exact name + account match (P1) → score 100 → AUTO_MAPPED",
+      "scanned": { "name": "นาย สมชาย ใจดี", "account": "1234567890", "bank": "scb" },
+      "masterAccounts": [
+        { "id": "uuid-title-2", "project_id": "proj-1", "account_name": "สมชาย ใจดี", "account_number": "1234567890", "bank_code": "scb", "aliases": "[]", "created_at": "2026-01-01T00:00:00Z" }
+      ],
+      "expectedStatus": "AUTO_MAPPED",
+      "expectedId": "uuid-title-2"
+    },
+    {
+      "id": "person-title-prefix-partial-name",
+      "description": "Person: น.ส. stripped → 'สม' is substring of 'สมหญิง รักดี' (P2 partial) → score 80 → AUTO_MAPPED",
+      "scanned": { "name": "น.ส. สม", "account": null, "bank": "scb" },
+      "masterAccounts": [
+        { "id": "uuid-title-partial-1", "project_id": "proj-1", "account_name": "สมหญิง รักดี", "account_number": "8888888888", "bank_code": "scb", "aliases": "[]", "created_at": "2026-01-01T00:00:00Z" }
+      ],
+      "expectedStatus": "AUTO_MAPPED",
+      "expectedId": "uuid-title-partial-1"
+    },
+    {
+      "id": "person-account-only-auto",
+      "description": "Person: account matches (P1), name totally wrong → score 100 → AUTO_MAPPED",
+      "scanned": { "name": "คนแปลกหน้า", "account": "9999999999", "bank": "xyz" },
+      "masterAccounts": [
+        { "id": "uuid-acc-1", "project_id": "proj-1", "account_name": "ลิลลี่ จันทร์งาม", "account_number": "9999999999", "bank_code": "bay", "aliases": "[]", "created_at": "2026-01-01T00:00:00Z" }
+      ],
+      "expectedStatus": "AUTO_MAPPED",
+      "expectedId": "uuid-acc-1"
     }
   ]
 }

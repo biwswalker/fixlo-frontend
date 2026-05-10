@@ -36,8 +36,10 @@ interface ScoreDetail {
 
 const GATEWAY_KEYWORDS = ["wealth", "dpay", "apay", "badoo", "binance"];
 
-const AUTO_THRESHOLD = 75;
-const REVIEW_THRESHOLD = 50;
+const AUTO_THRESHOLD = 80;
+
+// Thai title prefixes stripped before name comparison (OCR often includes them)
+const TITLE_PREFIX_RE = /^(นางสาว|นาง สาว|น\.ส\.|นาย|นาง|ด\.ช\.|ด\.ญ\.|เด็กชาย|เด็กหญิง)\s*/u;
 
 function normalizeBank(name: string | null | undefined): string {
   if (!name) return "";
@@ -64,65 +66,54 @@ function parseAliases(raw: ProjectAccount["aliases"] | string[] | null): string[
   }
 }
 
-function calculateMatchScore(
-  scanned: ScannedSlip,
-  master: ProjectAccount,
-): ScoreDetail {
-  let score = 0;
-  let nameMatched: "exact" | "partial" | "alias" | "none" = "none";
-  let accountMatched = false;
-  let bankMatched = false;
+function scoreGatewayAccount(scanned: ScannedSlip, master: ProjectAccount): ScoreDetail {
+  const sBank = normalizeBank(scanned.bank);
+  const mBankCode = normalizeBank(master.bank_code);
+  if (sBank && sBank === mBankCode) {
+    return { score: 100, nameMatched: "none", accountMatched: false, bankMatched: true };
+  }
+  return { score: 0, nameMatched: "none", accountMatched: false, bankMatched: false };
+}
 
-  const masterNameLower = (master.account_name || "").toLowerCase();
-  const isGateway = GATEWAY_KEYWORDS.some((key) =>
-    masterNameLower.includes(key),
-  );
-
-  const sName = (scanned.name || "").toLowerCase().trim();
-  const sBank = (scanned.bank || "").toLowerCase().trim();
+function scorePersonAccount(scanned: ScannedSlip, master: ProjectAccount): ScoreDetail {
+  const sNameRaw = (scanned.name || "").toLowerCase().trim();
+  const sName = sNameRaw.replace(TITLE_PREFIX_RE, "").trim();
   const sAccount = scanned.account || "";
-  const mName = masterNameLower.trim();
-  const mBankCode = (master.bank_code || "").toLowerCase().trim();
-  const mAliases = parseAliases(master.aliases).map((a) =>
-    a.toLowerCase().trim(),
-  );
+  const mName = (master.account_name || "").toLowerCase().trim();
+  const mAliases = parseAliases(master.aliases).map((a) => a.toLowerCase().trim());
 
-  if (isGateway) {
-    // CASE A: Gateway — provider/bank weighted heavier than name (80/20)
-    if (sBank && (sBank === mBankCode || mName.includes(sBank))) {
-      score += 80;
-      bankMatched = true;
-    }
-    if (sName) {
-      if (sName === mName) { score += 20; nameMatched = "exact"; }
-      else if (mAliases.includes(sName)) { score += 20; nameMatched = "alias"; }
-      else if (mName.includes(sName)) { score += 20; nameMatched = "partial"; }
-    }
-    return { score, nameMatched, accountMatched, bankMatched };
-  }
-
-  // CASE B: Person — name 60 / account 40. TrueMoney: name 100 (no account number).
-  const isTrueMoney = sBank.includes("truemoney") || sBank.includes("wallet");
-  const nameWeight = isTrueMoney ? 100 : 60;
-  const accWeight = isTrueMoney ? 0 : 40;
-
-  if (sName) {
-    if (sName === mName) { score += nameWeight; nameMatched = "exact"; }
-    else if (mAliases.includes(sName)) { score += nameWeight; nameMatched = "alias"; }
-    else if (mName.includes(sName) || sName.includes(mName)) { score += Math.round(nameWeight * 0.6); nameMatched = "partial"; }
-  }
-
-  if (accWeight > 0 && sAccount && master.account_number) {
+  // Priority 1: Account number (wildcard x/* treated as .*)
+  if (sAccount && master.account_number) {
     const cleanScanned = sAccount.replace(/[-\s]/g, "");
     const cleanMaster = master.account_number.replace(/[-\s]/g, "");
     const pattern = new RegExp(`^${cleanScanned.replace(/[x*]/gi, ".*")}$`);
     if (cleanScanned === cleanMaster || pattern.test(cleanMaster)) {
-      score += accWeight;
-      accountMatched = true;
+      return { score: 100, nameMatched: "none", accountMatched: true, bankMatched: false };
     }
   }
 
-  return { score, nameMatched, accountMatched, bankMatched };
+  // Priority 2: Name (title-prefix stripped)
+  if (sName) {
+    if (sName === mName) {
+      return { score: 100, nameMatched: "exact", accountMatched: false, bankMatched: false };
+    }
+    if (mAliases.includes(sName)) {
+      return { score: 100, nameMatched: "alias", accountMatched: false, bankMatched: false };
+    }
+    if (mName.includes(sName) || sName.includes(mName)) {
+      return { score: 80, nameMatched: "partial", accountMatched: false, bankMatched: false };
+    }
+  }
+
+  return { score: 0, nameMatched: "none", accountMatched: false, bankMatched: false };
+}
+
+function calculateMatchScore(scanned: ScannedSlip, master: ProjectAccount): ScoreDetail {
+  const masterNameLower = (master.account_name || "").toLowerCase();
+  const isGateway = GATEWAY_KEYWORDS.some((key) => masterNameLower.includes(key));
+  return isGateway
+    ? scoreGatewayAccount(scanned, master)
+    : scorePersonAccount(scanned, master);
 }
 
 /**
@@ -153,14 +144,14 @@ export function runSmartMatch(
 
   const candidates: CandidateBreakdown[] = scored.slice(0, 3).map((s) => ({
     accountId: s.account.id,
-    score: Math.round(s.score),
+    score: s.score,
     nameMatched: s.nameMatched,
     accountMatched: s.accountMatched,
     bankMatched: s.bankMatched,
   }));
 
   const breakdown: MatchBreakdown = {
-    topScore: Math.round(best.score),
+    topScore: best.score,
     candidates,
   };
 
@@ -168,28 +159,20 @@ export function runSmartMatch(
     return {
       matchedAccountId: best.account.id,
       status: "AUTO_MAPPED",
-      score: Math.round(best.score),
+      score: best.score,
       breakdown,
     };
   }
 
-  if (best.score >= REVIEW_THRESHOLD) {
-    const possibleMatches = scored
-      .filter((s) => s.score >= REVIEW_THRESHOLD)
-      .map((s) => s.account.id);
-    return {
-      matchedAccountId: null,
-      possibleMatches,
-      status: "PENDING_REVIEW",
-      score: Math.round(best.score),
-      breakdown,
-    };
-  }
+  const possibleMatches = scored
+    .filter((s) => s.score > 0)
+    .map((s) => s.account.id);
 
   return {
     matchedAccountId: null,
-    status: "UNMAPPED",
-    score: Math.round(best.score),
+    possibleMatches,
+    status: "PENDING_REVIEW",
+    score: best.score,
     breakdown,
   };
 }
