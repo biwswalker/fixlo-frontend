@@ -221,8 +221,24 @@ export async function getDashboardSummary(
       ORDER BY total DESC
     `;
 
+    // Total deposits = actual bank deposits + manual credit additions + bonus distributions
     const reportDepositsQuery = `
       SELECT COALESCE(SUM(amount), 0) as total_deposits
+      FROM (
+        SELECT amount FROM report_deposits
+          WHERE status = 'สำเร็จ' AND trans_date::date BETWEEN $1 AND $2
+        UNION ALL
+        SELECT amount FROM report_manual_credit_in
+          WHERE trans_date::date BETWEEN $1 AND $2
+        UNION ALL
+        SELECT amount FROM report_manual_bonus_in
+          WHERE trans_date::date BETWEEN $1 AND $2
+      ) combined
+    `;
+
+    // Deposit-only total for the breakdown "ฝากเงิน" bar (manual_in and bonus shown separately)
+    const depositOnlyQuery = `
+      SELECT COALESCE(SUM(amount), 0) as total
       FROM report_deposits
       WHERE status = 'สำเร็จ'
       AND trans_date::date BETWEEN $1 AND $2
@@ -244,22 +260,25 @@ export async function getDashboardSummary(
       depositsRes,
       withdrawalsRes,
       txDepositRes,
+      depositOnlyRes,
     ] = await Promise.all([
       query(summaryQuery, summaryParams),
       query(balanceQuery, isAll ? [endDate] : [projectName, endDate]),
       query(depositsBreakdownQuery, breakdownParams),
       query(withdrawalsBreakdownQuery, breakdownParams),
       query(reportDepositsQuery, [startDate, endDate]),
+      query(depositOnlyQuery, [startDate, endDate]),
     ]);
 
     const trueTotalDeposits = Number(txDepositRes.rows[0]?.total_deposits || 0);
     const trueTotalWithdrawals = Number(summaryRes.rows[0]?.total_withdrawals || 0);
+    const depositOnly = Number(depositOnlyRes.rows[0]?.total || 0);
 
     return {
       totalDeposits: trueTotalDeposits,
       totalWithdrawals: trueTotalWithdrawals,
       latestBalance: Number(balanceRes.rows[0]?.latest_balance || 0),
-      deposit: trueTotalDeposits,
+      deposit: depositOnly,
       manualIn: Number(summaryRes.rows[0].manual_in || 0),
       bonus: Number(summaryRes.rows[0].bonus || 0),
       fixedDeposit: Number(summaryRes.rows[0].fixed_deposit || 0),
@@ -309,13 +328,19 @@ export async function getDailyChartData(
   try {
     const { startDate, endDate } = getDateRange(from, to);
 
-    // Mirror the same source as totalDeposits / totalWithdrawals KPI:
-    // report_deposits (status=สำเร็จ) and report_withdrawals (status=สำเร็จ), grouped by date.
+    // Mirror the same source as totalDeposits KPI: sum of all three deposit tables per day.
     const depositsSql = `
       SELECT trans_date::date::text AS day_date, COALESCE(SUM(amount), 0) AS total
-      FROM report_deposits
-      WHERE status = 'สำเร็จ'
-        AND trans_date::date BETWEEN $1 AND $2
+      FROM (
+        SELECT trans_date, amount FROM report_deposits
+          WHERE status = 'สำเร็จ' AND trans_date::date BETWEEN $1 AND $2
+        UNION ALL
+        SELECT trans_date, amount FROM report_manual_credit_in
+          WHERE trans_date::date BETWEEN $1 AND $2
+        UNION ALL
+        SELECT trans_date, amount FROM report_manual_bonus_in
+          WHERE trans_date::date BETWEEN $1 AND $2
+      ) combined
       GROUP BY trans_date::date
       ORDER BY trans_date::date ASC
     `;
