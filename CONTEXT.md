@@ -35,7 +35,8 @@ tags: [domain, glossary]
   - `staff` — operator. view_reports + approve_transactions (PENDING_REVIEW)
   - `viewer` — read-only. view_reports
 - **Slip** — ภาพสลิปธนาคาร — เก็บ [[raw_uploads]] → [[transactions]]
-- **Matching** — process จับคู่ slip/daily_balance กับ project_account. ใช้กับ [[transactions]] (slip→account) และ [[daily_balances]] (balance snapshot→account). Priority: P1 = account_name fuzzy, P2 = platform/bank_code tiebreaker. ถ้าไม่ unique → PENDING_REVIEW → admin match manual.
+- **Matching** — process จับคู่ slip/daily_balance กับ project_account. ใช้กับ [[transactions]] (slip→account) และ [[daily_balances]] (balance snapshot→account). Priority: P1 = account_name fuzzy, P2 = platform/bank_code tiebreaker. ถ้าไม่ unique → PENDING_REVIEW → admin match manual หรือ reject.
+- **Rejected slip** — transaction ที่ admin ตัดสินใจ reject ออกจาก matching pool อย่างมีเหตุผล (เช่น สลิปซ้ำ, ยอดผิด, ผิด project) `matching_status = 'REJECTED'`. ไม่นับใน reconciliation outflow. ยังคงอยู่ใน DB เพื่อ audit trail. ต้องระบุเหตุผล (preset 5 ตัว + free text).
 - **Match breakdown** ([[transactions]].`match_breakdown` jsonb) — top-3 candidate accounts พร้อม component score (nameMatched, accountMatched, bankMatched) ที่ smartMatcher เก็บตอน matching รัน ใช้โชว์ admin ใน Pending Account Matches table ว่าทำไมสลิปไม่ AUTO_MAPPED
 - **Daily balance** — ยอดคงเหลือ end-of-day ของ master account แต่ละบัญชี เก็บใน [[daily_balances]]. staff ส่งภาพ (BALANCE type) → worker INSERT. ต้อง match กับ [[project_accounts]] (มี matching_status: UNMATCHED/PENDING_REVIEW/AUTO_MAPPED/MANUAL_MAPPED + project_account_id FK).
 - **Daily balance inflow formula** — `inflow_D = balance_D - balance_(D-1) + withdrawals_D` โดย `withdrawals_D` = SUM ของ transactions.ai_amount (AUTO_MAPPED/MANUAL_MAPPED) ใน วัน D. `report_summary_daily` ใช้แสดง game-side เปรียบเทียบเท่านั้น ไม่เข้า formula.
@@ -47,7 +48,13 @@ tags: [domain, glossary]
   - [[report_manual_credit_out]] = หักเครดิตด้วยมือ
 - **Manual adjustment** ([[manual_adjustments]]) — ปรับยอดของ **master account** (ฝั่ง Fixlo / project_account) เมื่อ reconcile ไม่ตรง. ต่างจาก `report_manual_*` ที่ปรับยอดของ **player**. `amount` = signed (`+` เพิ่ม, `-` หัก).
 - **`bank_code`** ไม่ใช่ธนาคารจริงเสมอไป — รวม e-wallet (`TRUEMONEY`), crypto exchange (`BINANCE`), underground payment gateway (`Apay`, `DPay`, `Badoo`, `Wealth.wave`). อย่าถือ `bank_code` เป็น "ธนาคาร" — มันคือ "ช่องทางรับ-ส่งเงิน".
-- **Aliases** — JSON-encoded array เก็บเป็น text ใน `project_accounts.aliases`; ใช้ fuzzy match กับ sender/receiver name ของสลิป.
+- **Aliases** — JSON-encoded array เก็บเป็น text ใน `project_accounts.aliases`; ใช้ fuzzy match กับ sender/receiver name ของสลิป. จัดการผ่าน tag input UI ใน `/dashboard/[projectId]/accounts`.
+- **Project account soft-delete** — [[project_accounts]] ใช้ `deleted_at timestamp` แทนการลบจริง บัญชีที่ถูก soft-delete ไม่โผล่ใน dropdown match/select แต่ยังคงอยู่ใน DB เพื่อไม่ให้ reconciliation ประวัติเสีย. ลบได้เฉพาะบัญชีที่ไม่มี transaction ผูกอยู่ — ถ้ามีต้อง block.
+- **Reconciliation day-only** — หน้า reconciliation ใช้ period=day เท่านั้น (ตัด week/month/year ออก). Pending match banner filter ด้วย `transfer_at::date = targetDate` (ไม่ใช่ backlog ทั้งหมด). Banner link ไป match page พร้อม `?transferDate=YYYY-MM-DD` pre-filled.
+- **Manual transaction** — รายการโอนเงินจริงที่ไม่ผ่าน Discord bot (เช่น operator ลืมส่งสลิป). เก็บใน `manual_transactions` table แยกจาก `transactions`. Fields: `project_account_id` (required), `amount` (required), `transfer_at` (required), `image_path` (optional), `note` (optional), `created_by`. `matching_status = MANUAL_MAPPED` ทันที — admin เลือก account โดยตรงตอนสร้าง ไม่ผ่าน Smart Matching. ต่างจาก `manual_adjustments` ที่ปรับยอดที่มีอยู่แล้ว — manual_transaction คือ outflow ใหม่ที่ไม่มีใน Discord.
+- **Manual balance** — ยอดคงเหลือปลายวันที่ admin กรอกเองแทนการส่งภาพผ่าน Discord. เก็บใน `daily_balances` เดิม + เพิ่ม `source` column (`discord` | `manual`).
+- **Manual entry dialog** — `AddAdjustmentDialog` ขยายเป็น 3 tabs: Adjustment / Manual Slip / Manual Balance. สร้างได้จากหน้า reconciliation (admin only).
+- **Account breakdown — Manual column** — ตาราง "รายละเอียดการจ่ายแยกตามบัญชี" มี column "Manual" โผล่เฉพาะเมื่อมี manual_transaction ในวันที่เลือก (hidden ถ้าทุก row = 0). Drill-down drawer แสดงทั้ง Discord slip และ Manual slip รวมกัน เรียงตาม `transfer_at` พร้อม badge แยกแหล่งที่มา.
 
 ## Bounded contexts
 
@@ -135,7 +142,7 @@ tags: [domain, glossary]
    - Add owner-only perms: `manage_admins`, `manage_billing`
 
 6. **Transaction state machine + verification post-QR**:
-   - `matching_status`: `UNMAPPED → PENDING_REVIEW → MANUAL_MAPPED` (manual path) หรือ `→ AUTO_MAPPED` (worker path)
+   - `matching_status`: `UNMAPPED → PENDING_REVIEW → MANUAL_MAPPED` (manual path) หรือ `→ AUTO_MAPPED` (worker path) หรือ `→ REJECTED` (admin ปฏิเสธ)
    - `is_amount_verified` = QR-only legacy. หลัง drop: ตัด filter ออกจาก reconciliation, ใช้ `matching_status IN ('AUTO_MAPPED', 'MANUAL_MAPPED')` เป็น trusted set
    - `forceApproveTransaction` + `approveTransaction` ปัจจุบันไม่มี role check (inconsistent กับ `addManualAdjustment`). Plan: เพิ่ม `["owner","admin"]` check ทั้งคู่
 
