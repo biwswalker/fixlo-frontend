@@ -8,6 +8,7 @@ import { hasPermission } from "@/lib/rbac";
 import { revalidatePath } from "next/cache";
 import { resolveProject } from "@/lib/projects";
 import { resolvePeriodToDateRange } from "@/lib/periodUtils";
+import { buildAccountLevelStats } from "@/lib/accountLevelStats";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -16,11 +17,19 @@ import { resolvePeriodToDateRange } from "@/lib/periodUtils";
 export interface AccountLevelStat {
   /** Master account name */
   account: string;
+  /** UUID of the project_account; null for "Unmapped" */
+  accountId: string | null;
+  /** Bank code (e.g. 'scb', 'kbank'); null for "Unmapped" */
+  bankCode: string | null;
+  /** Raw account number from project_accounts; null if absent or "Unmapped" */
+  accountNumber: string | null;
   /** OCR-verified outflow amount for this account */
   systemOutflow: number;
-  /** Sum of manual adjustments */
+  /** Outflow from manually-entered transactions (manual_transactions table) */
+  manualOutflow: number;
+  /** Always 0 — kept for type compatibility; adjustments are now per-slip via adjusted_amount */
   adjustments: number;
-  /** systemOutflow + (-adjustments) */
+  /** systemOutflow + manualOutflow */
   effectiveOutflow: number;
   /** Number of system transactions */
   count: number;
@@ -170,9 +179,13 @@ export async function getReconciliationReport(
 
     // ------------------------------------------------------------------
     // 4. Raw verified transactions for per-account grouping (in JS)
+    //    Uses COALESCE(adjusted_amount, ai_amount) so admin corrections
+    //    feed into systemOutflow without discarding the original ai_amount.
     // ------------------------------------------------------------------
     const rawTxSql = `
-      SELECT t.ai_amount, t.sender_name, t.project_account_id, pa.account_name
+      SELECT COALESCE(t.adjusted_amount, t.ai_amount) AS adjusted_amount,
+             t.ai_amount, t.sender_name, t.project_account_id AS account_id,
+             pa.account_name, pa.bank_code, pa.account_number
       FROM transactions t
       LEFT JOIN project_accounts pa ON t.project_account_id = pa.id
       WHERE t.transfer_at::date BETWEEN $1 AND $2
@@ -206,18 +219,7 @@ export async function getReconciliationReport(
       `;
 
     // ------------------------------------------------------------------
-    // 6. Manual Adjustments for the period
-    // ------------------------------------------------------------------
-    const adjustmentsSql = `
-      SELECT pa.account_name, ma.amount
-      FROM manual_adjustments ma
-      LEFT JOIN project_accounts pa ON pa.id::text = ma.master_account
-      WHERE ma.adjustment_date BETWEEN $1 AND $2
-        AND (ma.project_id = $3 OR $4 = true)
-    `;
-
-    // ------------------------------------------------------------------
-    // 7. Per-account closing balances from matched daily_balances
+    // 6. Per-account closing balances from matched daily_balances
     //    Uses most recent row (by date) per account within period.
     // ------------------------------------------------------------------
     const closingBalSql = `
@@ -233,6 +235,17 @@ export async function getReconciliationReport(
       ORDER BY db.project_account_id, db.date DESC
     `;
 
+    // ------------------------------------------------------------------
+    // 7. Manual transactions for per-account grouping (#49)
+    // ------------------------------------------------------------------
+    const manualTxSql = `
+      SELECT pa.account_name, mt.amount
+      FROM manual_transactions mt
+      JOIN project_accounts pa ON mt.project_account_id = pa.id
+      WHERE mt.transfer_at::date BETWEEN $1 AND $2
+        AND (mt.project_id = $3 OR $4 = true)
+    `;
+
     logger.debug("getReconciliationReport", "Executing parallel DB queries");
 
     const [
@@ -241,90 +254,26 @@ export async function getReconciliationReport(
       balanceRes,
       rawTxRes,
       startBalRes,
-      extAdjRes,
       closingBalRes,
+      manualTxRes,
     ] = await Promise.all([
       query(inflowSql, [startDate, endDate]),
       query(outflowSql, [startDate, endDate, projectUuid, isAll]),
       query(balanceSql, isAll ? [endDate] : [projectName, endDate]),
       query(rawTxSql, [startDate, endDate, projectUuid, isAll]),
       query(startBalSql, isAll ? [startDate] : [projectName, startDate]),
-      query(adjustmentsSql, [startDate, endDate, projectUuid, isAll]),
       query(closingBalSql, [endDate, projectUuid, isAll]),
+      query(manualTxSql, [startDate, endDate, projectUuid, isAll]).catch(() => ({ rows: [] })),
     ]);
 
     // ------------------------------------------------------------------
-    // 8. Aggregate outflow and adjustments by matched Master Account
+    // 8. Aggregate outflow by matched Master Account
     // ------------------------------------------------------------------
-    const accountMap = new Map<
-      string,
-      { systemOutflow: number; adjustments: number; count: number; closingBalance: number | null }
-    >();
-
-    for (const row of rawTxRes.rows) {
-      // Bucket by saved master account name. UNMAPPED rows fall under "Unmapped".
-      const matchedName: string = row.account_name || "Unmapped";
-      const amount = Number(row.ai_amount ?? 0);
-      const existing = accountMap.get(matchedName);
-      if (existing) {
-        existing.systemOutflow += amount;
-        existing.count += 1;
-      } else {
-        accountMap.set(matchedName, {
-          systemOutflow: amount,
-          adjustments: 0,
-          count: 1,
-          closingBalance: null,
-        });
-      }
-    }
-
-    for (const row of extAdjRes.rows) {
-      const acc: string = row.account_name || "Unmapped";
-      const amount = Number(row.amount ?? 0);
-      const existing = accountMap.get(acc);
-      if (existing) {
-        existing.adjustments += amount;
-      } else {
-        accountMap.set(acc, {
-          systemOutflow: 0,
-          adjustments: amount,
-          count: 0,
-          closingBalance: null,
-        });
-      }
-    }
-
-    // Merge closing balances from matched daily_balances.
-    // Accounts with a snapshot but no transactions are added with systemOutflow = 0.
-    for (const row of closingBalRes.rows) {
-      const acc: string = row.account_name || "Unmapped";
-      const closingBalance = row.closing_balance !== null ? Number(row.closing_balance) : null;
-      const existing = accountMap.get(acc);
-      if (existing) {
-        existing.closingBalance = closingBalance;
-      } else {
-        accountMap.set(acc, {
-          systemOutflow: 0,
-          adjustments: 0,
-          count: 0,
-          closingBalance,
-        });
-      }
-    }
-
-    const accountLevelStats: AccountLevelStat[] = Array.from(
-      accountMap.entries(),
-    )
-      .map(([account, { systemOutflow, adjustments, count, closingBalance }]) => ({
-        account,
-        systemOutflow,
-        adjustments,
-        effectiveOutflow: systemOutflow - adjustments,
-        count,
-        closingBalance,
-      }))
-      .sort((a, b) => b.effectiveOutflow - a.effectiveOutflow);
+    const accountLevelStats: AccountLevelStat[] = buildAccountLevelStats(
+      rawTxRes.rows,
+      closingBalRes.rows,
+      manualTxRes.rows,
+    );
 
     // ------------------------------------------------------------------
     // 8. Compute variance
@@ -336,10 +285,7 @@ export async function getReconciliationReport(
     const expectedOutflow = Number(outflowRes.rows[0]?.total ?? 0);
     const actualBalance = Number(balanceRes.rows[0]?.total ?? 0);
 
-    const adjustmentsTotal = accountLevelStats.reduce(
-      (sum, s) => sum + s.adjustments,
-      0,
-    );
+    const adjustmentsTotal = 0;
     const effectiveOutflowTotal = accountLevelStats.reduce(
       (sum, s) => sum + s.effectiveOutflow,
       0,

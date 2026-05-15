@@ -6,18 +6,10 @@ import { getProjectByName } from "@/actions/dashboard";
 import { getServerAuthSession } from "@/lib/auth";
 import { redirect } from "next/navigation";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
 import { formatBaht, cn } from "@/lib/utils";
-import { PeriodSelector } from "@/components/dashboard/PeriodSelector";
-import type { Period } from "@/components/dashboard/PeriodSelector";
 import { AddAdjustmentDialog } from "@/components/dashboard/AddAdjustmentDialog";
+import { ReconciliationPeriodSelector } from "@/components/dashboard/ReconciliationPeriodSelector";
+import { AccountBreakdownTable } from "@/components/dashboard/AccountBreakdownTable";
 import {
   ArrowDownToLine,
   ArrowUpFromLine,
@@ -36,10 +28,7 @@ export default async function ReconciliationPage({
 }: {
   params: Promise<{ projectId: string }>;
   searchParams: Promise<{
-    period?: string;
     date?: string;
-    page?: string;
-    limit?: string;
   }>;
 }) {
   const session = await getServerAuthSession();
@@ -53,19 +42,10 @@ export default async function ReconciliationPage({
   }
 
   const { projectId } = await params;
-  const {
-    period = "day",
-    date: targetDateStr,
-  } = await searchParams;
+  const { date: targetDateStr } = await searchParams;
 
-  const validPeriod = (["day", "week", "month", "year"].includes(period)
-    ? period
-    : "day") as Period;
-
-  // Resolve project details dynamically
   const project = await getProjectByName(projectId);
 
-  // If project is invalid (and not 'all'), redirect to 'all'
   if (!project && projectId !== "all") {
     redirect("/dashboard/all/reconciliation");
   }
@@ -76,7 +56,8 @@ export default async function ReconciliationPage({
   const yesterday = new Date();
   yesterday.setDate(yesterday.getDate() - 1);
   const targetDate = targetDateStr ? new Date(targetDateStr) : yesterday;
-  const pendingCount = await getPendingMatchCount(projectId);
+  const targetDateIso = format(targetDate, "yyyy-MM-dd");
+  const pendingCount = await getPendingMatchCount(projectId, targetDateIso);
 
   return (
     <div className="grid gap-6 animate-in fade-in duration-500">
@@ -91,31 +72,22 @@ export default async function ReconciliationPage({
           </p>
         </div>
 
-        {/* Period Selector & Admin Tool */}
         <div className="flex items-center gap-3">
-          <div className="flex items-center gap-3 bg-white p-2 text-sm rounded-3xl shadow-sm border border-gray-100">
-            <span className="text-muted-foreground font-medium pl-2 hidden sm:inline-block">
-              มุมมอง:
-            </span>
-            <PeriodSelector
-              currentPeriod={validPeriod}
-              currentDate={targetDate}
-            />
-          </div>
-          {session.user.role === "admin" && (
+          <ReconciliationPeriodSelector currentDate={targetDate} />
+          {["owner", "admin"].includes(session.user.role || "") && (
             <AddAdjustmentDialog projectId={projectId} />
           )}
         </div>
       </div>
 
       <Suspense
-        key={`${projectId}-${validPeriod}-${targetDateStr}`}
+        key={`${projectId}-day-${targetDateIso}`}
         fallback={<ReconciliationSkeleton />}
       >
         <ReconciliationContent
           projectId={projectId}
-          period={validPeriod}
           targetDate={targetDate}
+          targetDateIso={targetDateIso}
           pendingCount={pendingCount}
         />
       </Suspense>
@@ -128,26 +100,23 @@ export default async function ReconciliationPage({
  */
 async function ReconciliationContent({
   projectId,
-  period,
   targetDate,
+  targetDateIso,
   pendingCount,
 }: {
   projectId: string;
-  period: Period;
   targetDate: Date;
+  targetDateIso: string;
   pendingCount: number;
 }) {
-  const reconPeriod = period === "year" ? "month" : period;
-  const report = await getReconciliationReport(projectId, reconPeriod, targetDate);
+  const [report, session] = await Promise.all([
+    getReconciliationReport(projectId, "day", targetDate),
+    getServerAuthSession(),
+  ]);
 
   // Formatting helpers
   const formatPeriodRange = () => {
-    const start = new Date(report.periodStart);
-    const end = new Date(report.periodEnd);
-    if (period === "day" || report.periodStart === report.periodEnd) {
-      return format(start, "d MMMM yyyy", { locale: th });
-    }
-    return `${format(start, "d MMM yyyy", { locale: th })} — ${format(end, "d MMM yyyy", { locale: th })}`;
+    return format(new Date(report.periodStart), "d MMMM yyyy", { locale: th });
   };
 
   const hasVariance = report.variance !== 0;
@@ -258,7 +227,7 @@ async function ReconciliationContent({
       {/* Pending Matches Section */}
       {pendingCount > 0 && (
         <Link
-          href={`/dashboard/${projectId}/match`}
+          href={`/dashboard/${projectId}/match?transferDate=${targetDateIso}`}
           className="flex items-center justify-between gap-4 mt-4 p-4 rounded-2xl border border-amber-200 bg-amber-50 hover:bg-amber-100 transition-colors group"
         >
           <div className="flex items-center gap-3">
@@ -286,118 +255,12 @@ async function ReconciliationContent({
         รายละเอียดการจ่ายแยกตามบัญชี (Outflow by Master Account)
       </h2>
 
-      <Card className="border-none shadow-sm rounded-2xl overflow-hidden">
-        {report.accountLevelStats.length === 0 ? (
-          <div className="p-12 text-center text-muted-foreground flex flex-col items-center">
-            <ArrowUpFromLine className="h-10 w-10 text-muted/30 mb-3" />
-            <p className="font-medium">ไม่พบข้อมูลการจ่ายเงินในรอบเวลานี้</p>
-            <p className="text-sm mt-1 opacity-80">
-              ยังไม่มีการตรวจสอบสลิปจ่ายเงิน หรือไม่มีข้อมูลตรงตามเงื่อนไข
-            </p>
-          </div>
-        ) : (
-          <div className="overflow-x-auto">
-            <Table>
-              <TableHeader className="bg-gray-50/50">
-                <TableRow className="border-none hover:bg-transparent">
-                  <TableHead className="w-[80px] text-center font-semibold rounded-tl-xl">
-                    ลำดับที่
-                  </TableHead>
-                  <TableHead className="font-semibold">
-                    ชื่อบัญชีหลัก (Master Account)
-                  </TableHead>
-                  <TableHead className="text-right font-semibold">
-                    จำนวนรายการ
-                  </TableHead>
-                  <TableHead className="text-right font-semibold">
-                    ยอดจ่ายระบบ
-                  </TableHead>
-                  <TableHead className="text-right font-semibold text-amber-600">
-                    รายการปรับปรุง
-                  </TableHead>
-                  <TableHead className="text-right font-semibold rounded-tr-xl pr-6 text-rose-600">
-                    ยอดจ่ายสุทธิ (Effective Outflow)
-                  </TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {report.accountLevelStats.map((item, index) => (
-                  <TableRow
-                    key={item.account}
-                    className="group border-gray-50 hover:bg-gray-50/50 transition-colors"
-                  >
-                    <TableCell className="text-center font-medium text-gray-400">
-                      {(index + 1).toString().padStart(2, "0")}
-                    </TableCell>
-                    <TableCell>
-                      <div className="flex items-center gap-3">
-                        <div className="h-8 w-8 rounded-full bg-blue-50 text-blue-600 flex items-center justify-center text-xs font-bold shrink-0">
-                          {item.account.charAt(0).toUpperCase()}
-                        </div>
-                        <span className="font-medium text-gray-900">
-                          {item.account}
-                        </span>
-                      </div>
-                    </TableCell>
-                    <TableCell className="text-right text-muted-foreground">
-                      {item.count} รายการ
-                    </TableCell>
-                    <TableCell className="text-right font-medium text-gray-700 tabular-nums">
-                      {formatBaht(item.systemOutflow)}
-                    </TableCell>
-                    <TableCell className="text-right font-medium text-amber-600 tabular-nums">
-                      {formatBaht(item.adjustments)}
-                    </TableCell>
-                    <TableCell className="text-right font-bold text-gray-900 pr-6 tabular-nums">
-                      {formatBaht(item.effectiveOutflow)}
-                    </TableCell>
-                  </TableRow>
-                ))}
-                {/* Total Row */}
-                <TableRow className="bg-gray-50/80 hover:bg-gray-50/80 border-t border-gray-100">
-                  <TableCell
-                    colSpan={2}
-                    className="font-bold text-right text-gray-900"
-                  >
-                    รวมทั้งสิ้น
-                  </TableCell>
-                  <TableCell className="text-right font-bold text-gray-900">
-                    {report.accountLevelStats.reduce(
-                      (acc, curr) => acc + curr.count,
-                      0,
-                    )}{" "}
-                    รายการ
-                  </TableCell>
-                  <TableCell className="text-right font-bold text-gray-900 tabular-nums">
-                    {formatBaht(
-                      report.accountLevelStats.reduce(
-                        (acc, curr) => acc + curr.systemOutflow,
-                        0,
-                      ),
-                    )}
-                  </TableCell>
-                  <TableCell className="text-right font-bold text-amber-600 tabular-nums">
-                    {formatBaht(
-                      report.accountLevelStats.reduce(
-                        (acc, curr) => acc + curr.adjustments,
-                        0,
-                      ),
-                    )}
-                  </TableCell>
-                  <TableCell className="text-right font-bold text-rose-600 text-lg pr-6 tabular-nums">
-                    {formatBaht(
-                      report.accountLevelStats.reduce(
-                        (acc, curr) => acc + curr.effectiveOutflow,
-                        0,
-                      ),
-                    )}
-                  </TableCell>
-                </TableRow>
-              </TableBody>
-            </Table>
-          </div>
-        )}
-      </Card>
+      <AccountBreakdownTable
+        stats={report.accountLevelStats}
+        targetDate={targetDateIso}
+        showManualColumn={true}
+        userRole={session?.user.role}
+      />
     </div>
   );
 }
