@@ -40,6 +40,10 @@ tags: [domain, glossary]
 - **Match breakdown** ([[transactions]].`match_breakdown` jsonb) — top-3 candidate accounts พร้อม component score (nameMatched, accountMatched, bankMatched) ที่ smartMatcher เก็บตอน matching รัน ใช้โชว์ admin ใน Pending Account Matches table ว่าทำไมสลิปไม่ AUTO_MAPPED
 - **Daily balance** — ยอดคงเหลือ end-of-day ของ master account แต่ละบัญชี เก็บใน [[daily_balances]]. staff ส่งภาพ (BALANCE type) → worker INSERT. ต้อง match กับ [[project_accounts]] (มี matching_status: UNMATCHED/PENDING_REVIEW/AUTO_MAPPED/MANUAL_MAPPED + project_account_id FK).
 - **Daily balance inflow formula** — `inflow_D = balance_D - balance_(D-1) + withdrawals_D` โดย `withdrawals_D` = SUM ของ transactions.ai_amount (AUTO_MAPPED/MANUAL_MAPPED) ใน วัน D. `report_summary_daily` ใช้แสดง game-side เปรียบเทียบเท่านั้น ไม่เข้า formula.
+- **ยอดรับ** (per-account inflow) — ยอดรับเงินจริงของ master account หนึ่งบัญชี สำหรับวันที่เลือก D: `ยอดรับ = (balance_D − balance_(D-1)) + effectiveOutflow_D`. ใช้ **strict date match** — ถ้าไม่มี balance ตรงวันใดวันหนึ่ง แสดงข้อความแทนตัวเลข: "ไม่มียอดคงเหลือวันที่เลือก" / "ไม่มียอดคงเหลือวันก่อนหน้า" / "ไม่มียอดคงเหลือทั้งสองวัน". สอดคล้องกับ **Daily balance inflow formula**.
+- **ยอดเข้าระบบ(เว็บ)** — ยอดฝากที่สำเร็จจากระบบเว็บ = `expectedInflow` (SUM report_deposits status='สำเร็จ' + SUM report_manual_credit_in). แสดงใน KPI card slot 1 ของหน้า reconciliation. (ชื่อก่อนหน้า: "ยอดรับเข้าระบบ")
+- **ยอดเข้าระบบ(สลิป)** — ยอดรับรวมทุกบัญชี คำนวณจากสลิป = SUM ของ **ยอดรับ** ทุก account ที่มีข้อมูล balance ครบทั้งสองวัน (partial sum — บัญชีที่ขาดข้อมูลไม่นับเข้า). แสดงใน KPI card slot 2 ของหน้า reconciliation.
+- **ส่วนต่าง (reconciliation)** — `Math.abs(ยอดเข้าระบบ(เว็บ) − ยอดเข้าระบบ(สลิป))`. เป็นค่าบวกเสมอ. แสดงสีเขียวเมื่อ = 0 ("ยอดเว็บตรงกับยอดสลิป"), สีแดงเมื่อ ≠ 0 ("ยอดเว็บและยอดสลิปไม่ตรงกัน กรุณาตรวจสอบ"). (สูตรก่อนหน้า: expectedBalance − actualBalance — deprecated)
 - **Bonus** — ของแถม/โปรโมชัน. ฟรีเครดิต, มีเงื่อนไข turn over
   - [[report_manual_bonus_in]] = จ่ายโบนัสให้ player
   - [[report_manual_bonus_out]] = ดึงโบนัสคืน (ผิดเงื่อนไข?)
