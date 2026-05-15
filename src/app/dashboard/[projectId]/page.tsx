@@ -239,18 +239,8 @@ async function IncomeExpenseSection({
   to?: string;
 }) {
   const summary = await getDashboardSummary(projectId, from, to);
-  const totalIncome =
-    (summary.deposit || 0) +
-    (summary.manualIn || 0) +
-    (summary.bonus || 0) +
-    (summary.fixedDeposit || 0);
-
-  const totalExpense =
-    (summary.withdraw || 0) +
-    (summary.manualOut || 0) +
-    (summary.redeem || 0) +
-    (summary.affiliate || 0) +
-    (summary.cashback || 0);
+  const totalIncome = (summary.deposit || 0) + (summary.manualIn || 0);
+  const totalExpense = (summary.withdraw || 0) + (summary.manualOut || 0);
 
   return (
     <Card className="border-none shadow-sm rounded-2xl bg-white overflow-hidden">
@@ -299,12 +289,6 @@ async function IncomeExpenseSection({
               <div className="flex flex-col">
                 <ProgressBar label="เติมมือ (Manual In)" amount={summary.manualIn || 0} total={totalIncome} colorClass="bg-emerald-400" />
               </div>
-              <div className="flex flex-col">
-                <ProgressBar label="โบนัส (Bonus)" amount={summary.bonus || 0} total={totalIncome} colorClass="bg-emerald-300" />
-              </div>
-              <div className="flex flex-col">
-                <ProgressBar label="ฝากประจำ (Fixed Deposit)" amount={summary.fixedDeposit || 0} total={totalIncome} colorClass="bg-emerald-200" />
-              </div>
             </div>
           </div>
 
@@ -345,15 +329,6 @@ async function IncomeExpenseSection({
               <Separator className="my-4" />
               <div className="flex flex-col">
                 <ProgressBar label="ถอนมือ (Manual Out)" amount={summary.manualOut || 0} total={totalExpense} colorClass="bg-rose-400" />
-              </div>
-              <div className="flex flex-col">
-                <ProgressBar label="แลกรางวัล (Redeem)" amount={summary.redeem || 0} total={totalExpense} colorClass="bg-rose-300" />
-              </div>
-              <div className="flex flex-col">
-                <ProgressBar label="พันธมิตร (Affiliate)" amount={summary.affiliate || 0} total={totalExpense} colorClass="bg-rose-200" />
-              </div>
-              <div className="flex flex-col">
-                <ProgressBar label="คืนยอดเสีย (Cashback)" amount={summary.cashback || 0} total={totalExpense} colorClass="bg-rose-100" />
               </div>
             </div>
           </div>

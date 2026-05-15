@@ -15,6 +15,12 @@ import { canSoftDelete } from "@/lib/projectAccountRules";
 import { aggregateBreakdown } from "@/lib/accountFormatters";
 import { nameOrAll } from "@/lib/projectFilter";
 import { mergeDailyChartRows } from "@/lib/cashflowChart";
+import {
+  depositTotalSql,
+  withdrawTotalSql,
+  depositPerDaySql,
+  withdrawPerDaySql,
+} from "@/lib/kpiSql";
 import { ProjectAccount } from "./dashboard";
 import { TransactionRecord } from "./dashboard";
 import { DashboardSummary } from "./dashboard";
@@ -143,7 +149,6 @@ export async function getDashboardSummary(
     const isAll = projectId === "all";
     const { startDate, endDate } = getDateRange(from, to);
 
-    // Resolve identifiers
     const project = isAll ? null : await resolveProject(projectId);
     if (!isAll && !project) {
       return {
@@ -152,44 +157,22 @@ export async function getDashboardSummary(
         latestBalance: 0,
         deposit: 0,
         manualIn: 0,
-        bonus: 0,
-        fixedDeposit: 0,
         withdraw: 0,
         manualOut: 0,
-        redeem: 0,
-        affiliate: 0,
-        cashback: 0,
         depositBreakdown: [],
         withdrawalBreakdown: [],
       };
     }
 
-    // Query for deposits and withdrawals in the given range
-    const summaryQuery = `
-      SELECT 
-        COALESCE(SUM(deposit + manual_in + bonus + fixed_deposit), 0) as total_deposits,
-        COALESCE(SUM(withdraw + manual_out + redeem + affiliate + cashback), 0) as total_withdrawals,
-        COALESCE(SUM(deposit), 0) as deposit,
-        COALESCE(SUM(manual_in), 0) as manual_in,
-        COALESCE(SUM(bonus), 0) as bonus,
-        COALESCE(SUM(fixed_deposit), 0) as fixed_deposit,
-        COALESCE(SUM(withdraw), 0) as withdraw,
-        COALESCE(SUM(manual_out), 0) as manual_out,
-        COALESCE(SUM(redeem), 0) as redeem,
-        COALESCE(SUM(affiliate), 0) as affiliate,
-        COALESCE(SUM(cashback), 0) as cashback
-      FROM report_summary_daily
-      WHERE ${nameOrAll(1, 2)}
-      AND report_date::date BETWEEN $3 AND $4
-    `;
+    const projectName = project?.name || "";
 
-    // Query for the latest balance
+    // latestBalance continues to read report_summary_daily.balance (ADR 0004)
     const balanceQuery = isAll
       ? `
-        SELECT COALESCE(SUM(balance), 0) as latest_balance 
+        SELECT COALESCE(SUM(balance), 0) as latest_balance
         FROM (
-          SELECT DISTINCT ON (project_id) balance 
-          FROM report_summary_daily 
+          SELECT DISTINCT ON (project_id) balance
+          FROM report_summary_daily
           WHERE report_date <= $1
           ORDER BY project_id, report_date DESC
         ) as latest_balances
@@ -203,7 +186,6 @@ export async function getDashboardSummary(
         LIMIT 1
       `;
 
-    // Query for breakdowns by account (web_acc)
     const depositsBreakdownQuery = `
       SELECT web_acc as account, COALESCE(SUM(amount), 0) as total
       FROM report_deposits
@@ -222,22 +204,6 @@ export async function getDashboardSummary(
       ORDER BY total DESC
     `;
 
-    // Total deposits = actual bank deposits + manual credit additions + bonus distributions
-    const reportDepositsQuery = `
-      SELECT COALESCE(SUM(amount), 0) as total_deposits
-      FROM (
-        SELECT amount FROM report_deposits
-          WHERE status = 'สำเร็จ' AND trans_date::date BETWEEN $1 AND $2
-        UNION ALL
-        SELECT amount FROM report_manual_credit_in
-          WHERE trans_date::date BETWEEN $1 AND $2
-        UNION ALL
-        SELECT amount FROM report_manual_bonus_in
-          WHERE trans_date::date BETWEEN $1 AND $2
-      ) combined
-    `;
-
-    // Deposit-only total for the breakdown "ฝากเงิน" bar (manual_in and bonus shown separately)
     const depositOnlyQuery = `
       SELECT COALESCE(SUM(amount), 0) as total
       FROM report_deposits
@@ -245,49 +211,68 @@ export async function getDashboardSummary(
       AND trans_date::date BETWEEN $1 AND $2
     `;
 
+    const manualInQuery = `
+      SELECT COALESCE(SUM(amount), 0) as total
+      FROM report_manual_credit_in
+      WHERE trans_date::date BETWEEN $1 AND $2
+    `;
+
+    const withdrawOnlyQuery = `
+      SELECT COALESCE(SUM(amount), 0) as total
+      FROM report_withdrawals
+      WHERE status = 'สำเร็จ'
+      AND trans_date::date BETWEEN $1 AND $2
+    `;
+
+    const manualOutQuery = `
+      SELECT COALESCE(SUM(amount), 0) as total
+      FROM report_manual_credit_out
+      WHERE trans_date::date BETWEEN $1 AND $2
+    `;
+
     logger.debug(
       "getDashboardSummary",
       `Resolved project for projectId: ${projectId}`,
       project,
     );
-    const projectName = project?.name || "";
-    const projectIdParam = project?.id || null;
-    const summaryParams = [projectName, isAll, startDate, endDate];
-    const breakdownParams = [startDate, endDate];
+
+    const dateParams = [startDate, endDate];
 
     const [
-      summaryRes,
       balanceRes,
       depositsRes,
       withdrawalsRes,
-      txDepositRes,
       depositOnlyRes,
+      manualInRes,
+      withdrawOnlyRes,
+      manualOutRes,
+      totalDepositRes,
+      totalWithdrawRes,
     ] = await Promise.all([
-      query(summaryQuery, summaryParams),
       query(balanceQuery, isAll ? [endDate] : [projectName, endDate]),
-      query(depositsBreakdownQuery, breakdownParams),
-      query(withdrawalsBreakdownQuery, breakdownParams),
-      query(reportDepositsQuery, [startDate, endDate]),
-      query(depositOnlyQuery, [startDate, endDate]),
+      query(depositsBreakdownQuery, dateParams),
+      query(withdrawalsBreakdownQuery, dateParams),
+      query(depositOnlyQuery, dateParams),
+      query(manualInQuery, dateParams),
+      query(withdrawOnlyQuery, dateParams),
+      query(manualOutQuery, dateParams),
+      query(depositTotalSql(1, 2), dateParams),
+      query(withdrawTotalSql(1, 2), dateParams),
     ]);
 
-    const trueTotalDeposits = Number(txDepositRes.rows[0]?.total_deposits || 0);
-    const trueTotalWithdrawals = Number(summaryRes.rows[0]?.total_withdrawals || 0);
-    const depositOnly = Number(depositOnlyRes.rows[0]?.total || 0);
+    const deposit = Number(depositOnlyRes.rows[0]?.total || 0);
+    const manualIn = Number(manualInRes.rows[0]?.total || 0);
+    const withdraw = Number(withdrawOnlyRes.rows[0]?.total || 0);
+    const manualOut = Number(manualOutRes.rows[0]?.total || 0);
 
     return {
-      totalDeposits: trueTotalDeposits,
-      totalWithdrawals: trueTotalWithdrawals,
+      totalDeposits: Number(totalDepositRes.rows[0]?.total || 0),
+      totalWithdrawals: Number(totalWithdrawRes.rows[0]?.total || 0),
       latestBalance: Number(balanceRes.rows[0]?.latest_balance || 0),
-      deposit: depositOnly,
-      manualIn: Number(summaryRes.rows[0].manual_in || 0),
-      bonus: Number(summaryRes.rows[0].bonus || 0),
-      fixedDeposit: Number(summaryRes.rows[0].fixed_deposit || 0),
-      withdraw: Number(summaryRes.rows[0].withdraw || 0),
-      manualOut: Number(summaryRes.rows[0].manual_out || 0),
-      redeem: Number(summaryRes.rows[0].redeem || 0),
-      affiliate: Number(summaryRes.rows[0].affiliate || 0),
-      cashback: Number(summaryRes.rows[0].cashback || 0),
+      deposit,
+      manualIn,
+      withdraw,
+      manualOut,
       depositBreakdown: aggregateBreakdown(depositsRes.rows),
       withdrawalBreakdown: aggregateBreakdown(withdrawalsRes.rows),
     };
@@ -305,13 +290,8 @@ export async function getDashboardSummary(
       latestBalance: 0,
       deposit: 0,
       manualIn: 0,
-      bonus: 0,
-      fixedDeposit: 0,
       withdraw: 0,
       manualOut: 0,
-      redeem: 0,
-      affiliate: 0,
-      cashback: 0,
       depositBreakdown: [],
       withdrawalBreakdown: [],
     };
@@ -328,39 +308,13 @@ export async function getDailyChartData(
 ) {
   try {
     const { startDate, endDate } = getDateRange(from, to);
+    const dateParams = [startDate, endDate];
 
-    // Mirror the same source as totalDeposits KPI: sum of all three deposit tables per day.
-    const depositsSql = `
-      SELECT trans_date::date::text AS day_date, COALESCE(SUM(amount), 0) AS total
-      FROM (
-        SELECT trans_date, amount FROM report_deposits
-          WHERE status = 'สำเร็จ' AND trans_date::date BETWEEN $1 AND $2
-        UNION ALL
-        SELECT trans_date, amount FROM report_manual_credit_in
-          WHERE trans_date::date BETWEEN $1 AND $2
-        UNION ALL
-        SELECT trans_date, amount FROM report_manual_bonus_in
-          WHERE trans_date::date BETWEEN $1 AND $2
-      ) combined
-      GROUP BY trans_date::date
-      ORDER BY trans_date::date ASC
-    `;
-
-    // Mirror totalWithdrawals KPI: report_summary_daily sums all withdrawal types per day.
-    const withdrawalsSql = `
-      SELECT report_date::date::text AS day_date,
-             COALESCE(SUM(withdraw + manual_out + redeem + affiliate + cashback), 0) AS total
-      FROM report_summary_daily
-      WHERE report_date::date BETWEEN $1 AND $2
-      GROUP BY report_date::date
-      ORDER BY report_date::date ASC
-    `;
-
-    logger.debug("getDailyChartData", `Fetching chart data from report_deposits/report_withdrawals`, { projectId, startDate, endDate });
+    logger.debug("getDailyChartData", "Fetching chart data from canonical KPI lib", { projectId, startDate, endDate });
 
     const [depositsRes, withdrawalsRes] = await Promise.all([
-      query(depositsSql, [startDate, endDate]),
-      query(withdrawalsSql, [startDate, endDate]),
+      query(depositPerDaySql(1, 2), dateParams),
+      query(withdrawPerDaySql(1, 2), dateParams),
     ]);
 
     return mergeDailyChartRows(depositsRes.rows, withdrawalsRes.rows);

@@ -124,12 +124,11 @@ tags: [domain, glossary]
    - worker ใช้ `aiOutput.date + aiOutput.time` มา insert. manual UI ใช้ `transfer_at` field
    - migration: backfill `transfer_at` จาก existing rows — preference: `transfer_date+transfer_time` ถ้ามี > `record_date` ถ้าไม่มี
 4. **[[daily_balances]] ใช้ `project_name text`** — ไม่ใช่ FK.
-8. **Reconciliation/KPI formula inconsistency** — 3 ที่คำนวณ deposits/withdrawals คนละแบบ. canonical:
-   - **Deposits** = `deposit + manual_in + bonus + fixed_deposit` (aggregate จาก report_summary_daily)
-   - **Withdrawals** = `withdraw + manual_out + redeem + affiliate + cashback` (aggregate จาก report_summary_daily) — ground truth จาก scrape เว็บ
-   - `getDailyChartData` ใช้ `report_deposits.amount` (pure) สำหรับ deposits → **bug**, แก้ให้ตรง KPI
-   - `getReconciliationStatus` ใช้ `transactions.amount` สำหรับ withdrawals → **เป็น variance check** (scrape vs slip ต้องตรงกัน) ไม่ใช่ withdrawals canonical
-   - Plan: รวม `getReconciliationStatus` + `getReconciliationReport` เป็นตัวเดียว (parametrized by date range)
+8. **Canonical deposit/withdraw KPI** — ดู [ADR 0004](docs/adr/0004-deposit-withdraw-kpi-from-source-tables.md).
+   - **ยอดฝากรวม** = `SUM(report_deposits.amount WHERE status='สำเร็จ')` + `SUM(report_manual_credit_in.amount)`
+   - **ยอดถอนรวม** = `SUM(report_withdrawals.amount WHERE status='สำเร็จ')` + `SUM(report_manual_credit_out.amount)`
+   - Defined in `src/lib/kpiSql.ts` — consumers: dashboard summary, cashflow chart, reconciliation expectedInflow.
+   - `latestBalance` ยังคงอ่านจาก `report_summary_daily.balance` (actual bank balance จาก scraper — ไม่ใช่ KPI computation).
    - Cross-project withdrawal นับฝั่ง `source_project_id` (เจ้าของบัญชี) — confirmed correct. Lending counterparty (target) ไม่นับยอด
 
 9. **Misc dead/incomplete code**:

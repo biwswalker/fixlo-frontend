@@ -9,6 +9,7 @@ import { revalidatePath } from "next/cache";
 import { resolveProject } from "@/lib/projects";
 import { resolvePeriodToDateRange } from "@/lib/periodUtils";
 import { buildAccountLevelStats } from "@/lib/accountLevelStats";
+import { depositTotalSql } from "@/lib/kpiSql";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -121,23 +122,11 @@ export async function getReconciliationReport(
     const projectUuid = project?.id ?? null;
 
     // ------------------------------------------------------------------
-    // 1. Expected Inflow — mirrors Dashboard KPI "ยอดฝากรวม":
-    //    report_deposits (สำเร็จ) + report_manual_credit_in + report_manual_bonus_in.
-    //    Manual tables have no web_acc so project filtering is not applied.
+    // 1. Expected Inflow — canonical deposit KPI (ADR 0004):
+    //    report_deposits (สำเร็จ) + report_manual_credit_in.
+    //    Bonus is excluded — see ADR 0004 for rationale.
     // ------------------------------------------------------------------
-    const inflowSql = `
-      SELECT COALESCE(SUM(amount), 0) AS total
-      FROM (
-        SELECT amount FROM report_deposits
-          WHERE status = 'สำเร็จ' AND trans_date::date BETWEEN $1 AND $2
-        UNION ALL
-        SELECT amount FROM report_manual_credit_in
-          WHERE trans_date::date BETWEEN $1 AND $2
-        UNION ALL
-        SELECT amount FROM report_manual_bonus_in
-          WHERE trans_date::date BETWEEN $1 AND $2
-      ) combined
-    `;
+    const inflowSql = depositTotalSql(1, 2);
 
     // ------------------------------------------------------------------
     // 2. Expected Outflow — SUM of ai_amount from verified transactions

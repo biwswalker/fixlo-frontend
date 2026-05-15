@@ -11,13 +11,8 @@ export interface DashboardSummary {
   latestBalance: number;
   deposit: number;
   manualIn: number;
-  bonus: number;
-  fixedDeposit: number;
   withdraw: number;
   manualOut: number;
-  redeem: number;
-  affiliate: number;
-  cashback: number;
   depositBreakdown: AccountBreakdown[];
   withdrawalBreakdown: AccountBreakdown[];
 }

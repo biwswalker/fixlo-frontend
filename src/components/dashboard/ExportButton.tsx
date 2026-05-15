@@ -32,11 +32,6 @@ export default function ExportButton() {
         'ถอนเงิน (Withdraw)',
         'เติมมือ (Manual In)',
         'ถอนมือ (Manual Out)',
-        'โบนัส (Bonus)',
-        'แลกรางวัล (Redeem)',
-        'ฝากประจำ (Fixed Deposit)',
-        'พันธมิตร (Affiliate)',
-        'คืนยอดเสีย (Cashback)'
       ];
 
       const row = [
@@ -48,11 +43,6 @@ export default function ExportButton() {
         summary.withdraw,
         summary.manualIn,
         summary.manualOut,
-        summary.bonus,
-        summary.redeem,
-        summary.fixedDeposit,
-        summary.affiliate,
-        summary.cashback
       ];
 
       const csvContent = [
