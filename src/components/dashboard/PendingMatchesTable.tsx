@@ -20,7 +20,8 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import type { TransactionRecord, ProjectAccount } from "@/types/dashboard";
-import { confirmTransactionMapping } from "@/actions/dashboard";
+import { confirmTransactionMapping, rejectTransaction } from "@/actions/dashboard";
+import type { RejectPreset } from "@/actions/dashboard";
 import { formatBaht } from "@/lib/utils";
 import { toast } from "sonner";
 import {
@@ -31,6 +32,7 @@ import {
   Eye,
   FileImage,
   HelpCircle,
+  XCircle,
 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import {
@@ -39,7 +41,10 @@ import {
   DialogHeader,
   DialogTitle,
   DialogTrigger,
+  DialogFooter,
+  DialogDescription,
 } from "@/components/ui/dialog";
+import { Textarea } from "@/components/ui/textarea";
 import {
   Popover,
   PopoverContent,
@@ -171,6 +176,37 @@ export function PendingMatchesTable({
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
   const [mappings, setMappings] = useState<Record<string, string>>({});
+
+  const REJECT_PRESETS: RejectPreset[] = ["สลิปซ้ำ", "ยอดผิด", "ผิด project", "test slip", "อื่นๆ"];
+  const [rejectDialogTxnId, setRejectDialogTxnId] = useState<string | null>(null);
+  const [rejectPreset, setRejectPreset] = useState<RejectPreset | "">("");
+  const [rejectNote, setRejectNote] = useState("");
+
+  const openRejectDialog = (txnId: string) => {
+    setRejectDialogTxnId(txnId);
+    setRejectPreset("");
+    setRejectNote("");
+  };
+  const closeRejectDialog = () => setRejectDialogTxnId(null);
+
+  const handleReject = (txnId: string) => {
+    if (!rejectPreset) return;
+    if (rejectPreset === "อื่นๆ" && !rejectNote.trim()) return;
+    startTransition(async () => {
+      const result = await rejectTransaction(
+        txnId,
+        rejectPreset,
+        rejectPreset === "อื่นๆ" ? rejectNote.trim() : undefined,
+      );
+      if (result.success) {
+        toast.success("ปฏิเสธสลิปเรียบร้อยแล้ว");
+        closeRejectDialog();
+        router.refresh();
+      } else {
+        toast.error(result.error ?? "เกิดข้อผิดพลาด");
+      }
+    });
+  };
 
   const handleMapChange = (txnId: string, accountId: string) => {
     setMappings((prev) => ({ ...prev, [txnId]: accountId }));
@@ -379,18 +415,29 @@ export function PendingMatchesTable({
                       )}
                     </TableCell>
                     <TableCell className="text-right px-6">
-                      <Button
-                        size="sm"
-                        className="bg-blue-600 hover:bg-blue-700 text-white rounded-xl px-6 h-9 shadow-lg shadow-blue-600/20 transition-all active:scale-95 disabled:opacity-50 font-bold text-xs"
-                        onClick={() => handleConfirm(txn.id)}
-                        disabled={isPending || !mappings[txn.id]}
-                      >
-                        {isPending ? (
-                          <Loader2 className="h-4 w-4 animate-spin" />
-                        ) : (
-                          "ยืนยัน"
-                        )}
-                      </Button>
+                      <div className="flex items-center justify-end gap-2">
+                        <Button
+                          size="sm"
+                          className="bg-blue-600 hover:bg-blue-700 text-white rounded-xl px-6 h-9 shadow-lg shadow-blue-600/20 transition-all active:scale-95 disabled:opacity-50 font-bold text-xs"
+                          onClick={() => handleConfirm(txn.id)}
+                          disabled={isPending || !mappings[txn.id]}
+                        >
+                          {isPending ? (
+                            <Loader2 className="h-4 w-4 animate-spin" />
+                          ) : (
+                            "ยืนยัน"
+                          )}
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="rounded-xl h-9 px-3 border-red-200 text-red-500 hover:bg-red-50 hover:text-red-600 transition-all active:scale-95 disabled:opacity-50"
+                          onClick={() => openRejectDialog(txn.id)}
+                          disabled={isPending}
+                        >
+                          <XCircle className="h-4 w-4" />
+                        </Button>
+                      </div>
                     </TableCell>
                   </TableRow>
                 );
@@ -450,6 +497,61 @@ export function PendingMatchesTable({
           </div>
         </div>
       </CardContent>
+
+      {/* Reject Dialog */}
+      <Dialog open={rejectDialogTxnId !== null} onOpenChange={(open) => { if (!open) closeRejectDialog(); }}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle className="text-red-600 flex items-center gap-2">
+              <XCircle className="h-5 w-5" />
+              ปฏิเสธสลิป
+            </DialogTitle>
+            <DialogDescription>
+              เลือกเหตุผลที่ปฏิเสธสลิปนี้
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-3 py-2">
+            <Select value={rejectPreset} onValueChange={(v) => setRejectPreset(v as RejectPreset)}>
+              <SelectTrigger className="w-full rounded-xl border-gray-200 h-10">
+                <SelectValue placeholder="เลือกเหตุผล..." />
+              </SelectTrigger>
+              <SelectContent className="rounded-xl">
+                {REJECT_PRESETS.map((p) => (
+                  <SelectItem key={p} value={p}>{p}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+
+            {rejectPreset === "อื่นๆ" && (
+              <Textarea
+                placeholder="ระบุเหตุผล..."
+                value={rejectNote}
+                onChange={(e) => setRejectNote(e.target.value)}
+                className="rounded-xl resize-none border-gray-200 text-sm"
+                rows={3}
+              />
+            )}
+          </div>
+
+          <DialogFooter className="gap-2">
+            <Button variant="outline" className="rounded-xl" onClick={closeRejectDialog} disabled={isPending}>
+              ยกเลิก
+            </Button>
+            <Button
+              className="rounded-xl bg-red-600 hover:bg-red-700 text-white"
+              onClick={() => rejectDialogTxnId && handleReject(rejectDialogTxnId)}
+              disabled={
+                isPending ||
+                !rejectPreset ||
+                (rejectPreset === "อื่นๆ" && !rejectNote.trim())
+              }
+            >
+              {isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : "ปฏิเสธ"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </Card>
   );
 }

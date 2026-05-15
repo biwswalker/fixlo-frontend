@@ -71,9 +71,16 @@ aiOutput.amount != null ? ...
 
 **แก้:** threshold → 0.1 + เพิ่ม strict prefix pattern `#<project>` หรือ exact match-only สำหรับ cross-project lending detection
 
-### 7. Worker populate `transfer_at` จาก `aiOutput.date + aiOutput.time`
+### 7. Worker populate `transfer_at` จาก `aiOutput.date + aiOutput.time` พร้อม timezone ที่ถูกต้อง
 
 หลัง migration 012 consolidate transfer_at แล้ว worker ต้อง insert `transfer_at` = `aiOutput.date + aiOutput.time` แทน `transfer_date` + `transfer_time` แยก
+
+**ปัญหาที่พบจากข้อมูลจริง:** `transactions.transfer_at` แสดงเป็น `17:00:00 UTC` ทุก row = `00:00 Bangkok (UTC+7)` — หมายความว่า worker ไม่ได้ใช้ `aiOutput.time` จริง หรือ combine ผิด timezone ทำให้ frontend แสดง `00:00` ทุก slip
+
+**แก้ที่:** worker ส่วน build `transfer_at` ก่อน INSERT:
+- ถ้า `aiOutput.time` มีค่า (เช่น `"14:35"`) → combine กับ `aiOutput.date` เป็น `"YYYY-MM-DD HH:mm"` ใน timezone `Asia/Bangkok` แล้วแปลงเป็น UTC ก่อน INSERT
+- ถ้า `aiOutput.time` เป็น null/undefined → fallback เป็น `00:00 Bangkok` พร้อม log warning
+- ห้าม default เป็น `new Date(aiOutput.date)` เปล่าๆ — JS parse date-only string เป็น UTC midnight ซึ่ง = `17:00 UTC` = `00:00 Bangkok` ทำให้เวลาหายทุกกรณี
 
 *(ตรวจสอบว่า migration 012 deploy พร้อมกับ worker update นี้แล้วหรือยัง)*
 

@@ -24,7 +24,7 @@ tags: [domain, glossary]
   - `target_project_id` = ผู้ยืมเงิน (เอาเงินไปใช้)
   - `source == target` = รายการ internal (ฝาก/ถอนของ project ตัวเอง)
 - **Active date** ([[projects]].`active_date`) — anchor สำหรับ scraping job (ดึงข้อมูล external API ตั้งแต่วันนั้น) ไม่ใช่วันสร้าง project
-- **Master account** — บัญชีหลักของโปรเจกต์ (= [[project_accounts]]). ใช้รับ deposit/จ่าย withdraw. [[manual_adjustments]].`master_account` เก็บ `project_accounts.id` (uuid as string)
+- **Master account** — บัญชีหลักของโปรเจกต์ (= [[project_accounts]]). ใช้รับ deposit/จ่าย withdraw.
 - **Member user** (`member_user`) — ผู้เล่น (player) ในเว็บเกม
 - **Amb user** (`amb_user`) — **Ambassador** / agent / ตัวแทนหัวหน้า affiliate.
   - ⚠️ Format ของ code **ไม่ stable** — prefix `84ks<project>...` พบในบาง project เท่านั้น. อย่าใช้ regex parse infer project. ต้องใช้ mapping/source อื่นในการระบุ project ของ report_* row.
@@ -46,15 +46,17 @@ tags: [domain, glossary]
 - **Credit** — ยอดเล่นจริง (เงินลูกค้า). ฝาก/ถอนได้
   - [[report_manual_credit_in]] = เพิ่มเครดิตด้วยมือ
   - [[report_manual_credit_out]] = หักเครดิตด้วยมือ
-- **Manual adjustment** ([[manual_adjustments]]) — ปรับยอดของ **master account** (ฝั่ง Fixlo / project_account) เมื่อ reconcile ไม่ตรง. ต่างจาก `report_manual_*` ที่ปรับยอดของ **player**. `amount` = signed (`+` เพิ่ม, `-` หัก).
+- **Manual adjustment** ([[manual_adjustments]]) — **DEPRECATED** (0 rows, no new entry point). แทนที่ด้วย Slip adjustment (per-slip) และ Manual transaction (outflow ใหม่). ดู [ADR 0003](docs/adr/0003-deprecate-manual-adjustments.md).
+- **Slip adjustment** — admin override ยอด AI ที่อ่านผิดบน Discord slip ที่ specific. เก็บใน `transactions.adjusted_amount` (nullable numeric) — `ai_amount` ยังคงอยู่เพื่อ audit. Fields เพิ่มเติม: `adjusted_by` (text), `adjusted_at` (timestamptz), `adjust_note` (text nullable). Reconciliation ใช้ `COALESCE(adjusted_amount, ai_amount)` เป็น effective amount.
 - **`bank_code`** ไม่ใช่ธนาคารจริงเสมอไป — รวม e-wallet (`TRUEMONEY`), crypto exchange (`BINANCE`), underground payment gateway (`Apay`, `DPay`, `Badoo`, `Wealth.wave`). อย่าถือ `bank_code` เป็น "ธนาคาร" — มันคือ "ช่องทางรับ-ส่งเงิน".
 - **Aliases** — JSON-encoded array เก็บเป็น text ใน `project_accounts.aliases`; ใช้ fuzzy match กับ sender/receiver name ของสลิป. จัดการผ่าน tag input UI ใน `/dashboard/[projectId]/accounts`.
 - **Project account soft-delete** — [[project_accounts]] ใช้ `deleted_at timestamp` แทนการลบจริง บัญชีที่ถูก soft-delete ไม่โผล่ใน dropdown match/select แต่ยังคงอยู่ใน DB เพื่อไม่ให้ reconciliation ประวัติเสีย. ลบได้เฉพาะบัญชีที่ไม่มี transaction ผูกอยู่ — ถ้ามีต้อง block.
 - **Reconciliation day-only** — หน้า reconciliation ใช้ period=day เท่านั้น (ตัด week/month/year ออก). Pending match banner filter ด้วย `transfer_at::date = targetDate` (ไม่ใช่ backlog ทั้งหมด). Banner link ไป match page พร้อม `?transferDate=YYYY-MM-DD` pre-filled.
-- **Manual transaction** — รายการโอนเงินจริงที่ไม่ผ่าน Discord bot (เช่น operator ลืมส่งสลิป). เก็บใน `manual_transactions` table แยกจาก `transactions`. Fields: `project_account_id` (required), `amount` (required), `transfer_at` (required), `image_path` (optional), `note` (optional), `created_by`. `matching_status = MANUAL_MAPPED` ทันที — admin เลือก account โดยตรงตอนสร้าง ไม่ผ่าน Smart Matching. ต่างจาก `manual_adjustments` ที่ปรับยอดที่มีอยู่แล้ว — manual_transaction คือ outflow ใหม่ที่ไม่มีใน Discord.
-- **Manual balance** — ยอดคงเหลือปลายวันที่ admin กรอกเองแทนการส่งภาพผ่าน Discord. เก็บใน `daily_balances` เดิม + เพิ่ม `source` column (`discord` | `manual`).
-- **Manual entry dialog** — `AddAdjustmentDialog` ขยายเป็น 3 tabs: Adjustment / Manual Slip / Manual Balance. สร้างได้จากหน้า reconciliation (admin only).
-- **Account breakdown — Manual column** — ตาราง "รายละเอียดการจ่ายแยกตามบัญชี" มี column "Manual" โผล่เฉพาะเมื่อมี manual_transaction ในวันที่เลือก (hidden ถ้าทุก row = 0). Drill-down drawer แสดงทั้ง Discord slip และ Manual slip รวมกัน เรียงตาม `transfer_at` พร้อม badge แยกแหล่งที่มา.
+- **Manual transaction** — รายการโอนเงินจริงที่ไม่ผ่าน Discord bot (เช่น operator ลืมส่งสลิป). เก็บใน `manual_transactions` table แยกจาก `transactions`. Fields: `project_account_id` (required), `amount` (required), `transfer_at` (required), `image_path` (optional, uploaded ผ่าน Next.js API route → volume `/app/data/spectre/manual/`), `note` (optional), `created_by`. `matching_status = MANUAL_MAPPED` ทันที — admin เลือก account โดยตรงตอนสร้าง ไม่ผ่าน Smart Matching.
+- **Manual balance** — ยอดคงเหลือปลายวันที่ admin กรอกเองแทนการส่งภาพผ่าน Discord. เก็บใน `daily_balances` เดิม + `source = 'manual'`. รองรับ image upload เหมือน Manual transaction.
+- **Manual entry dialog** — `AddAdjustmentDialog` มี **2 tabs**: Manual Slip / Manual Balance. (Adjustment tab ถูกลบออก — ดู [ADR 0003](docs/adr/0003-deprecate-manual-adjustments.md)). เข้าถึงได้จากหน้า reconciliation (owner + admin). Account dropdown แสดง two-line: ชื่อบัญชี / `bank_code — *last4`.
+- **Account breakdown — Manual column** — ตาราง "รายละเอียดการจ่ายแยกตามบัญชี" แสดง column "Manual" เสมอ. Drill-down drawer แสดงทั้ง Discord slip และ Manual slip รวมกัน เรียงตาม `transfer_at` พร้อม badge แยกแหล่งที่มา. รูปสลิปใช้ `NEXT_PUBLIC_IMAGE_SERVER_URL + path.replace("/app/data", "")`.
+- **Reconciliation outflow formula** — `effectiveOutflow = Σ COALESCE(adjusted_amount, ai_amount) [transactions] + Σ amount [manual_transactions]`. ไม่มี `manual_adjustments` component อีกต่อไป.
 
 ## Bounded contexts
 

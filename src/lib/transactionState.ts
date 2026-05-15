@@ -1,8 +1,8 @@
 import { hasPermission } from "./rbac";
 import type { AppRole } from "./rbac";
 
-export type TxnStatus = "AUTO_MAPPED" | "PENDING_REVIEW" | "MANUAL_MAPPED" | "UNMAPPED";
-export type TxnAction = "auto_match" | "confirm_mapping" | "force_approve";
+export type TxnStatus = "AUTO_MAPPED" | "PENDING_REVIEW" | "MANUAL_MAPPED" | "UNMAPPED" | "REJECTED";
+export type TxnAction = "auto_match" | "confirm_mapping" | "force_approve" | "reject";
 
 export interface NextStateInput {
   current: TxnStatus;
@@ -37,6 +37,12 @@ export function nextState(input: NextStateInput): NextStateResult {
     if (!hasPermission(actorRole, "approve_transactions")) return { error: "forbidden" };
     if (current !== "PENDING_REVIEW" && current !== "UNMAPPED") return { error: "invalid-transition" };
     return { next: "MANUAL_MAPPED" };
+  }
+
+  if (action === "reject") {
+    if (!hasPermission(actorRole, "manage_projects")) return { error: "forbidden" };
+    if (current !== "PENDING_REVIEW" && current !== "UNMAPPED") return { error: "invalid-transition" };
+    return { next: "REJECTED" };
   }
 
   return { error: "invalid-transition" };

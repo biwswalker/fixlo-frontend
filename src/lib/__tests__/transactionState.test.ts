@@ -69,3 +69,40 @@ describe("nextState — admin can confirm PENDING_REVIEW", () => {
     expect(result).toEqual({ next: "MANUAL_MAPPED" });
   });
 });
+
+describe("nextState — reject action", () => {
+  it("admin reject PENDING_REVIEW → REJECTED", () => {
+    const result = nextState({ current: "PENDING_REVIEW", action: "reject", actorRole: "admin" });
+    expect(result).toEqual({ next: "REJECTED" });
+  });
+
+  it("owner reject UNMAPPED → REJECTED", () => {
+    const result = nextState({ current: "UNMAPPED", action: "reject", actorRole: "owner" });
+    expect(result).toEqual({ next: "REJECTED" });
+  });
+
+  it("admin reject AUTO_MAPPED → invalid-transition", () => {
+    const result = nextState({ current: "AUTO_MAPPED", action: "reject", actorRole: "admin" });
+    expect(result).toEqual({ error: "invalid-transition" });
+  });
+
+  it("admin reject MANUAL_MAPPED → invalid-transition", () => {
+    const result = nextState({ current: "MANUAL_MAPPED", action: "reject", actorRole: "admin" });
+    expect(result).toEqual({ error: "invalid-transition" });
+  });
+
+  it("REJECTED is terminal — admin reject REJECTED → invalid-transition", () => {
+    const result = nextState({ current: "REJECTED", action: "reject", actorRole: "admin" });
+    expect(result).toEqual({ error: "invalid-transition" });
+  });
+
+  it("staff reject → forbidden", () => {
+    const result = nextState({ current: "PENDING_REVIEW", action: "reject", actorRole: "staff" });
+    expect(result).toEqual({ error: "forbidden" });
+  });
+
+  it("viewer reject → forbidden", () => {
+    const result = nextState({ current: "PENDING_REVIEW", action: "reject", actorRole: "viewer" });
+    expect(result).toEqual({ error: "forbidden" });
+  });
+});

@@ -12,6 +12,7 @@ import { PendingBalanceMatchesTable } from "@/components/dashboard/PendingBalanc
 import { ReRunMatchingButton } from "@/components/dashboard/ReRunMatchingButton";
 import { ReRunBalanceMatchingButton } from "@/components/dashboard/ReRunBalanceMatchingButton";
 import { MatchSearchBar } from "@/components/dashboard/MatchSearchBar";
+import { TransferDatePicker } from "@/components/dashboard/TransferDatePicker";
 import { GitMerge } from "lucide-react";
 import Link from "next/link";
 
@@ -20,7 +21,7 @@ export default async function ManualMatchPage({
   searchParams,
 }: {
   params: Promise<{ projectId: string }>;
-  searchParams: Promise<{ page?: string; limit?: string; query?: string; tab?: string }>;
+  searchParams: Promise<{ page?: string; limit?: string; query?: string; tab?: string; transferDate?: string }>;
 }) {
   const session = await getServerAuthSession();
 
@@ -29,7 +30,7 @@ export default async function ManualMatchPage({
   }
 
   const { projectId } = await params;
-  const { page = "1", limit = "50", query, tab = "slip" } = await searchParams;
+  const { page = "1", limit = "50", query, tab = "slip", transferDate } = await searchParams;
 
   const project = await getProjectByName(projectId);
   if (!project && projectId !== "all") {
@@ -45,7 +46,7 @@ export default async function ManualMatchPage({
 
   const [slipResult, balanceResult] = await Promise.all([
     !isBalanceTab
-      ? getPendingMatches(projectId, Number(page), Number(limit), query)
+      ? getPendingMatches(projectId, Number(page), Number(limit), query, transferDate)
       : Promise.resolve({ data: [], totalPages: 0, totalItems: 0, currentPage: 1 }),
     isBalanceTab
       ? getPendingBalanceMatches(projectId, Number(page), Number(limit), query)
@@ -70,6 +71,11 @@ export default async function ManualMatchPage({
           <Suspense>
             <MatchSearchBar />
           </Suspense>
+          {!isBalanceTab && (
+            <Suspense>
+              <TransferDatePicker currentDate={transferDate} />
+            </Suspense>
+          )}
           {!isBalanceTab ? (
             <ReRunMatchingButton projectId={projectId} />
           ) : (

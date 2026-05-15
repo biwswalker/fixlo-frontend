@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname, useParams } from "next/navigation";
-import { LayoutDashboard, Scale, GitMerge } from "lucide-react";
+import { LayoutDashboard, Scale, GitMerge, Building2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 import { useSession } from "next-auth/react";
@@ -34,6 +34,13 @@ export function Sidebar() {
       href: `/dashboard/${projectId}/match`,
       icon: GitMerge,
       active: pathname === `/dashboard/${projectId}/match`,
+      hidden: !["owner", "admin"].includes(userRole || ""),
+    },
+    {
+      label: "จัดการบัญชี",
+      href: `/dashboard/${projectId}/accounts`,
+      icon: Building2,
+      active: pathname === `/dashboard/${projectId}/accounts`,
       hidden: !["owner", "admin"].includes(userRole || ""),
     },
   ].filter((item) => !item.hidden);
