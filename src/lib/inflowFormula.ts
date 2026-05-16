@@ -1,3 +1,30 @@
+export interface PerAccountInflowResult {
+  value: number | null;
+  missingMessage: string | null;
+}
+
+/**
+ * Computes ยอดรับ for a single master account on a given day.
+ * Formula: (balance_D − balance_(D-1)) + effectiveOutflow_D
+ * Returns a missing-data message when either balance snapshot is absent.
+ */
+export function computePerAccountInflow(
+  selectedDayBalance: number | null,
+  prevDayBalance: number | null,
+  effectiveOutflow: number,
+): PerAccountInflowResult {
+  if (selectedDayBalance === null && prevDayBalance === null) {
+    return { value: null, missingMessage: "ไม่มียอดคงเหลือทั้งสองวัน" };
+  }
+  if (selectedDayBalance === null) {
+    return { value: null, missingMessage: "ไม่มียอดคงเหลือวันที่เลือก" };
+  }
+  if (prevDayBalance === null) {
+    return { value: null, missingMessage: "ไม่มียอดคงเหลือวันก่อนหน้า" };
+  }
+  return { value: (selectedDayBalance - prevDayBalance) + effectiveOutflow, missingMessage: null };
+}
+
 export interface BalanceRow {
   project_account_id: string;
   date: string;

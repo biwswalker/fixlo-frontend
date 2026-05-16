@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { computeInflow } from "../inflowFormula";
+import { computeInflow, computePerAccountInflow } from "../inflowFormula";
 
 interface BalanceRow {
   project_account_id: string;
@@ -112,5 +112,33 @@ describe("computeInflow — edge cases", () => {
     // acc1 inflow should not be affected
     const result = computeInflow(balances, outflows);
     expect(result.get("acc1")?.get("2026-05-02")).toBe(0);
+  });
+});
+
+describe("computePerAccountInflow — missing-data detection", () => {
+  it("both balances present → numeric result with no missingMessage", () => {
+    const result = computePerAccountInflow(1300, 1000, 200);
+    // (1300 - 1000) + 200 = 500
+    expect(result).toEqual({ value: 500, missingMessage: null });
+  });
+
+  it("selectedDayBalance null → missingMessage ไม่มียอดคงเหลือวันที่เลือก", () => {
+    const result = computePerAccountInflow(null, 1000, 200);
+    expect(result).toEqual({ value: null, missingMessage: "ไม่มียอดคงเหลือวันที่เลือก" });
+  });
+
+  it("prevDayBalance null → missingMessage ไม่มียอดคงเหลือวันก่อนหน้า", () => {
+    const result = computePerAccountInflow(1300, null, 200);
+    expect(result).toEqual({ value: null, missingMessage: "ไม่มียอดคงเหลือวันก่อนหน้า" });
+  });
+
+  it("both null → missingMessage ไม่มียอดคงเหลือทั้งสองวัน", () => {
+    const result = computePerAccountInflow(null, null, 200);
+    expect(result).toEqual({ value: null, missingMessage: "ไม่มียอดคงเหลือทั้งสองวัน" });
+  });
+
+  it("equal balances, zero outflow → value is 0, not negative", () => {
+    const result = computePerAccountInflow(1000, 1000, 0);
+    expect(result).toEqual({ value: 0, missingMessage: null });
   });
 });

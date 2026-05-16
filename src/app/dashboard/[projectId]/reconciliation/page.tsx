@@ -13,7 +13,6 @@ import { AccountBreakdownTable } from "@/components/dashboard/AccountBreakdownTa
 import {
   ArrowDownToLine,
   ArrowUpFromLine,
-  Landmark,
   Scale,
   CalendarCheck,
   GitMerge,
@@ -119,8 +118,6 @@ async function ReconciliationContent({
     return format(new Date(report.periodStart), "d MMMM yyyy", { locale: th });
   };
 
-  const hasVariance = report.variance !== 0;
-
   return (
     <div className="space-y-6">
       {/* Date Range Badge */}
@@ -133,12 +130,12 @@ async function ReconciliationContent({
 
       {/* 4 Summary Cards */}
       <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-4">
-        {/* Card 1: Expected Inflow */}
+        {/* Card 1: ยอดเข้าระบบ(เว็บ) */}
         <Card className="border-none shadow-sm rounded-2xl bg-white overflow-hidden relative group">
           <div className="absolute top-0 left-0 w-1 h-full bg-emerald-500" />
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium text-muted-foreground">
-              ยอดรับเข้าระบบ
+              ยอดเข้าระบบ(เว็บ)
             </CardTitle>
             <div className="bg-emerald-50 text-emerald-600 p-2 rounded-xl group-hover:scale-110 transition-transform">
               <ArrowDownToLine className="h-4 w-4" strokeWidth={2.5} />
@@ -154,7 +151,28 @@ async function ReconciliationContent({
           </CardContent>
         </Card>
 
-        {/* Card 2: Expected Outflow */}
+        {/* Card 2: ยอดเข้าระบบ(สลิป) */}
+        <Card className="border-none shadow-sm rounded-2xl bg-white overflow-hidden relative group">
+          <div className="absolute top-0 left-0 w-1 h-full bg-blue-500" />
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium text-muted-foreground">
+              ยอดเข้าระบบ(สลิป)
+            </CardTitle>
+            <div className="bg-blue-50 text-blue-600 p-2 rounded-xl group-hover:scale-110 transition-transform">
+              <ArrowDownToLine className="h-4 w-4" strokeWidth={2.5} />
+            </div>
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold text-blue-600 tabular-nums">
+              {formatBaht(report.slipInflow)}
+            </div>
+            <p className="text-xs mt-1 text-muted-foreground font-medium">
+              ยอดรับจากยอดคงเหลือบัญชี
+            </p>
+          </CardContent>
+        </Card>
+
+        {/* Card 3: ยอดจ่ายจากสลิป */}
         <Card className="border-none shadow-sm rounded-2xl bg-white overflow-hidden relative group">
           <div className="absolute top-0 left-0 w-1 h-full bg-rose-500" />
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
@@ -175,53 +193,38 @@ async function ReconciliationContent({
           </CardContent>
         </Card>
 
-        {/* Card 3: Actual Balance */}
-        <Card className="border-none shadow-sm rounded-2xl bg-white overflow-hidden relative group">
-          <div className="absolute top-0 left-0 w-1 h-full bg-blue-500" />
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">
-              ยอดคงเหลือในธนาคาร
-            </CardTitle>
-            <div className="bg-blue-50 text-blue-600 p-2 rounded-xl group-hover:scale-110 transition-transform">
-              <Landmark className="h-4 w-4" strokeWidth={2.5} />
-            </div>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold text-blue-600 tabular-nums">
-              {formatBaht(report.actualBalance)}
-            </div>
-            <p className="text-xs mt-1 text-muted-foreground font-medium">
-              ข้อมูลบัญชีสิ้นสุดรอบ
-            </p>
-          </CardContent>
-        </Card>
-
-        {/* Card 4: Variance */}
-        <Card
-          className={cn(
-            "border-none shadow-sm rounded-2xl overflow-hidden relative group text-white",
-            hasVariance ? "!bg-rose-600" : "!bg-emerald-600",
-          )}
-        >
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium opacity-90">
-              ส่วนต่าง (Variance)
-            </CardTitle>
-            <div className="bg-white/20 p-2 rounded-xl">
-              <Scale className="h-4 w-4" strokeWidth={2.5} />
-            </div>
-          </CardHeader>
-          <CardContent>
-            <div className="text-3xl font-bold tracking-tight tabular-nums">
-              {formatBaht(Math.abs(report.variance))}
-            </div>
-            <p className="text-xs mt-2 font-medium opacity-90 bg-white/10 p-2 rounded-lg leading-tight">
-              {report.variance === 0
-                ? "ยอดดุลถูกต้อง ไม่พบส่วนต่าง"
-                : "ตรวจสอบรายการผิดปกติหรือเพิ่มรายการปรับปรุงเพื่อให้ยอดตรงกัน"}
-            </p>
-          </CardContent>
-        </Card>
+        {/* Card 4: ส่วนต่าง */}
+        {(() => {
+          const diff = Math.abs(report.expectedInflow - report.slipInflow);
+          const matched = diff === 0;
+          return (
+            <Card
+              className={cn(
+                "border-none shadow-sm rounded-2xl overflow-hidden relative group text-white",
+                matched ? "!bg-emerald-600" : "!bg-rose-600",
+              )}
+            >
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                <CardTitle className="text-sm font-medium opacity-90">
+                  ส่วนต่าง
+                </CardTitle>
+                <div className="bg-white/20 p-2 rounded-xl">
+                  <Scale className="h-4 w-4" strokeWidth={2.5} />
+                </div>
+              </CardHeader>
+              <CardContent>
+                <div className="text-3xl font-bold tracking-tight tabular-nums">
+                  {formatBaht(diff)}
+                </div>
+                <p className="text-xs mt-2 font-medium opacity-90 bg-white/10 p-2 rounded-lg leading-tight">
+                  {matched
+                    ? "ยอดเว็บตรงกับยอดสลิป"
+                    : "ยอดเว็บและยอดสลิปไม่ตรงกัน กรุณาตรวจสอบ"}
+                </p>
+              </CardContent>
+            </Card>
+          );
+        })()}
       </div>
 
       {/* Pending Matches Section */}

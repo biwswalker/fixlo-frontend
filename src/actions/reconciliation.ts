@@ -9,6 +9,7 @@ import { revalidatePath } from "next/cache";
 import { resolveProject } from "@/lib/projects";
 import { resolvePeriodToDateRange } from "@/lib/periodUtils";
 import { buildAccountLevelStats } from "@/lib/accountLevelStats";
+import { computePerAccountInflow } from "@/lib/inflowFormula";
 import { depositTotalSql } from "@/lib/kpiSql";
 
 // ---------------------------------------------------------------------------
@@ -36,6 +37,10 @@ export interface AccountLevelStat {
   count: number;
   /** Most recent matched daily_balance for this account within the period; null = no snapshot */
   closingBalance: number | null;
+  /** Balance from daily_balances where date = selected date exactly; null = no strict-match row */
+  selectedDayBalance: number | null;
+  /** Balance from daily_balances where date = selected date − 1 day exactly; null = no strict-match row */
+  prevDayBalance: number | null;
 }
 
 export interface ReconciliationReport {
@@ -54,6 +59,8 @@ export interface ReconciliationReport {
   todayBalance: number;
   /** Alias of startingBalance — the balance just before the period */
   yesterdayBalance: number;
+  /** Sum of ยอดรับ per account (accounts missing balance data are excluded) */
+  slipInflow: number;
 }
 
 // ---------------------------------------------------------------------------
@@ -79,6 +86,7 @@ function emptyReport(startDate: string, endDate: string): ReconciliationReport {
     periodEnd: endDate,
     todayBalance: 0,
     yesterdayBalance: 0,
+    slipInflow: 0,
   };
 }
 
@@ -208,20 +216,20 @@ export async function getReconciliationReport(
       `;
 
     // ------------------------------------------------------------------
-    // 6. Per-account closing balances from matched daily_balances
-    //    Uses most recent row (by date) per account within period.
+    // 6. Dual-balance query: fetch balance rows for exactly the selected
+    //    date and the prior day using strict equality (no fallback).
+    //    Both dates in a single round-trip. Used to compute slipInflow.
     // ------------------------------------------------------------------
-    const closingBalSql = `
-      SELECT DISTINCT ON (db.project_account_id)
+    const dualBalSql = `
+      SELECT
         pa.account_name,
-        db.project_account_id,
-        db.balance_amount AS closing_balance
+        db.balance_amount,
+        db.date::text AS date
       FROM daily_balances db
       JOIN project_accounts pa ON pa.id = db.project_account_id
       WHERE db.matching_status IN ('AUTO_MAPPED', 'MANUAL_MAPPED')
-        AND db.date <= $1
+        AND db.date IN ($1::date, ($1::date - interval '1 day'))
         AND (pa.project_id = $2 OR $3 = true)
-      ORDER BY db.project_account_id, db.date DESC
     `;
 
     // ------------------------------------------------------------------
@@ -243,7 +251,7 @@ export async function getReconciliationReport(
       balanceRes,
       rawTxRes,
       startBalRes,
-      closingBalRes,
+      dualBalRes,
       manualTxRes,
     ] = await Promise.all([
       query(inflowSql, [startDate, endDate]),
@@ -251,17 +259,22 @@ export async function getReconciliationReport(
       query(balanceSql, isAll ? [endDate] : [projectName, endDate]),
       query(rawTxSql, [startDate, endDate, projectUuid, isAll]),
       query(startBalSql, isAll ? [startDate] : [projectName, startDate]),
-      query(closingBalSql, [endDate, projectUuid, isAll]),
+      query(dualBalSql, [endDate, projectUuid, isAll]),
       query(manualTxSql, [startDate, endDate, projectUuid, isAll]).catch(() => ({ rows: [] })),
     ]);
 
     // ------------------------------------------------------------------
     // 8. Aggregate outflow by matched Master Account
     // ------------------------------------------------------------------
+    const selectedBalRows = dualBalRes.rows.filter((r: { date: string }) => r.date === endDate);
+    const prevBalRows = dualBalRes.rows.filter((r: { date: string }) => r.date !== endDate);
+
     const accountLevelStats: AccountLevelStat[] = buildAccountLevelStats(
       rawTxRes.rows,
-      closingBalRes.rows,
+      [],
       manualTxRes.rows,
+      selectedBalRows,
+      prevBalRows,
     );
 
     // ------------------------------------------------------------------
@@ -279,6 +292,11 @@ export async function getReconciliationReport(
       (sum, s) => sum + s.effectiveOutflow,
       0,
     );
+
+    const slipInflow = accountLevelStats.reduce((sum, s) => {
+      const r = computePerAccountInflow(s.selectedDayBalance, s.prevDayBalance, s.effectiveOutflow);
+      return r.value !== null ? sum + r.value : sum;
+    }, 0);
 
     const expectedBalance =
       startingBalance + expectedInflow - effectiveOutflowTotal;
@@ -302,6 +320,7 @@ export async function getReconciliationReport(
       actualBalance,
       expectedBalance,
       variance,
+      slipInflow,
       accountLevelStats,
       periodStart: startDate,
       periodEnd: endDate,

@@ -19,6 +19,11 @@ export interface ManualTxRow {
   amount: number | string | null;
 }
 
+export interface DayBalanceRow {
+  account_name: string | null;
+  balance_amount: number | string | null;
+}
+
 type AccountEntry = {
   systemOutflow: number;
   manualOutflow: number;
@@ -43,6 +48,8 @@ export function buildAccountLevelStats(
   txRows: TxRow[],
   closingBalRows: ClosingBalRow[],
   manualTxRows: ManualTxRow[] = [],
+  selectedBalRows: DayBalanceRow[] = [],
+  prevBalRows: DayBalanceRow[] = [],
 ): AccountLevelStat[] {
   const accountMap = new Map<string, AccountEntry>();
 
@@ -106,6 +113,22 @@ export function buildAccountLevelStats(
     }
   }
 
+  const selectedBalMap = new Map<string, number | null>();
+  for (const row of selectedBalRows) {
+    const name = row.account_name || "Unmapped";
+    selectedBalMap.set(name, row.balance_amount !== null && row.balance_amount !== undefined
+      ? Number(row.balance_amount)
+      : null);
+  }
+
+  const prevBalMap = new Map<string, number | null>();
+  for (const row of prevBalRows) {
+    const name = row.account_name || "Unmapped";
+    prevBalMap.set(name, row.balance_amount !== null && row.balance_amount !== undefined
+      ? Number(row.balance_amount)
+      : null);
+  }
+
   return Array.from(accountMap.entries())
     .map(([account, { systemOutflow, manualOutflow, count, closingBalance, accountId, bankCode, accountNumber }]) => ({
       account,
@@ -118,6 +141,8 @@ export function buildAccountLevelStats(
       effectiveOutflow: systemOutflow + manualOutflow,
       count,
       closingBalance,
+      selectedDayBalance: selectedBalMap.get(account) ?? null,
+      prevDayBalance: prevBalMap.get(account) ?? null,
     }))
     .sort((a, b) => b.effectiveOutflow - a.effectiveOutflow);
 }

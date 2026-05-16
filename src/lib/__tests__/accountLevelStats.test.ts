@@ -223,6 +223,56 @@ describe("buildAccountLevelStats — manual outflow (#49)", () => {
   });
 });
 
+describe("buildAccountLevelStats — dual-balance fields (#64)", () => {
+  it("account with both balance rows gets selectedDayBalance and prevDayBalance", () => {
+    const stats = buildAccountLevelStats(
+      [{ account_name: "A", ai_amount: 500 }],
+      [],
+      [],
+      [{ account_name: "A", balance_amount: 10000 }],
+      [{ account_name: "A", balance_amount: 9000 }],
+    );
+    expect(stats[0].selectedDayBalance).toBe(10000);
+    expect(stats[0].prevDayBalance).toBe(9000);
+  });
+
+  it("account with transactions but missing both balance rows → both null", () => {
+    const stats = buildAccountLevelStats(
+      [{ account_name: "A", ai_amount: 500 }],
+      [],
+      [],
+      [],
+      [],
+    );
+    expect(stats[0].selectedDayBalance).toBeNull();
+    expect(stats[0].prevDayBalance).toBeNull();
+  });
+
+  it("account with only selectedDayBalance row → prevDayBalance is null", () => {
+    const stats = buildAccountLevelStats(
+      [{ account_name: "A", ai_amount: 500 }],
+      [],
+      [],
+      [{ account_name: "A", balance_amount: 10000 }],
+      [],
+    );
+    expect(stats[0].selectedDayBalance).toBe(10000);
+    expect(stats[0].prevDayBalance).toBeNull();
+  });
+
+  it("account with only prevDayBalance row → selectedDayBalance is null", () => {
+    const stats = buildAccountLevelStats(
+      [{ account_name: "A", ai_amount: 500 }],
+      [],
+      [],
+      [],
+      [{ account_name: "A", balance_amount: 9000 }],
+    );
+    expect(stats[0].selectedDayBalance).toBeNull();
+    expect(stats[0].prevDayBalance).toBe(9000);
+  });
+});
+
 describe("buildAccountLevelStats — slip adjustment (#55)", () => {
   it("adjusted_amount on tx row is used instead of ai_amount", () => {
     const stats = buildAccountLevelStats(

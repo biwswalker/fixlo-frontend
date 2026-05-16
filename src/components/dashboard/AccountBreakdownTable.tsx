@@ -19,6 +19,7 @@ import {
   Popover, PopoverContent, PopoverTrigger,
 } from "@/components/ui/popover";
 import { formatBaht } from "@/lib/utils";
+import { computePerAccountInflow } from "@/lib/inflowFormula";
 import { getAccountSlips, adjustTransactionAmount } from "@/actions/dashboard";
 import type { AccountLevelStat } from "@/actions/reconciliation";
 import type { AccountSlip } from "@/actions/dashboard";
@@ -323,8 +324,11 @@ export function AccountBreakdownTable({ stats, targetDate, showManualColumn, use
                   {showManualColumn && (
                     <TableHead className="text-right font-semibold text-blue-600">Manual</TableHead>
                   )}
-                  <TableHead className="text-right font-semibold rounded-tr-xl pr-6 text-rose-600">
+                  <TableHead className="text-right font-semibold text-rose-600">
                     ยอดจ่ายสุทธิ (Effective Outflow)
+                  </TableHead>
+                  <TableHead className="text-right font-semibold rounded-tr-xl pr-6 text-emerald-600">
+                    ยอดรับ
                   </TableHead>
                 </TableRow>
               </TableHeader>
@@ -373,8 +377,17 @@ export function AccountBreakdownTable({ stats, targetDate, showManualColumn, use
                         {formatBaht(item.manualOutflow)}
                       </TableCell>
                     )}
-                    <TableCell className="text-right font-bold text-gray-900 pr-6 tabular-nums">
+                    <TableCell className="text-right font-bold text-gray-900 tabular-nums">
                       {formatBaht(item.effectiveOutflow)}
+                    </TableCell>
+                    <TableCell className="text-right pr-6">
+                      {(() => {
+                        const r = computePerAccountInflow(item.selectedDayBalance, item.prevDayBalance, item.effectiveOutflow);
+                        if (r.missingMessage) {
+                          return <span className="text-xs text-amber-600">{r.missingMessage}</span>;
+                        }
+                        return <span className="font-bold text-emerald-600 tabular-nums">{formatBaht(r.value!)}</span>;
+                      })()}
                     </TableCell>
                   </TableRow>
                 ))}
@@ -393,8 +406,14 @@ export function AccountBreakdownTable({ stats, targetDate, showManualColumn, use
                       {formatBaht(stats.reduce((acc, curr) => acc + curr.manualOutflow, 0))}
                     </TableCell>
                   )}
-                  <TableCell className="text-right font-bold text-rose-600 text-lg pr-6 tabular-nums">
+                  <TableCell className="text-right font-bold text-rose-600 text-lg tabular-nums">
                     {formatBaht(stats.reduce((acc, curr) => acc + curr.effectiveOutflow, 0))}
+                  </TableCell>
+                  <TableCell className="text-right font-bold text-emerald-600 text-lg pr-6 tabular-nums">
+                    {formatBaht(stats.reduce((acc, curr) => {
+                      const r = computePerAccountInflow(curr.selectedDayBalance, curr.prevDayBalance, curr.effectiveOutflow);
+                      return r.value !== null ? acc + r.value : acc;
+                    }, 0))}
                   </TableCell>
                 </TableRow>
               </TableBody>
