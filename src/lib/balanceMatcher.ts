@@ -1,8 +1,10 @@
 import type { ProjectAccount } from "@/types/dashboard";
+import { fuzzyNameMatch } from "@/lib/nameNormalizer";
 
 export interface ScannedBalance {
   account_name: string | null;
   platform: string | null;
+  account_number?: string | null;
 }
 
 export interface BalanceCandidateBreakdown {
@@ -66,6 +68,11 @@ function isGatewayAccount(account: ProjectAccount): boolean {
   return GATEWAY_KEYWORDS.some((k) => nameLower.includes(k));
 }
 
+function normalizeAccountNumber(raw: string | null | undefined): string {
+  if (!raw) return "";
+  return raw.toLowerCase().replace(/[-*x\s]/g, "");
+}
+
 interface ScoreDetail {
   baseScore: number;
   nameMatched: "exact" | "partial" | "alias" | "none";
@@ -76,6 +83,15 @@ function scoreAccount(scanned: ScannedBalance, master: ProjectAccount): ScoreDet
   const sPlatform = normalizeBank(scanned.platform);
   const mBankCode = normalizeBank(master.bank_code);
   const bankMatched = !!(sPlatform && mBankCode && sPlatform === mBankCode);
+
+  // P0 (ADR 0005): account_number exact match after normalization.
+  // Graceful — skip silently when either side is null/empty so existing
+  // callers (no spectre `acc_num` field yet) keep working.
+  const sAcc = normalizeAccountNumber(scanned.account_number);
+  const mAcc = normalizeAccountNumber(master.account_number);
+  if (sAcc && mAcc && sAcc === mAcc) {
+    return { baseScore: 100, nameMatched: "none", bankMatched };
+  }
 
   if (isGatewayAccount(master)) {
     if (bankMatched) return { baseScore: 100, nameMatched: "none", bankMatched: true };
@@ -96,9 +112,20 @@ function scoreAccount(scanned: ScannedBalance, master: ProjectAccount): ScoreDet
     } else if (mAliases.includes(sName)) {
       nameMatched = "alias";
       nameScore = 100;
-    } else if (mName.includes(sName) || sName.includes(mName)) {
-      nameMatched = "partial";
-      nameScore = 80;
+    } else {
+      // P1 extended (ADR 0005): candidate pool = [master.account_name, ...aliases].
+      // Substring or token-fuzzy (Levenshtein ≤ 1, min token length 4 after honorific strip)
+      // counts as a partial hit at score 80.
+      const candidates = [mName, ...mAliases].filter(Boolean);
+      const hit = candidates.some((c) => {
+        if (!c) return false;
+        if (c.includes(sName) || sName.includes(c)) return true;
+        return fuzzyNameMatch(sName, c);
+      });
+      if (hit) {
+        nameMatched = "partial";
+        nameScore = 80;
+      }
     }
   }
 

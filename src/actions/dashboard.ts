@@ -1023,23 +1023,73 @@ export async function getPendingBalanceMatches(
 export async function confirmBalanceMapping(
   dailyBalanceId: number,
   projectAccountId: string,
-): Promise<{ success: boolean; error?: string }> {
+): Promise<{ success: boolean; error?: string; warning?: string }> {
   const session = await getServerAuthSession();
   if (!session || !hasPermission(session.user.role, "approve_transactions")) {
     return { success: false, error: "Unauthorized" };
   }
 
+  const actor = session.user.username ?? session.user.name ?? "admin";
+
   try {
+    // Load scanned name + target account siblings so we can self-improve
+    // the alias list (ADR 0005).
+    const scannedRes = await query(
+      `SELECT account_name FROM daily_balances WHERE id = $1`,
+      [dailyBalanceId],
+    );
+    const scannedName: string | null = scannedRes.rows[0]?.account_name ?? null;
+
+    const targetRes = await query(
+      `SELECT id, project_id, account_name, account_number, bank_code, aliases, aliases_meta, created_at
+       FROM project_accounts WHERE id = $1`,
+      [projectAccountId],
+    );
+    const target = targetRes.rows[0];
+
+    let warning: string | undefined;
+
+    if (target && scannedName) {
+      const siblingsRes = await query(
+        `SELECT id, project_id, account_name, account_number, bank_code, aliases, aliases_meta, created_at
+         FROM project_accounts
+         WHERE project_id = $1 AND deleted_at IS NULL`,
+        [target.project_id],
+      );
+      const { proposeAliasAddition } = await import("@/lib/accountAliases");
+      const proposal = proposeAliasAddition(
+        target,
+        scannedName,
+        siblingsRes.rows,
+        actor,
+        dailyBalanceId,
+      );
+
+      if (proposal.ok) {
+        await query(
+          `UPDATE project_accounts
+           SET aliases      = $1,
+               aliases_meta = $2
+           WHERE id = $3`,
+          [JSON.stringify(proposal.aliasesNext), JSON.stringify(proposal.aliasesMetaNext), projectAccountId],
+        );
+      } else if (proposal.reason === "cross_master_collision") {
+        const colliding = siblingsRes.rows.find((r) => r.id === proposal.collidingAccountId);
+        warning = `ไม่สามารถเพิ่ม alias อัตโนมัติได้: ชื่อ "${scannedName}" ชนกับ alias ของบัญชี "${colliding?.account_name ?? proposal.collidingAccountId}"`;
+      }
+      // 'empty' / 'duplicate' → silent skip
+    }
+
     await query(
       `UPDATE daily_balances
        SET project_account_id = $1,
            matching_status    = 'MANUAL_MAPPED',
            matched_by         = $2
        WHERE id = $3`,
-      [projectAccountId, session.user.username ?? session.user.name ?? "admin", dailyBalanceId],
+      [projectAccountId, actor, dailyBalanceId],
     );
     revalidatePath("/dashboard/[projectId]/match", "page");
-    return { success: true };
+    return warning ? { success: true, warning } : { success: true };
   } catch (error) {
     logger.error("confirmBalanceMapping", "Failed to confirm balance mapping", error);
     return { success: false, error: "Failed to confirm mapping" };
@@ -1074,7 +1124,12 @@ export async function batchReRunBalanceMatch(projectId: string) {
 
     for (const row of rows) {
       const match = runBalanceMatch(
-        { account_name: row.account_name, platform: row.platform },
+        {
+          account_name: row.account_name,
+          platform: row.platform,
+          // P0 graceful (ADR 0005): pass null until spectre #3 ships `acc_num`.
+          account_number: null,
+        },
         accounts,
       );
       await query(

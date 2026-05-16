@@ -75,6 +75,185 @@ describe("runBalanceMatch — thresholds", () => {
   });
 });
 
+describe("runBalanceMatch — v2 alias substring + fuzzy (Mode A+C)", () => {
+  it("Mode A: honorific + Thai typo → partial 80 + bank bonus 10 → AUTO", () => {
+    const masters = [
+      makeAccount({ id: "acc-s", account_name: "ศุณิษา", bank_code: "bbl" }),
+    ];
+    const result = runBalanceMatch(
+      { account_name: "คุณ ศุญิษา", platform: "BBL" },
+      masters,
+    );
+    expect(result.status).toBe("AUTO_MAPPED");
+    expect(result.matchedAccountId).toBe("acc-s");
+    expect(result.score).toBe(90);
+  });
+
+  it("Mode A no bank match → partial 80 → PENDING_REVIEW", () => {
+    const masters = [
+      makeAccount({ id: "acc-s", account_name: "ศุณิษา", bank_code: "bbl" }),
+    ];
+    const result = runBalanceMatch(
+      { account_name: "คุณ ศุญิษา", platform: "KTB" },
+      masters,
+    );
+    expect(result.status).toBe("PENDING_REVIEW");
+    expect(result.score).toBe(80);
+  });
+
+  it("Mode C: OCR full-name + alias short form → partial via alias 80 + bank 10 → AUTO", () => {
+    const masters = [
+      makeAccount({
+        id: "acc-k",
+        account_name: "เกษม ต๊ะแสนเทพ",
+        bank_code: "bbl",
+        aliases: '["เกษม"]',
+      }),
+    ];
+    // OCR full name contains alias short form "เกษม"; also typo on second token (ติะ vs ต๊ะ)
+    const result = runBalanceMatch(
+      { account_name: "เกษม ติะแสนเทพ", platform: "BBL" },
+      masters,
+    );
+    expect(result.status).toBe("AUTO_MAPPED");
+    expect(result.matchedAccountId).toBe("acc-k");
+    expect(result.score).toBe(90);
+  });
+
+  it("breakdown nameMatched = 'partial' for fuzzy hit", () => {
+    const masters = [
+      makeAccount({ id: "acc-s", account_name: "ศุณิษา", bank_code: "bbl" }),
+    ];
+    const result = runBalanceMatch(
+      { account_name: "คุณ ศุญิษา", platform: "BBL" },
+      masters,
+    );
+    expect(result.breakdown.candidates[0].nameMatched).toBe("partial");
+  });
+
+  it("Mode B graceful: null name + null acc_num + gateway has 2 masters → UNMATCHED, no crash", () => {
+    const masters = [
+      makeAccount({ id: "acc-tm-1", account_name: "พิมผะกา", bank_code: "truemoney" }),
+      makeAccount({ id: "acc-tm-2", account_name: "อังคณา", bank_code: "truemoney" }),
+    ];
+    const result = runBalanceMatch(
+      { account_name: null, platform: "TrueMoney" },
+      masters,
+    );
+    // Both masters are non-gateway names (people); platform bonus is gated on nameScore>0
+    expect(result.matchedAccountId).toBeNull();
+    expect(result.status).toBe("UNMATCHED");
+  });
+
+  it("short-token rejection: scanned 'GSB' does not match alias 'BBL'", () => {
+    const masters = [
+      makeAccount({
+        id: "acc-bbl",
+        account_name: "Some Person",
+        bank_code: "bbl",
+        aliases: '["BBL"]',
+      }),
+    ];
+    const result = runBalanceMatch(
+      { account_name: "GSB", platform: null },
+      masters,
+    );
+    // Should not fuzzy-match BBL (3 chars). Exact equality also fails.
+    expect(result.score).toBe(0);
+    expect(result.status).toBe("UNMATCHED");
+  });
+});
+
+describe("runBalanceMatch — P0 account_number exact match (Mode B graceful)", () => {
+  it("P0 hit: scanned acc_num equals master account_number → score 100, AUTO", () => {
+    const masters = [
+      makeAccount({ id: "acc-pim", account_name: "พิมผะกา", bank_code: "truemoney", account_number: "06*-***-7141" }),
+      makeAccount({ id: "acc-ang", account_name: "อังคณา", bank_code: "truemoney", account_number: "08x-xxx-3197" }),
+    ];
+    const result = runBalanceMatch(
+      { account_name: null, platform: "TrueMoney", account_number: "06*-***-7141" },
+      masters,
+    );
+    expect(result.status).toBe("AUTO_MAPPED");
+    expect(result.matchedAccountId).toBe("acc-pim");
+    expect(result.score).toBe(100);
+  });
+
+  it("P0 hit normalizes -/*/x/whitespace: scanned '06xxxx7141' matches master '06*-***-7141'", () => {
+    const masters = [
+      makeAccount({ id: "acc-pim", account_name: "พิมผะกา", bank_code: "truemoney", account_number: "06*-***-7141" }),
+    ];
+    const result = runBalanceMatch(
+      { account_name: null, platform: "TrueMoney", account_number: "06xxxx7141" },
+      masters,
+    );
+    expect(result.status).toBe("AUTO_MAPPED");
+    expect(result.matchedAccountId).toBe("acc-pim");
+    expect(result.score).toBe(100);
+  });
+
+  it("P0 breakdown: nameMatched = 'none' on P0 hit", () => {
+    const masters = [
+      makeAccount({ id: "acc-pim", account_name: "พิมผะกา", bank_code: "truemoney", account_number: "06*-***-7141" }),
+    ];
+    const result = runBalanceMatch(
+      { account_name: null, platform: "TrueMoney", account_number: "06*-***-7141" },
+      masters,
+    );
+    expect(result.breakdown.candidates[0].nameMatched).toBe("none");
+    expect(result.breakdown.candidates[0].score).toBe(100);
+  });
+
+  it("graceful: scanned acc_num null → P0 skipped, name path runs normally", () => {
+    const masters = [
+      makeAccount({ id: "acc-s", account_name: "สมชาย ใจดี", bank_code: "scb", account_number: "123-456-7890" }),
+    ];
+    const result = runBalanceMatch(
+      { account_name: "สมชาย ใจดี", platform: "SCB", account_number: null },
+      masters,
+    );
+    expect(result.status).toBe("AUTO_MAPPED");
+    expect(result.matchedAccountId).toBe("acc-s");
+  });
+
+  it("graceful: master account_number null → P0 skipped for that master", () => {
+    const masters = [
+      makeAccount({ id: "acc-s", account_name: "สมชาย ใจดี", bank_code: "scb", account_number: "" }),
+    ];
+    const result = runBalanceMatch(
+      { account_name: "สมชาย ใจดี", platform: "SCB", account_number: "06*-***-7141" },
+      masters,
+    );
+    // P0 skipped (master has empty acc_num), name exact still hits
+    expect(result.status).toBe("AUTO_MAPPED");
+    expect(result.matchedAccountId).toBe("acc-s");
+  });
+
+  it("scanned acc_num present but value differs → P0 not hit; name/platform falls through", () => {
+    const masters = [
+      makeAccount({ id: "acc-s", account_name: "สมชาย ใจดี", bank_code: "scb", account_number: "111-111-1111" }),
+    ];
+    const result = runBalanceMatch(
+      { account_name: "สมชาย ใจดี", platform: "SCB", account_number: "222-222-2222" },
+      masters,
+    );
+    expect(result.matchedAccountId).toBe("acc-s");
+    // Name path still hits exact → score 100 from P1, not P0
+    expect(result.status).toBe("AUTO_MAPPED");
+  });
+
+  it("scanned acc_num whitespace-only → treated as empty, P0 skipped", () => {
+    const masters = [
+      makeAccount({ id: "acc-pim", account_name: "พิมผะกา", bank_code: "truemoney", account_number: "06*-***-7141" }),
+    ];
+    const result = runBalanceMatch(
+      { account_name: null, platform: "TrueMoney", account_number: "   " },
+      masters,
+    );
+    expect(result.status).toBe("UNMATCHED");
+  });
+});
+
 describe("runBalanceMatch — breakdown", () => {
   it("always returns top-3 candidates in breakdown", () => {
     const result = runBalanceMatch({ account_name: "สมชาย ใจดี", platform: "SCB" }, accounts);

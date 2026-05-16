@@ -183,7 +183,11 @@ export function PendingBalanceMatchesTable({
     startTransition(async () => {
       const result = await confirmBalanceMapping(id, accountId);
       if (result.success) {
-        toast.success("จับคู่ยอดบัญชีสำเร็จ");
+        if (result.warning) {
+          toast.warning(result.warning);
+        } else {
+          toast.success("จับคู่ยอดบัญชีสำเร็จ");
+        }
         router.refresh();
       } else {
         toast.error(result.error ?? "เกิดข้อผิดพลาดในการจับคู่");
