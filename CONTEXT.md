@@ -71,9 +71,13 @@ tags: [domain, glossary]
      - **เก็บเฉพาะ withdrawal slip** (master → player) — deposit ไม่ผ่าน slip pipeline (มาจาก scrape เว็บแทน)
      - ถ้าระบุ project ปลายทางในข้อความ (cross-project lending) bot ใช้ Fuse.js fuzzy search หา target_project_id
    - Discord bot (`bot.js`) ดักภาพ → save disk → INSERT raw_uploads (status `PENDING`)
+   - Bot sync with Discord state:
+     - **messageDelete** — ลบ Discord message → DELETE raw_uploads (cleanup orphaned records)
+     - **messageUpdate** — edit message (attachment removed) → DELETE raw_uploads (PENDING only, preserve history)
    - Staff trigger batch ด้วยข้อความ:
      - `"สลิปการโอนออก วันที่ DD/MM/YYYY"` → set `projects.active_date` + รัน worker
      - `"รันคิว"` → รัน worker
+   - **Enqueue deduplication**: ใช้ `jobId='upload-{uploadId}'` ป้องกัน multi-trigger enqueue ซ้ำ. เช็ค existing job ก่อน add.
    - Worker (`worker.js`) ใช้ BullMQ + Redis, concurrency=5 (parallel processing):
      - SELECT PENDING uploads → enqueue jobs (attempts=3, exponential backoff)
      - แต่ละ job: ดึงรูป → Gemini AI extract (`type, amount, ref, s_*, r_*, date, time, acc_name, platform, acc_num`) + Bangkok timezone conversion
