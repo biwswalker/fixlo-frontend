@@ -74,13 +74,14 @@ tags: [domain, glossary]
    - Staff trigger batch ด้วยข้อความ:
      - `"สลิปการโอนออก วันที่ DD/MM/YYYY"` → set `projects.active_date` + รัน worker
      - `"รันคิว"` → รัน worker
-   - Worker (`worker.js`) ใช้ BullMQ + Redis, concurrency=1:
+   - Worker (`worker.js`) ใช้ BullMQ + Redis, concurrency=5 (parallel processing):
      - SELECT PENDING uploads → enqueue jobs (attempts=3, exponential backoff)
-     - แต่ละ job: ดึงรูป → Gemini AI extract (`type, amount, ref, s_*, r_*, date, time, acc_name, platform`) + jsQR decode QR amount
-     - AI fallback chain: `gemini-3.1-flash-lite-preview` → `gemma-4-31b-it` → `gemma-4-26b-a4b-it` (Ollama disabled)
+     - แต่ละ job: ดึงรูป → Gemini AI extract (`type, amount, ref, s_*, r_*, date, time, acc_name, platform, acc_num`) + Bangkok timezone conversion
+     - AI fallback chain: `gemini-3.1-flash-lite-preview` → `gemma-4-31b-it` → `gemma-4-26b-a4b-it` → Ollama (gemma4, localhost:11434)
+     - Performance logging: elapsed time per job + queue depth tracking
      - Route by `aiOutput.type`:
-       - `BALANCE | BANK_APP_BALANCE | GATEWAY_BALANCE` → INSERT [[daily_balances]]
-       - `SLIP` → smartMatch(sender) กับ project_accounts → INSERT [[transactions]] (duplicate check ด้วย `ref_id`)
+       - `BALANCE | BANK_APP_BALANCE | GATEWAY_BALANCE` → INSERT [[daily_balances]] + balance matcher v2 (acc_num P0, platform/alias fuzzy P1, tiebreaker P2)
+       - `SLIP` → smartMatch(sender) กับ project_accounts → INSERT [[transactions]] (duplicate check: ref_id + manual_transactions transfer_at+amount match)
        - `UNKNOWN` → ignore
      - UPDATE `raw_uploads.ai_status = 'PROCESSED' | 'ERROR'`
    - **Match input = sender (`s_*`)** เพราะ master เป็นคนโอนออก = sender ของ slip
