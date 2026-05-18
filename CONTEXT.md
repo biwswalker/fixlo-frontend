@@ -117,6 +117,7 @@ tags: [domain, glossary]
    - [worker.js:274] match อาจต้อง update logic ตาม [ADR 0001](docs/adr/0001-unified-fuzzy-account-matcher.md)
    - Worker ใช้ `aiOutput.date + aiOutput.time` populate `transfer_at` (หลัง schema migration)
    - bot.js Fuse threshold 0.3 false-positive บ่อย (project shortnames สั้นใกล้กัน) — เพิ่ม strict pattern เช่น `#<project>` หรือ exact match-only
+   - **[FIXED] Job queue duplication** — staff trigger "รันคิว" หลายครั้งใน short time ⇒ enqueue PENDING uploads ซ้ำ. BullMQ no jobId dedup ⇒ 20,984 jobs for 8,956 uploads (12,917 dupes). Fix: use `jobId='upload-{uploadId}'` in `bot.js:179` + check existing job ก่อน add. Cleanup script ลบ 9,538+ duplicate waiting jobs. See fixlo-spectre commit f0ce6c3.
 
 0. **Project naming**: rename plan locked
    - `projects.id=1`: `juno` → `juno168` (UPDATE single row)
