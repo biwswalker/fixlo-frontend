@@ -4,17 +4,17 @@
     "type": "split",
     "children": [
       {
-        "id": "50a69c3284b1c78e",
+        "id": "2b3b8157f66daeee",
         "type": "tabs",
         "children": [
           {
-            "id": "ef759e46468c855e",
+            "id": "89974a1285d47f21",
             "type": "leaf",
             "state": {
-              "type": "graph",
+              "type": "empty",
               "state": {},
-              "icon": "lucide-git-fork",
-              "title": "Graph view"
+              "icon": "lucide-file",
+              "title": "New tab"
             }
           }
         ]
@@ -179,11 +179,12 @@
       "bases:Create new base": false
     }
   },
-  "active": "ef759e46468c855e",
+  "active": "89974a1285d47f21",
   "lastOpenFiles": [
+    "CONTEXT.md",
+    "CLAUDE.md",
     "docs/db/tables/report_manual_bonus_in.md",
     "docs/db/tables/users.md",
-    "CONTEXT.md",
     "docs/db/tables/report_summary_daily.md",
     "docs/db/tables/report_manual_credit_out.md",
     "docs/db/tables/report_manual_credit_in.md",
@@ -199,7 +200,6 @@
     "docs/db/MOC.md",
     "docs/db/tables",
     "docs/db",
-    "CLAUDE.md",
     "public/vercel.svg",
     "public/next.svg",
     "public/globe.svg",
