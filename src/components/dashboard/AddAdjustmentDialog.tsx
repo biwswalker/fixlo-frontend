@@ -304,8 +304,9 @@ function AccountField({
         <SelectContent>
           {accounts.map((acc) => {
             const last4 = acc.account_number?.slice(-4);
+            const label = last4 ? `${acc.account_name} (${acc.bank_code} *${last4})` : acc.account_name;
             return (
-              <SelectItem key={acc.id} value={acc.id}>
+              <SelectItem key={acc.id} value={acc.id} textValue={label}>
                 <div className="flex flex-col leading-tight">
                   <span>{acc.account_name}</span>
                   {last4 && (
