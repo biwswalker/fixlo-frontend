@@ -76,7 +76,7 @@ export default async function ReconciliationPage({
 
         <div className="flex items-center gap-3">
           <ReconciliationPeriodSelector currentDate={targetDate} />
-          {["owner", "admin"].includes(session.user.role || "") && (
+          {["owner", "admin"].includes(session.user.role || "") && projectId !== "all" && (
             <AddAdjustmentDialog projectId={projectId} />
           )}
         </div>

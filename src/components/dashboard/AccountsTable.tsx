@@ -219,15 +219,17 @@ export function AccountsTable({ accounts, projectId }: AccountsTableProps) {
 
   return (
     <>
-      <div className="flex justify-end mb-4">
-        <Button
-          className="rounded-xl bg-blue-600 hover:bg-blue-700 text-white shadow-lg shadow-blue-600/20 font-bold text-sm"
-          onClick={() => { setCreateForm(emptyForm()); setCreateOpen(true); }}
-        >
-          <Plus className="h-4 w-4 mr-1.5" />
-          เพิ่มบัญชี
-        </Button>
-      </div>
+      {projectId !== "all" && (
+        <div className="flex justify-end mb-4">
+          <Button
+            className="rounded-xl bg-blue-600 hover:bg-blue-700 text-white shadow-lg shadow-blue-600/20 font-bold text-sm"
+            onClick={() => { setCreateForm(emptyForm()); setCreateOpen(true); }}
+          >
+            <Plus className="h-4 w-4 mr-1.5" />
+            เพิ่มบัญชี
+          </Button>
+        </div>
+      )}
 
       <Card className="border-none shadow-xl shadow-gray-200/50 rounded-2xl overflow-hidden bg-white">
         <CardContent className="p-0">

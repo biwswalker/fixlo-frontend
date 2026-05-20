@@ -82,15 +82,6 @@ export default async function ProjectDashboard({
               />
             </Suspense>
           </div>
-          <Button
-            variant="outline"
-            className="bg-white border-gray-200 font-medium"
-          >
-            ส่งออกข้อมูล
-          </Button>
-          <Button className="bg-blue-600 hover:bg-blue-700 text-white shadow-lg shadow-blue-600/20 transition-all active:scale-95">
-            ยืนยันยอดวันนี้
-          </Button>
         </div>
       </div>
 
