@@ -22,6 +22,8 @@ export interface ManualTxRow {
 export interface DayBalanceRow {
   account_name: string | null;
   balance_amount: number | string | null;
+  matching_status?: string;
+  image_path?: string;
 }
 
 type AccountEntry = {
@@ -114,19 +116,27 @@ export function buildAccountLevelStats(
   }
 
   const selectedBalMap = new Map<string, number | null>();
+  const selectedStatusMap = new Map<string, string | null>();
+  const selectedImageMap = new Map<string, string | null>();
   for (const row of selectedBalRows) {
     const name = row.account_name || "Unmapped";
     selectedBalMap.set(name, row.balance_amount !== null && row.balance_amount !== undefined
       ? Number(row.balance_amount)
       : null);
+    selectedStatusMap.set(name, row.matching_status ?? null);
+    selectedImageMap.set(name, row.image_path ?? null);
   }
 
   const prevBalMap = new Map<string, number | null>();
+  const prevStatusMap = new Map<string, string | null>();
+  const prevImageMap = new Map<string, string | null>();
   for (const row of prevBalRows) {
     const name = row.account_name || "Unmapped";
     prevBalMap.set(name, row.balance_amount !== null && row.balance_amount !== undefined
       ? Number(row.balance_amount)
       : null);
+    prevStatusMap.set(name, row.matching_status ?? null);
+    prevImageMap.set(name, row.image_path ?? null);
   }
 
   return Array.from(accountMap.entries())
@@ -143,6 +153,10 @@ export function buildAccountLevelStats(
       closingBalance,
       selectedDayBalance: selectedBalMap.get(account) ?? null,
       prevDayBalance: prevBalMap.get(account) ?? null,
+      selectedDayStatus: selectedStatusMap.get(account) ?? null,
+      prevDayStatus: prevStatusMap.get(account) ?? null,
+      selectedDayImagePath: selectedImageMap.get(account) ?? null,
+      prevDayImagePath: prevImageMap.get(account) ?? null,
     }))
     .sort((a, b) => b.effectiveOutflow - a.effectiveOutflow);
 }

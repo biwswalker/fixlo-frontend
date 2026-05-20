@@ -25,7 +25,7 @@ import type { AccountLevelStat } from "@/actions/reconciliation";
 import type { AccountSlip } from "@/actions/dashboard";
 import { format } from "date-fns";
 import { th } from "date-fns/locale";
-import { ArrowUpFromLine, Loader2, ExternalLink, Pencil } from "lucide-react";
+import { ArrowUpFromLine, Loader2, ExternalLink, Pencil, Image, FileText } from "lucide-react";
 import { toast } from "sonner";
 
 function maskAccountNumber(num: string | null): string {
@@ -294,7 +294,9 @@ interface AccountBreakdownTableProps {
 
 export function AccountBreakdownTable({ stats, targetDate, showManualColumn, userRole }: AccountBreakdownTableProps) {
   const [selectedStat, setSelectedStat] = useState<AccountLevelStat | null>(null);
+  const [balancePreviewUrl, setBalancePreviewUrl] = useState<string | null>(null);
   const canAdjust = ["owner", "admin"].includes(userRole ?? "");
+  const imageServerUrl = process.env.NEXT_PUBLIC_IMAGE_SERVER_URL ?? "";
 
   const handleRowClick = (stat: AccountLevelStat) => {
     if (!stat.accountId) return;
@@ -303,6 +305,14 @@ export function AccountBreakdownTable({ stats, targetDate, showManualColumn, use
 
   return (
     <>
+      <Dialog open={balancePreviewUrl !== null} onOpenChange={(v) => { if (!v) setBalancePreviewUrl(null); }}>
+        <DialogContent className="w-auto max-w-[90vw] max-h-[90vh] p-2 bg-black/90 border-none overflow-hidden flex items-center justify-center" showCloseButton>
+          {balancePreviewUrl && (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img src={balancePreviewUrl} alt="ยอดคงเหลือ" className="max-w-full max-h-[calc(90vh-1rem)] object-contain rounded" />
+          )}
+        </DialogContent>
+      </Dialog>
       <Card className="border-none shadow-sm rounded-2xl overflow-hidden">
         {stats.length === 0 ? (
           <div className="p-12 text-center text-muted-foreground flex flex-col items-center">
@@ -327,9 +337,13 @@ export function AccountBreakdownTable({ stats, targetDate, showManualColumn, use
                   <TableHead className="text-right font-semibold text-rose-600">
                     ยอดจ่ายสุทธิ (Effective Outflow)
                   </TableHead>
-                  <TableHead className="text-right font-semibold rounded-tr-xl pr-6 text-emerald-600">
+                  <TableHead className="text-right font-semibold text-gray-700">
+                    ยอดคงเหลือ
+                  </TableHead>
+                  <TableHead className="text-right font-semibold text-emerald-600">
                     ยอดรับ
                   </TableHead>
+                  <TableHead className="rounded-tr-xl" />
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -337,9 +351,8 @@ export function AccountBreakdownTable({ stats, targetDate, showManualColumn, use
                   <TableRow
                     key={item.account}
                     className={`group border-gray-50 transition-colors ${
-                      item.accountId ? "hover:bg-gray-50/50 cursor-pointer" : "opacity-70"
+                      item.accountId ? "hover:bg-gray-50/50" : "opacity-70"
                     }`}
-                    onClick={() => handleRowClick(item)}
                   >
                     <TableCell className="text-center font-medium text-gray-400">
                       {(index + 1).toString().padStart(2, "0")}
@@ -380,7 +393,57 @@ export function AccountBreakdownTable({ stats, targetDate, showManualColumn, use
                     <TableCell className="text-right font-bold text-gray-900 tabular-nums">
                       {formatBaht(item.effectiveOutflow)}
                     </TableCell>
-                    <TableCell className="text-right pr-6">
+                    <TableCell className="text-right">
+                      <div className="flex flex-col items-end gap-0.5">
+                        {/* prev day */}
+                        <div className="flex items-center gap-1">
+                          <span className="text-[10px] text-gray-400">ก่อนหน้า</span>
+                          <span className="font-medium text-gray-700 tabular-nums text-sm">
+                            {item.prevDayBalance !== null ? formatBaht(item.prevDayBalance) : "—"}
+                          </span>
+                          {item.prevDayImagePath && (
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              className="h-5 w-5 p-0 rounded-full"
+                              onClick={() => setBalancePreviewUrl(imageServerUrl + item.prevDayImagePath!.replace("/app/data", ""))}
+                              title="ดูรูปยอดคงเหลือ"
+                            >
+                              <Image className="h-3 w-3" />
+                            </Button>
+                          )}
+                        </div>
+                        {item.prevDayStatus && (
+                          <Badge variant="outline" className="text-[10px] rounded-full px-2 py-0.5 text-[9px]">
+                            {item.prevDayStatus}
+                          </Badge>
+                        )}
+                        {/* selected day */}
+                        <div className="flex items-center gap-1 mt-1">
+                          <span className="text-[10px] text-gray-400">ที่เลือก</span>
+                          <span className="font-medium text-gray-700 tabular-nums text-sm">
+                            {item.selectedDayBalance !== null ? formatBaht(item.selectedDayBalance) : "—"}
+                          </span>
+                          {item.selectedDayImagePath && (
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              className="h-5 w-5 p-0 rounded-full"
+                              onClick={() => setBalancePreviewUrl(imageServerUrl + item.selectedDayImagePath!.replace("/app/data", ""))}
+                              title="ดูรูปยอดคงเหลือ"
+                            >
+                              <Image className="h-3 w-3" />
+                            </Button>
+                          )}
+                        </div>
+                        {item.selectedDayStatus && (
+                          <Badge variant="outline" className="text-[10px] rounded-full px-2 py-0.5 text-[9px]">
+                            {item.selectedDayStatus}
+                          </Badge>
+                        )}
+                      </div>
+                    </TableCell>
+                    <TableCell className="text-right">
                       {(() => {
                         const r = computePerAccountInflow(item.selectedDayBalance, item.prevDayBalance, item.effectiveOutflow);
                         if (r.missingMessage) {
@@ -388,6 +451,19 @@ export function AccountBreakdownTable({ stats, targetDate, showManualColumn, use
                         }
                         return <span className="font-bold text-emerald-600 tabular-nums">{formatBaht(r.value!)}</span>;
                       })()}
+                    </TableCell>
+                    <TableCell className="text-right pr-6">
+                      {item.accountId && (
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          className="h-8 px-2 text-xs gap-1.5"
+                          onClick={() => handleRowClick(item)}
+                        >
+                          <FileText className="h-3.5 w-3.5" />
+                          ดูสลิป
+                        </Button>
+                      )}
                     </TableCell>
                   </TableRow>
                 ))}
@@ -409,12 +485,14 @@ export function AccountBreakdownTable({ stats, targetDate, showManualColumn, use
                   <TableCell className="text-right font-bold text-rose-600 text-lg tabular-nums">
                     {formatBaht(stats.reduce((acc, curr) => acc + curr.effectiveOutflow, 0))}
                   </TableCell>
-                  <TableCell className="text-right font-bold text-emerald-600 text-lg pr-6 tabular-nums">
+                  <TableCell />
+                  <TableCell className="text-right font-bold text-emerald-600 text-lg tabular-nums">
                     {formatBaht(stats.reduce((acc, curr) => {
                       const r = computePerAccountInflow(curr.selectedDayBalance, curr.prevDayBalance, curr.effectiveOutflow);
                       return r.value !== null ? acc + r.value : acc;
                     }, 0))}
                   </TableCell>
+                  <TableCell className="pr-6" />
                 </TableRow>
               </TableBody>
             </Table>

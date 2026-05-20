@@ -18,7 +18,7 @@ import {
   GitMerge,
 } from "lucide-react";
 import { ReconciliationSkeleton } from "@/components/dashboard/DashboardSkeletons";
-import { getPendingMatchCount } from "@/actions/dashboard";
+import { getPendingMatchCount, getPendingBalanceMatchCount } from "@/actions/dashboard";
 import Link from "next/link";
 
 export default async function ReconciliationPage({
@@ -56,7 +56,10 @@ export default async function ReconciliationPage({
   yesterday.setDate(yesterday.getDate() - 1);
   const targetDate = targetDateStr ? new Date(targetDateStr) : yesterday;
   const targetDateIso = format(targetDate, "yyyy-MM-dd");
-  const pendingCount = await getPendingMatchCount(projectId, targetDateIso);
+  const [pendingCount, pendingBalanceCount] = await Promise.all([
+    getPendingMatchCount(projectId, targetDateIso),
+    getPendingBalanceMatchCount(projectId, targetDateIso),
+  ]);
 
   return (
     <div className="grid gap-6 animate-in fade-in duration-500">
@@ -88,6 +91,7 @@ export default async function ReconciliationPage({
           targetDate={targetDate}
           targetDateIso={targetDateIso}
           pendingCount={pendingCount}
+          pendingBalanceCount={pendingBalanceCount}
         />
       </Suspense>
     </div>
@@ -102,11 +106,13 @@ async function ReconciliationContent({
   targetDate,
   targetDateIso,
   pendingCount,
+  pendingBalanceCount,
 }: {
   projectId: string;
   targetDate: Date;
   targetDateIso: string;
   pendingCount: number;
+  pendingBalanceCount: number;
 }) {
   const [report, session] = await Promise.all([
     getReconciliationReport(projectId, "day", targetDate),
@@ -243,6 +249,31 @@ async function ReconciliationContent({
               </p>
               <p className="text-xs text-amber-700 mt-0.5">
                 {pendingCount} รายการ — คลิกเพื่อไปจัดการ
+              </p>
+            </div>
+          </div>
+          <div className="text-amber-600 text-sm font-semibold group-hover:translate-x-1 transition-transform">
+            ไปจัดการ →
+          </div>
+        </Link>
+      )}
+
+      {/* Pending Balance Matches Section */}
+      {pendingBalanceCount > 0 && (
+        <Link
+          href={`/dashboard/${projectId}/match?tab=balance&transferDate=${targetDateIso}`}
+          className="flex items-center justify-between gap-4 mt-4 p-4 rounded-2xl border border-amber-200 bg-amber-50 hover:bg-amber-100 transition-colors group"
+        >
+          <div className="flex items-center gap-3">
+            <div className="bg-amber-100 group-hover:bg-amber-200 p-2.5 rounded-xl transition-colors">
+              <GitMerge className="h-5 w-5 text-amber-600" />
+            </div>
+            <div>
+              <p className="font-semibold text-amber-900 text-sm">
+                มียอดคงเหลือรอจับคู่บัญชีด้วยตนเอง
+              </p>
+              <p className="text-xs text-amber-700 mt-0.5">
+                {pendingBalanceCount} รายการ — คลิกเพื่อไปจัดการ
               </p>
             </div>
           </div>

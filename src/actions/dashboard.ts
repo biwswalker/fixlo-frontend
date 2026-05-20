@@ -627,7 +627,26 @@ export async function getPendingMatchCount(projectId: string, date?: string): Pr
       `SELECT COUNT(*) as total FROM transactions
        WHERE (source_project_id = $1 OR $2 = true)
          AND matching_status IN ('PENDING_REVIEW', 'UNMAPPED')
-         AND ($3::date IS NULL OR transfer_at::date = $3::date)`,
+         AND ($3::date IS NULL OR (transfer_at AT TIME ZONE 'UTC')::date = $3::date)`,
+      [project?.id || null, isAll, date ?? null],
+    );
+    return Number(res.rows[0]?.total || 0);
+  } catch {
+    return 0;
+  }
+}
+
+export async function getPendingBalanceMatchCount(projectId: string, date?: string): Promise<number> {
+  try {
+    const isAll = projectId === "all";
+    const project = isAll ? null : await resolveProject(projectId);
+    const res = await query(
+      `SELECT COUNT(*) as total
+       FROM daily_balances db
+       LEFT JOIN project_accounts pa ON db.project_account_id = pa.id
+       WHERE (pa.project_id = $1 OR $2 = true OR (db.project_name IS NOT NULL AND $2 = false AND pa.id IS NULL))
+         AND db.matching_status IN ('PENDING_REVIEW', 'UNMATCHED')
+         AND ($3::date IS NULL OR db.date = $3::date)`,
       [project?.id || null, isAll, date ?? null],
     );
     return Number(res.rows[0]?.total || 0);
@@ -663,7 +682,7 @@ export async function getPendingMatches(
       WHERE (t.source_project_id = $1 OR $2 = true)
         AND t.matching_status IN ('PENDING_REVIEW', 'UNMAPPED')
         AND ($5::text IS NULL OR t.ref_id ILIKE $5 OR t.sender_name ILIKE $5 OR t.sender_acc_num ILIKE $5)
-        AND ($6::date IS NULL OR t.transfer_at::date = $6::date)
+        AND ($6::date IS NULL OR (t.transfer_at AT TIME ZONE 'UTC')::date = $6::date)
       ORDER BY t.created_at DESC
       LIMIT $3 OFFSET $4
     `;
@@ -674,7 +693,7 @@ export async function getPendingMatches(
       WHERE (t.source_project_id = $1 OR $2 = true)
         AND t.matching_status IN ('PENDING_REVIEW', 'UNMAPPED')
         AND ($3::text IS NULL OR t.ref_id ILIKE $3 OR t.sender_name ILIKE $3 OR t.sender_acc_num ILIKE $3)
-        AND ($4::date IS NULL OR t.transfer_at::date = $4::date)
+        AND ($4::date IS NULL OR (t.transfer_at AT TIME ZONE 'UTC')::date = $4::date)
     `;
 
     const [result, countRes] = await Promise.all([
@@ -1204,7 +1223,7 @@ export async function getAccountSlips(
         NULL AS note
       FROM transactions
       WHERE project_account_id = $1
-        AND transfer_at::date = $2::date
+        AND (transfer_at AT TIME ZONE 'UTC')::date = $2::date
         AND matching_status IN ('AUTO_MAPPED', 'MANUAL_MAPPED')
     `;
 
@@ -1226,7 +1245,7 @@ export async function getAccountSlips(
         note
       FROM manual_transactions
       WHERE project_account_id = $1
-        AND transfer_at::date = $2::date
+        AND (transfer_at AT TIME ZONE 'UTC')::date = $2::date
     `;
 
     const [discordRes, manualRes] = await Promise.all([

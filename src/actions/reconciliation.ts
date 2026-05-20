@@ -41,6 +41,14 @@ export interface AccountLevelStat {
   selectedDayBalance: number | null;
   /** Balance from daily_balances where date = selected date − 1 day exactly; null = no strict-match row */
   prevDayBalance: number | null;
+  /** Matching status of daily_balance for selected date; null if no balance for that date */
+  selectedDayStatus: string | null;
+  /** Matching status of daily_balance for previous day; null if no balance for that date */
+  prevDayStatus: string | null;
+  /** Image path of daily_balance for selected date; null if no balance or no image */
+  selectedDayImagePath: string | null;
+  /** Image path of daily_balance for previous day; null if no balance or no image */
+  prevDayImagePath: string | null;
 }
 
 export interface ReconciliationReport {
@@ -142,7 +150,7 @@ export async function getReconciliationReport(
     const outflowSql = `
       SELECT COALESCE(SUM(t.ai_amount), 0) AS total
       FROM transactions t
-      WHERE t.transfer_at::date BETWEEN $1 AND $2
+      WHERE (t.transfer_at AT TIME ZONE 'UTC')::date BETWEEN $1 AND $2
         AND (
           t.source_project_id = $3
           OR t.target_project_id = $3
@@ -185,7 +193,7 @@ export async function getReconciliationReport(
              pa.account_name, pa.bank_code, pa.account_number
       FROM transactions t
       LEFT JOIN project_accounts pa ON t.project_account_id = pa.id
-      WHERE t.transfer_at::date BETWEEN $1 AND $2
+      WHERE (t.transfer_at AT TIME ZONE 'UTC')::date BETWEEN $1 AND $2
         AND (
           t.source_project_id = $3
           OR t.target_project_id = $3
@@ -224,7 +232,9 @@ export async function getReconciliationReport(
       SELECT
         pa.account_name,
         db.balance_amount,
-        db.date::text AS date
+        db.date::text AS date,
+        db.matching_status,
+        db.image_path
       FROM daily_balances db
       JOIN project_accounts pa ON pa.id = db.project_account_id
       WHERE db.matching_status IN ('AUTO_MAPPED', 'MANUAL_MAPPED')
@@ -239,7 +249,7 @@ export async function getReconciliationReport(
       SELECT pa.account_name, mt.amount
       FROM manual_transactions mt
       JOIN project_accounts pa ON mt.project_account_id = pa.id
-      WHERE mt.transfer_at::date BETWEEN $1 AND $2
+      WHERE (mt.transfer_at AT TIME ZONE 'UTC')::date BETWEEN $1 AND $2
         AND (mt.project_id = $3 OR $4 = true)
     `;
 
