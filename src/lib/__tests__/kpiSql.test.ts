@@ -52,26 +52,19 @@ describe("depositTotalSql", () => {
 });
 
 describe("withdrawTotalSql", () => {
-  it("references report_withdrawals and report_manual_credit_out only", () => {
+  it("references report_withdrawals only — excludes report_manual_credit_out (game-side adjustment, not cash)", () => {
     const sql = withdrawTotalSql(1, 2);
     expect(sql).toContain("report_withdrawals");
-    expect(sql).toContain("report_manual_credit_out");
+    expect(sql).not.toContain("report_manual_credit_out");
     expect(sql).not.toContain("report_deposits");
     expect(sql).not.toContain("report_manual_credit_in");
     expect(sql).not.toContain("report_manual_bonus_in");
     expect(sql).not.toContain("report_summary_daily");
   });
 
-  it("applies status filter only on report_withdrawals block", () => {
+  it("applies status filter on report_withdrawals", () => {
     const sql = withdrawTotalSql(1, 2);
     expect(sql).toContain("สำเร็จ");
-    const withdrawalsBlock = sql.slice(
-      sql.indexOf("report_withdrawals"),
-      sql.indexOf("report_manual_credit_out"),
-    );
-    expect(withdrawalsBlock).toContain("สำเร็จ");
-    const manualBlock = sql.slice(sql.indexOf("report_manual_credit_out"));
-    expect(manualBlock).not.toContain("สำเร็จ");
   });
 
   it("uses caller-provided parameter placeholders", () => {
@@ -137,24 +130,18 @@ describe("depositPerDaySql", () => {
 });
 
 describe("withdrawPerDaySql", () => {
-  it("references report_withdrawals and report_manual_credit_out only", () => {
+  it("references report_withdrawals only — excludes report_manual_credit_out (game-side adjustment, not cash)", () => {
     const sql = withdrawPerDaySql(1, 2);
     expect(sql).toContain("report_withdrawals");
-    expect(sql).toContain("report_manual_credit_out");
+    expect(sql).not.toContain("report_manual_credit_out");
     expect(sql).not.toContain("report_deposits");
     expect(sql).not.toContain("report_manual_bonus_in");
     expect(sql).not.toContain("report_summary_daily");
   });
 
-  it("applies status filter only on report_withdrawals block", () => {
+  it("applies status filter on report_withdrawals", () => {
     const sql = withdrawPerDaySql(1, 2);
-    const withdrawalsBlock = sql.slice(
-      sql.indexOf("report_withdrawals"),
-      sql.indexOf("report_manual_credit_out"),
-    );
-    expect(withdrawalsBlock).toContain("สำเร็จ");
-    const manualBlock = sql.slice(sql.indexOf("report_manual_credit_out"));
-    expect(manualBlock).not.toContain("สำเร็จ");
+    expect(sql).toContain("สำเร็จ");
   });
 
   it("groups by day and orders ascending", () => {

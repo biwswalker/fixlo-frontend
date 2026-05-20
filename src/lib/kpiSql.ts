@@ -25,14 +25,9 @@ export function depositTotalSql(startParam: number, endParam: number): string {
 export function withdrawTotalSql(startParam: number, endParam: number): string {
   return `
     SELECT COALESCE(SUM(amount), 0) AS total
-    FROM (
-      SELECT amount FROM report_withdrawals
-        WHERE status = 'สำเร็จ'
-          AND trans_date::date BETWEEN $${startParam} AND $${endParam}
-      UNION ALL
-      SELECT amount FROM report_manual_credit_out
-        WHERE trans_date::date BETWEEN $${startParam} AND $${endParam}
-    ) _withdraw_combined
+    FROM report_withdrawals
+    WHERE status = 'สำเร็จ'
+      AND trans_date::date BETWEEN $${startParam} AND $${endParam}
   `;
 }
 
@@ -55,14 +50,9 @@ export function depositPerDaySql(startParam: number, endParam: number): string {
 export function withdrawPerDaySql(startParam: number, endParam: number): string {
   return `
     SELECT trans_date::date::text AS day_date, COALESCE(SUM(amount), 0) AS total
-    FROM (
-      SELECT trans_date, amount FROM report_withdrawals
-        WHERE status = 'สำเร็จ'
-          AND trans_date::date BETWEEN $${startParam} AND $${endParam}
-      UNION ALL
-      SELECT trans_date, amount FROM report_manual_credit_out
-        WHERE trans_date::date BETWEEN $${startParam} AND $${endParam}
-    ) _withdraw_daily
+    FROM report_withdrawals
+    WHERE status = 'สำเร็จ'
+      AND trans_date::date BETWEEN $${startParam} AND $${endParam}
     GROUP BY trans_date::date
     ORDER BY trans_date::date ASC
   `;

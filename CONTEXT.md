@@ -139,10 +139,11 @@ tags: [domain, glossary]
    - worker ใช้ `aiOutput.date + aiOutput.time` มา insert. manual UI ใช้ `transfer_at` field
    - migration: backfill `transfer_at` จาก existing rows — preference: `transfer_date+transfer_time` ถ้ามี > `record_date` ถ้าไม่มี
 4. **[[daily_balances]] ใช้ `project_name text`** — ไม่ใช่ FK.
-8. **Canonical deposit/withdraw KPI** — ดู [ADR 0004](docs/adr/0004-deposit-withdraw-kpi-from-source-tables.md).
+8. **Canonical deposit/withdraw KPI** — ดู [ADR 0004](docs/adr/0004-deposit-withdraw-kpi-from-source-tables.md), [ADR 0006](docs/adr/0006-withdraw-kpi-excludes-manual-credit-out.md).
    - **ยอดฝากรวม** = `SUM(report_deposits.amount WHERE status='สำเร็จ')` + `SUM(report_manual_credit_in.amount)`
-   - **ยอดถอนรวม** = `SUM(report_withdrawals.amount WHERE status='สำเร็จ')` + `SUM(report_manual_credit_out.amount)`
-   - Defined in `src/lib/kpiSql.ts` — consumers: dashboard summary, cashflow chart, reconciliation expectedInflow.
+   - **ยอดถอนรวม** = `SUM(report_withdrawals.amount WHERE status='สำเร็จ')` เท่านั้น — ไม่รวม `report_manual_credit_out` (เพราะเป็น game-side credit adjustment ไม่ใช่ cash outflow จาก master account)
+   - `report_manual_credit_out` ยังแสดงแยกใน "รายละเอียดรายรับ-รายจ่าย" เป็น line item "ถอนมือ (Manual Out)"
+   - Defined in `src/lib/kpiSql.ts` — consumers: dashboard summary KPI card, cashflow chart. Reconciliation ใช้แค่ deposit side.
    - `latestBalance` ยังคงอ่านจาก `report_summary_daily.balance` (actual bank balance จาก scraper — ไม่ใช่ KPI computation).
    - Cross-project withdrawal นับฝั่ง `source_project_id` (เจ้าของบัญชี) — confirmed correct. Lending counterparty (target) ไม่นับยอด
 
