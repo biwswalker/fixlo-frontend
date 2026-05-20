@@ -29,6 +29,7 @@ export async function POST(req: NextRequest) {
   }
 
   const uploadDir = process.env.UPLOAD_DIR;
+  console.log("[UPLOAD-DBG] UPLOAD_DIR:", uploadDir);
   if (!uploadDir) {
     return NextResponse.json({ error: "Upload directory not configured" }, { status: 500 });
   }
@@ -37,15 +38,19 @@ export async function POST(req: NextRequest) {
     const ext = extname(file.name) || ".jpg";
     const filename = `${randomUUID()}${ext}`;
     const destDir = join(uploadDir, "manual");
+    console.log("[UPLOAD-DBG] destDir:", destDir, "| file:", filename, "| size:", file.size);
     await mkdir(destDir, { recursive: true });
+    console.log("[UPLOAD-DBG] mkdir OK");
     const destPath = join(destDir, filename);
     const buffer = Buffer.from(await file.arrayBuffer());
     await writeFile(destPath, buffer);
+    console.log("[UPLOAD-DBG] writeFile OK →", destPath);
 
-    // Return canonical path using bot's /app/data/spectre prefix
-    const path = `/app/data/spectre/manual/${filename}`;
+    // Return canonical path matching spectre bot convention (/app/data → nginx root)
+    const path = `/app/data/manual/${filename}`;
     return NextResponse.json({ path });
-  } catch {
+  } catch (err) {
+    console.error("[UPLOAD-DBG] FAILED:", err);
     return NextResponse.json({ error: "Failed to write file" }, { status: 500 });
   }
 }
