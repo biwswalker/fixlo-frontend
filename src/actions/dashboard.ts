@@ -1341,6 +1341,7 @@ export async function createManualBalance(
   date: string,
   balanceAmount: number,
   note?: string,
+  imagePath?: string,
 ) {
   const session = await getServerAuthSession();
   if (!session || !hasPermission(session.user.role, "manage_projects")) {
@@ -1349,15 +1350,16 @@ export async function createManualBalance(
   try {
     await query(
       `INSERT INTO daily_balances
-         (project_account_id, date, balance_amount, source, matching_status, matched_by)
-       VALUES ($1, $2::date, $3, 'manual', 'MANUAL_MAPPED', $4)
+         (project_account_id, date, balance_amount, source, matching_status, matched_by, image_path)
+       VALUES ($1, $2::date, $3, 'manual', 'MANUAL_MAPPED', $4, $5)
        ON CONFLICT (date, discord_message_id)
          DO UPDATE SET
            balance_amount = EXCLUDED.balance_amount,
            source = 'manual',
            matching_status = 'MANUAL_MAPPED',
-           matched_by = EXCLUDED.matched_by`,
-      [projectAccountId, date, balanceAmount, session.user.username],
+           matched_by = EXCLUDED.matched_by,
+           image_path = EXCLUDED.image_path`,
+      [projectAccountId, date, balanceAmount, session.user.username, imagePath ?? null],
     );
 
     revalidatePath("/dashboard/[projectId]/reconciliation", "page");

@@ -141,6 +141,7 @@ export function AddAdjustmentDialog({ projectId }: AddAdjustmentDialogProps) {
         format(balDate, "yyyy-MM-dd"),
         parseFloat(balAmount),
         balNote || undefined,
+        balImagePath || undefined,
       );
       if (res.success) {
         toast.success("บันทึก Manual Balance สำเร็จ");
