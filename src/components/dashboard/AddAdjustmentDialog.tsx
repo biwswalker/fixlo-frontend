@@ -294,19 +294,23 @@ function AccountField({
   value: string;
   onChange: (v: string) => void;
 }) {
+  const selected = accounts.find((a) => a.id === value);
   return (
     <div className="space-y-1">
       <label className="text-xs font-medium text-gray-700">{label}</label>
       <Select value={value} onValueChange={(v) => onChange(v ?? "")}>
         <SelectTrigger className="rounded-xl h-9 text-sm">
-          <SelectValue placeholder="เลือกบัญชี..." />
+          {selected ? (
+            <span>{selected.account_name}</span>
+          ) : (
+            <SelectValue placeholder="เลือกบัญชี..." />
+          )}
         </SelectTrigger>
         <SelectContent>
           {accounts.map((acc) => {
             const last4 = acc.account_number?.slice(-4);
-            const label = last4 ? `${acc.account_name} (${acc.bank_code} *${last4})` : acc.account_name;
             return (
-              <SelectItem key={acc.id} value={acc.id} textValue={label}>
+              <SelectItem key={acc.id} value={acc.id}>
                 <div className="flex flex-col leading-tight">
                   <span>{acc.account_name}</span>
                   {last4 && (
