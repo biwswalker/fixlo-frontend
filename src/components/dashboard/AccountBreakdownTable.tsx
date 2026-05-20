@@ -397,7 +397,7 @@ export function AccountBreakdownTable({ stats, targetDate, showManualColumn, use
                       <div className="flex flex-col items-end gap-0.5">
                         {/* prev day */}
                         <div className="flex items-center gap-1">
-                          <span className="text-[10px] text-gray-400">ก่อนหน้า</span>
+                          <span className="text-[10px] text-gray-400">ยอดเปิด</span>
                           <span className="font-medium text-gray-700 tabular-nums text-sm">
                             {item.prevDayBalance !== null ? formatBaht(item.prevDayBalance) : "—"}
                           </span>
@@ -413,14 +413,9 @@ export function AccountBreakdownTable({ stats, targetDate, showManualColumn, use
                             </Button>
                           )}
                         </div>
-                        {item.prevDayStatus && (
-                          <Badge variant="outline" className="text-[10px] rounded-full px-2 py-0.5 text-[9px]">
-                            {item.prevDayStatus}
-                          </Badge>
-                        )}
                         {/* selected day */}
                         <div className="flex items-center gap-1 mt-1">
-                          <span className="text-[10px] text-gray-400">ที่เลือก</span>
+                          <span className="text-[10px] text-gray-400">ยอดปิด</span>
                           <span className="font-medium text-gray-700 tabular-nums text-sm">
                             {item.selectedDayBalance !== null ? formatBaht(item.selectedDayBalance) : "—"}
                           </span>
@@ -436,11 +431,6 @@ export function AccountBreakdownTable({ stats, targetDate, showManualColumn, use
                             </Button>
                           )}
                         </div>
-                        {item.selectedDayStatus && (
-                          <Badge variant="outline" className="text-[10px] rounded-full px-2 py-0.5 text-[9px]">
-                            {item.selectedDayStatus}
-                          </Badge>
-                        )}
                       </div>
                     </TableCell>
                     <TableCell className="text-right">
