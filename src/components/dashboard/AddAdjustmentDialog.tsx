@@ -32,7 +32,10 @@ import {
   getProjectAccounts,
   createManualTransaction,
   createManualBalance,
+  listTransactionTypes,
+  listSlipSubtypes,
 } from "@/actions/dashboard";
+import type { TransactionType } from "@/actions/dashboard";
 import type { ProjectAccount } from "@/types/dashboard";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
@@ -55,6 +58,10 @@ export function AddAdjustmentDialog({ projectId }: AddAdjustmentDialogProps) {
   const [slipImageName, setSlipImageName] = useState("");
   const [slipImageUploading, setSlipImageUploading] = useState(false);
   const [slipNote, setSlipNote] = useState("");
+  const [slipTypeId, setSlipTypeId] = useState<number | null>(null);
+  const [slipSubtype, setSlipSubtype] = useState("");
+  const [txTypes, setTxTypes] = useState<TransactionType[]>([]);
+  const [subtypeOptions, setSubtypeOptions] = useState<string[]>([]);
   const slipFileRef = useRef<HTMLInputElement>(null);
 
   // Manual Balance tab state
@@ -70,8 +77,16 @@ export function AddAdjustmentDialog({ projectId }: AddAdjustmentDialogProps) {
   useEffect(() => {
     if (!open) return;
     let cancelled = false;
-    getProjectAccounts(projectId).then((rows) => {
-      if (!cancelled) setAccounts(rows);
+    Promise.all([
+      getProjectAccounts(projectId),
+      listTransactionTypes(projectId),
+      listSlipSubtypes(),
+    ]).then(([rows, types, subtypes]) => {
+      if (!cancelled) {
+        setAccounts(rows);
+        setTxTypes(types);
+        setSubtypeOptions(subtypes);
+      }
     });
     return () => { cancelled = true; };
   }, [open, projectId]);
@@ -118,11 +133,14 @@ export function AddAdjustmentDialog({ projectId }: AddAdjustmentDialogProps) {
         transferAt,
         slipImagePath || undefined,
         slipNote || undefined,
+        slipTypeId ?? undefined,
+        slipSubtype || undefined,
       );
       if (res.success) {
         toast.success("เพิ่ม Manual Slip สำเร็จ");
         setSlipAccount(""); setSlipAmount(""); setSlipDate(new Date());
         setSlipTime("12:00"); setSlipImagePath(""); setSlipImageName(""); setSlipNote("");
+        setSlipTypeId(null); setSlipSubtype("");
         close();
       } else {
         toast.error(res.error || "เกิดข้อผิดพลาด");
@@ -212,6 +230,39 @@ export function AddAdjustmentDialog({ projectId }: AddAdjustmentDialogProps) {
               <Textarea placeholder="หมายเหตุ..."
                 value={slipNote} onChange={(e) => setSlipNote(e.target.value)}
                 className="rounded-xl text-sm min-h-[60px]" />
+            </div>
+
+            <div className="grid grid-cols-2 gap-2">
+              <div className="space-y-1">
+                <label className="text-xs font-medium text-gray-700">Transaction Type (optional)</label>
+                <Select
+                  value={slipTypeId != null ? String(slipTypeId) : "__none__"}
+                  onValueChange={(v) => setSlipTypeId(v === "__none__" ? null : Number(v))}
+                >
+                  <SelectTrigger className="h-9 rounded-xl text-sm">
+                    <SelectValue placeholder="ไม่ระบุ" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="__none__"><span className="text-muted-foreground">ไม่ระบุ</span></SelectItem>
+                    {txTypes.map((t) => (
+                      <SelectItem key={t.id} value={String(t.id)}>{t.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-1">
+                <label className="text-xs font-medium text-gray-700">Sub-type (optional)</label>
+                <Input
+                  list="slip-subtype-options"
+                  placeholder="ระบุ..."
+                  value={slipSubtype}
+                  onChange={(e) => setSlipSubtype(e.target.value)}
+                  className="h-9 rounded-xl text-sm"
+                />
+                <datalist id="slip-subtype-options">
+                  {subtypeOptions.map((s) => <option key={s} value={s} />)}
+                </datalist>
+              </div>
             </div>
 
             <Button className="w-full bg-blue-600 hover:bg-blue-700 text-white rounded-xl" onClick={handleManualSlip} disabled={isPending || slipImageUploading}>

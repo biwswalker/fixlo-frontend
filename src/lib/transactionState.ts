@@ -41,7 +41,8 @@ export function nextState(input: NextStateInput): NextStateResult {
 
   if (action === "reject") {
     if (!hasPermission(actorRole, "manage_projects")) return { error: "forbidden" };
-    if (current !== "PENDING_REVIEW" && current !== "UNMAPPED") return { error: "invalid-transition" };
+    const rejectableStates: TxnStatus[] = ["PENDING_REVIEW", "UNMAPPED", "AUTO_MAPPED", "MANUAL_MAPPED"];
+    if (!rejectableStates.includes(current)) return { error: "invalid-transition" };
     return { next: "REJECTED" };
   }
 

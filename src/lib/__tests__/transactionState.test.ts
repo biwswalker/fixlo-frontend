@@ -81,14 +81,24 @@ describe("nextState — reject action", () => {
     expect(result).toEqual({ next: "REJECTED" });
   });
 
-  it("admin reject AUTO_MAPPED → invalid-transition", () => {
+  it("admin reject AUTO_MAPPED → REJECTED (confirmed slip can be rejected)", () => {
     const result = nextState({ current: "AUTO_MAPPED", action: "reject", actorRole: "admin" });
-    expect(result).toEqual({ error: "invalid-transition" });
+    expect(result).toEqual({ next: "REJECTED" });
   });
 
-  it("admin reject MANUAL_MAPPED → invalid-transition", () => {
+  it("owner reject AUTO_MAPPED → REJECTED", () => {
+    const result = nextState({ current: "AUTO_MAPPED", action: "reject", actorRole: "owner" });
+    expect(result).toEqual({ next: "REJECTED" });
+  });
+
+  it("admin reject MANUAL_MAPPED → REJECTED (confirmed slip can be rejected)", () => {
     const result = nextState({ current: "MANUAL_MAPPED", action: "reject", actorRole: "admin" });
-    expect(result).toEqual({ error: "invalid-transition" });
+    expect(result).toEqual({ next: "REJECTED" });
+  });
+
+  it("staff reject AUTO_MAPPED → forbidden (no manage_projects)", () => {
+    const result = nextState({ current: "AUTO_MAPPED", action: "reject", actorRole: "staff" });
+    expect(result).toEqual({ error: "forbidden" });
   });
 
   it("REJECTED is terminal — admin reject REJECTED → invalid-transition", () => {

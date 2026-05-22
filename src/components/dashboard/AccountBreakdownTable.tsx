@@ -20,13 +20,24 @@ import {
 } from "@/components/ui/popover";
 import { formatBaht } from "@/lib/utils";
 import { computePerAccountInflow } from "@/lib/inflowFormula";
-import { getAccountSlips, adjustTransactionAmount } from "@/actions/dashboard";
+import {
+  getAccountSlips, adjustTransactionAmount, rejectTransaction, batchRejectTransactions,
+  updateSlipType, listTransactionTypes, listSlipSubtypes,
+} from "@/actions/dashboard";
 import type { AccountLevelStat } from "@/actions/reconciliation";
-import type { AccountSlip } from "@/actions/dashboard";
+import type { AccountSlip, RejectPreset, TransactionType } from "@/actions/dashboard";
 import { format } from "date-fns";
 import { th } from "date-fns/locale";
-import { ArrowUpFromLine, Loader2, ExternalLink, Pencil, Image, FileText } from "lucide-react";
+import { TZDate } from "@date-fns/tz";
+import { ArrowUpFromLine, Loader2, ExternalLink, Pencil, Image, FileText, XCircle } from "lucide-react";
 import { toast } from "sonner";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 
 function maskAccountNumber(num: string | null): string {
   if (!num) return "";
@@ -131,21 +142,40 @@ interface SlipDrawerProps {
   open: boolean;
   onClose: () => void;
   canAdjust: boolean;
+  projectId: string;
 }
 
-function SlipDrawer({ stat, date, open, onClose, canAdjust }: SlipDrawerProps) {
+const REJECT_PRESETS: RejectPreset[] = ["สลิปซ้ำ", "ยอดผิด", "ผิด project", "test slip", "อื่นๆ"];
+
+function SlipDrawer({ stat, date, open, onClose, canAdjust, projectId }: SlipDrawerProps) {
   const [slips, setSlips] = useState<AccountSlip[] | null>(null);
   const [isPending, start] = useTransition();
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const [txTypes, setTxTypes] = useState<TransactionType[]>([]);
+  const [subtypeOptions, setSubtypeOptions] = useState<string[]>([]);
+  const [rejectTarget, setRejectTarget] = useState<{ slip: AccountSlip; index: number } | null>(null);
+  const [rejectPreset, setRejectPreset] = useState<RejectPreset | "">("");
+  const [rejectNote, setRejectNote] = useState("");
+  const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
+  const [bulkRejectOpen, setBulkRejectOpen] = useState(false);
+  const [bulkPreset, setBulkPreset] = useState<RejectPreset | "">("");
+  const [bulkNote, setBulkNote] = useState("");
 
   const imageServerUrl = process.env.NEXT_PUBLIC_IMAGE_SERVER_URL ?? "";
 
   React.useEffect(() => {
     if (!open || !stat.accountId) return;
     setSlips(null);
+    setSelectedIds(new Set());
     start(async () => {
-      const result = await getAccountSlips(stat.accountId!, date);
+      const [result, types, subtypes] = await Promise.all([
+        getAccountSlips(stat.accountId!, date),
+        listTransactionTypes(projectId),
+        listSlipSubtypes(),
+      ]);
       setSlips(result);
+      setTxTypes(types);
+      setSubtypeOptions(subtypes);
     });
   }, [open, stat.accountId, date]);
 
@@ -162,8 +192,196 @@ function SlipDrawer({ stat, date, open, onClose, canAdjust }: SlipDrawerProps) {
     });
   };
 
+  const removeSlip = (index: number) => {
+    setSlips((prev) => prev ? prev.filter((_, i) => i !== index) : prev);
+  };
+
+  const selectableSlips = (slips ?? []).filter((s) => s.source === "discord" && s.id !== null);
+  const allSelected = selectableSlips.length > 0 && selectableSlips.every((s) => selectedIds.has(s.id!));
+
+  const toggleSelect = (id: number) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      next.has(id) ? next.delete(id) : next.add(id);
+      return next;
+    });
+  };
+
+  const toggleSelectAll = () => {
+    if (allSelected) {
+      setSelectedIds(new Set());
+    } else {
+      setSelectedIds(new Set(selectableSlips.map((s) => s.id!)));
+    }
+  };
+
+  const handleBulkReject = () => {
+    if (!bulkPreset || selectedIds.size === 0) return;
+    const ids = [...selectedIds];
+    start(async () => {
+      const { succeeded, failed } = await batchRejectTransactions(
+        ids,
+        bulkPreset,
+        bulkPreset === "อื่นๆ" ? bulkNote.trim() : undefined,
+      );
+      if (succeeded.length > 0) {
+        setSlips((prev) => prev ? prev.filter((s) => s.id === null || !succeeded.includes(s.id)) : prev);
+        setSelectedIds(new Set());
+        toast.success(`ปฏิเสธ ${succeeded.length} สลิปเรียบร้อยแล้ว`);
+      }
+      if (failed.length > 0) {
+        toast.error(`ไม่สามารถปฏิเสธได้ ${failed.length} รายการ`);
+      }
+      setBulkRejectOpen(false);
+      setBulkPreset("");
+      setBulkNote("");
+    });
+  };
+
+  const handleTypeChange = (index: number, slip: AccountSlip, typeId: number | null, subtype?: string) => {
+    const newSubtype = subtype !== undefined ? subtype : slip.transaction_subtype;
+    updateSlip(index, { ...slip, transaction_type_id: typeId, transaction_subtype: newSubtype });
+    if (slip.id !== null) {
+      updateSlipType(slip.source, slip.id, typeId, newSubtype).catch(() => {
+        toast.error("บันทึก type ไม่สำเร็จ");
+        updateSlip(index, slip);
+      });
+    }
+  };
+
+  const handleSubtypeChange = (index: number, slip: AccountSlip, subtype: string) => {
+    updateSlip(index, { ...slip, transaction_subtype: subtype || null });
+    if (slip.id !== null) {
+      updateSlipType(slip.source, slip.id, slip.transaction_type_id, subtype || null).catch(() => {
+        toast.error("บันทึก sub-type ไม่สำเร็จ");
+        updateSlip(index, slip);
+      });
+    }
+  };
+
+  const openRejectDialog = (slip: AccountSlip, index: number) => {
+    setRejectTarget({ slip, index });
+    setRejectPreset("");
+    setRejectNote("");
+  };
+
+  const closeRejectDialog = () => setRejectTarget(null);
+
+  const handleReject = () => {
+    if (!rejectTarget || !rejectPreset) return;
+    const { slip, index } = rejectTarget;
+    start(async () => {
+      const res = await rejectTransaction(
+        String(slip.id!),
+        rejectPreset,
+        rejectPreset === "อื่นๆ" ? rejectNote.trim() : undefined,
+      );
+      if (res.success) {
+        toast.success("ปฏิเสธสลิปเรียบร้อยแล้ว");
+        removeSlip(index);
+        closeRejectDialog();
+      } else {
+        toast.error(res.error ?? "เกิดข้อผิดพลาด");
+      }
+    });
+  };
+
   return (
     <>
+    <Dialog open={bulkRejectOpen} onOpenChange={(v) => { if (!v) { setBulkRejectOpen(false); setBulkPreset(""); setBulkNote(""); } }}>
+      <DialogContent className="max-w-sm">
+        <div className="space-y-4 p-1">
+          <div className="flex items-center gap-2">
+            <XCircle className="h-5 w-5 text-rose-600" />
+            <h3 className="font-semibold text-gray-900">ปฏิเสธ {selectedIds.size} สลิป</h3>
+          </div>
+          <div className="space-y-1.5">
+            <label className="text-xs font-medium text-gray-700">เหตุผล (ใช้กับทุกรายการที่เลือก)</label>
+            <Select value={bulkPreset} onValueChange={(v) => setBulkPreset(v as RejectPreset)}>
+              <SelectTrigger className="h-9 rounded-xl text-sm">
+                <SelectValue placeholder="เลือกเหตุผล..." />
+              </SelectTrigger>
+              <SelectContent>
+                {REJECT_PRESETS.map((p) => (
+                  <SelectItem key={p} value={p}>{p}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          {bulkPreset === "อื่นๆ" && (
+            <div className="space-y-1.5">
+              <label className="text-xs font-medium text-gray-700">ระบุเหตุผล</label>
+              <Textarea
+                value={bulkNote}
+                onChange={(e) => setBulkNote(e.target.value)}
+                className="text-sm rounded-xl min-h-[60px]"
+                placeholder="เหตุผลเพิ่มเติม..."
+              />
+            </div>
+          )}
+          <div className="flex gap-2 justify-end">
+            <Button variant="outline" size="sm" className="rounded-xl" onClick={() => setBulkRejectOpen(false)} disabled={isPending}>
+              ยกเลิก
+            </Button>
+            <Button
+              size="sm"
+              className="rounded-xl bg-rose-600 hover:bg-rose-700 text-white min-w-[80px]"
+              onClick={handleBulkReject}
+              disabled={isPending || !bulkPreset || (bulkPreset === "อื่นๆ" && !bulkNote.trim())}
+            >
+              {isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : "ปฏิเสธทั้งหมด"}
+            </Button>
+          </div>
+        </div>
+      </DialogContent>
+    </Dialog>
+    <Dialog open={rejectTarget !== null} onOpenChange={(v) => { if (!v) closeRejectDialog(); }}>
+      <DialogContent className="max-w-sm">
+        <div className="space-y-4 p-1">
+          <div className="flex items-center gap-2">
+            <XCircle className="h-5 w-5 text-rose-600" />
+            <h3 className="font-semibold text-gray-900">ปฏิเสธสลิป</h3>
+          </div>
+          <div className="space-y-1.5">
+            <label className="text-xs font-medium text-gray-700">เหตุผล</label>
+            <Select value={rejectPreset} onValueChange={(v) => setRejectPreset(v as RejectPreset)}>
+              <SelectTrigger className="h-9 rounded-xl text-sm">
+                <SelectValue placeholder="เลือกเหตุผล..." />
+              </SelectTrigger>
+              <SelectContent>
+                {REJECT_PRESETS.map((p) => (
+                  <SelectItem key={p} value={p}>{p}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          {rejectPreset === "อื่นๆ" && (
+            <div className="space-y-1.5">
+              <label className="text-xs font-medium text-gray-700">ระบุเหตุผล</label>
+              <Textarea
+                value={rejectNote}
+                onChange={(e) => setRejectNote(e.target.value)}
+                className="text-sm rounded-xl min-h-[60px]"
+                placeholder="เหตุผลเพิ่มเติม..."
+              />
+            </div>
+          )}
+          <div className="flex gap-2 justify-end">
+            <Button variant="outline" size="sm" className="rounded-xl" onClick={closeRejectDialog} disabled={isPending}>
+              ยกเลิก
+            </Button>
+            <Button
+              size="sm"
+              className="rounded-xl bg-rose-600 hover:bg-rose-700 text-white min-w-[80px]"
+              onClick={handleReject}
+              disabled={isPending || !rejectPreset || (rejectPreset === "อื่นๆ" && !rejectNote.trim())}
+            >
+              {isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : "ปฏิเสธ"}
+            </Button>
+          </div>
+        </div>
+      </DialogContent>
+    </Dialog>
     <Dialog open={previewUrl !== null} onOpenChange={(v) => { if (!v) setPreviewUrl(null); }}>
       <DialogContent className="w-auto max-w-[90vw] max-h-[90vh] p-2 bg-black/90 border-none overflow-hidden flex items-center justify-center" showCloseButton>
         {previewUrl && (
@@ -206,16 +424,48 @@ function SlipDrawer({ stat, date, open, onClose, canAdjust }: SlipDrawerProps) {
             ไม่พบสลิปในวันนี้
           </div>
         ) : (
+          <>{canAdjust && selectedIds.size > 0 && (
+            <div className="sticky bottom-4 mx-4 mb-4 flex items-center justify-between rounded-xl bg-gray-900 px-4 py-2.5 shadow-lg text-white">
+              <span className="text-sm font-medium">เลือก {selectedIds.size} รายการ</span>
+              <div className="flex gap-2">
+                <Button size="sm" variant="ghost" className="h-7 text-xs text-gray-300 hover:text-white" onClick={() => setSelectedIds(new Set())}>
+                  ยกเลิกเลือก
+                </Button>
+                <Button
+                  size="sm"
+                  className="h-7 text-xs bg-rose-600 hover:bg-rose-700 text-white rounded-lg gap-1"
+                  onClick={() => setBulkRejectOpen(true)}
+                >
+                  <XCircle className="h-3 w-3" />
+                  ปฏิเสธที่เลือก
+                </Button>
+              </div>
+            </div>
+          )}
           <Table>
             <TableHeader className="bg-gray-50/50">
               <TableRow>
+                {canAdjust && (
+                  <TableHead className="text-xs w-8">
+                    <input
+                      type="checkbox"
+                      className="rounded"
+                      checked={allSelected}
+                      onChange={toggleSelectAll}
+                      disabled={selectableSlips.length === 0}
+                    />
+                  </TableHead>
+                )}
                 <TableHead className="text-xs">เวลา</TableHead>
                 <TableHead className="text-xs">Ref ID</TableHead>
                 <TableHead className="text-xs text-right">จำนวน</TableHead>
-                <TableHead className="text-xs">ประเภท</TableHead>
+                <TableHead className="text-xs">แหล่ง</TableHead>
                 <TableHead className="text-xs">หมายเหตุ</TableHead>
+                <TableHead className="text-xs min-w-[120px]">Transaction Type</TableHead>
+                <TableHead className="text-xs min-w-[120px]">Sub-type</TableHead>
                 <TableHead className="text-xs"></TableHead>
                 {canAdjust && <TableHead className="text-xs">แก้ไข</TableHead>}
+                {canAdjust && <TableHead className="text-xs"></TableHead>}
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -224,8 +474,20 @@ function SlipDrawer({ stat, date, open, onClose, canAdjust }: SlipDrawerProps) {
                 const isAdjusted = slip.adjusted_amount !== null;
                 return (
                   <TableRow key={i} className="text-xs hover:bg-gray-50/50">
+                    {canAdjust && (
+                      <TableCell className="w-8">
+                        {slip.source === "discord" && slip.id !== null ? (
+                          <input
+                            type="checkbox"
+                            className="rounded"
+                            checked={selectedIds.has(slip.id)}
+                            onChange={() => toggleSelect(slip.id!)}
+                          />
+                        ) : null}
+                      </TableCell>
+                    )}
                     <TableCell className="tabular-nums whitespace-nowrap">
-                      {format(new Date(slip.transfer_at), "HH:mm:ss")}
+                      {format(new TZDate(new Date(slip.transfer_at), "Asia/Bangkok"), "HH:mm:ss")}
                     </TableCell>
                     <TableCell className="font-mono text-[10px] text-gray-400">
                       {slip.ref_id || "-"}
@@ -253,6 +515,46 @@ function SlipDrawer({ stat, date, open, onClose, canAdjust }: SlipDrawerProps) {
                     <TableCell className="max-w-[160px] truncate text-muted-foreground" title={slip.note ?? ""}>
                       {slip.note || "-"}
                     </TableCell>
+                    <TableCell className="min-w-[120px]">
+                      {canAdjust ? (
+                        <Select
+                          value={slip.transaction_type_id != null ? String(slip.transaction_type_id) : "__none__"}
+                          onValueChange={(v) => handleTypeChange(i, slip, v === "__none__" ? null : Number(v))}
+                        >
+                          <SelectTrigger className="h-7 text-[11px] rounded-lg border-gray-200">
+                            <SelectValue placeholder="ไม่ระบุ" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="__none__"><span className="text-muted-foreground">ไม่ระบุ</span></SelectItem>
+                            {txTypes.map((t) => (
+                              <SelectItem key={t.id} value={String(t.id)}>{t.name}</SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      ) : (
+                        <span className="text-xs text-muted-foreground">
+                          {txTypes.find((t) => t.id === slip.transaction_type_id)?.name ?? "-"}
+                        </span>
+                      )}
+                    </TableCell>
+                    <TableCell className="min-w-[120px]">
+                      {canAdjust ? (
+                        <Input
+                          list={`subtype-options-${i}`}
+                          className="h-7 text-[11px] rounded-lg border-gray-200"
+                          defaultValue={slip.transaction_subtype ?? ""}
+                          onBlur={(e) => handleSubtypeChange(i, slip, e.target.value)}
+                          placeholder="ระบุ..."
+                        />
+                      ) : (
+                        <span className="text-xs text-muted-foreground">{slip.transaction_subtype ?? "-"}</span>
+                      )}
+                      {canAdjust && (
+                        <datalist id={`subtype-options-${i}`}>
+                          {subtypeOptions.map((s) => <option key={s} value={s} />)}
+                        </datalist>
+                      )}
+                    </TableCell>
                     <TableCell>
                       {slip.image_path && (
                         <Button
@@ -273,11 +575,27 @@ function SlipDrawer({ stat, date, open, onClose, canAdjust }: SlipDrawerProps) {
                         )}
                       </TableCell>
                     )}
+                    {canAdjust && (
+                      <TableCell>
+                        {slip.source === "discord" && slip.id !== null && (
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            className="h-7 w-7 p-0 rounded-full text-gray-400 hover:text-rose-600"
+                            title="ปฏิเสธสลิปนี้"
+                            onClick={() => openRejectDialog(slip, i)}
+                          >
+                            <XCircle className="h-3.5 w-3.5" />
+                          </Button>
+                        )}
+                      </TableCell>
+                    )}
                   </TableRow>
                 );
               })}
             </TableBody>
           </Table>
+          </>
         )}
       </SheetContent>
     </Sheet>
@@ -290,9 +608,10 @@ interface AccountBreakdownTableProps {
   targetDate: string;
   showManualColumn: boolean;
   userRole?: string | null;
+  projectId: string;
 }
 
-export function AccountBreakdownTable({ stats, targetDate, showManualColumn, userRole }: AccountBreakdownTableProps) {
+export function AccountBreakdownTable({ stats, targetDate, showManualColumn, userRole, projectId }: AccountBreakdownTableProps) {
   const [selectedStat, setSelectedStat] = useState<AccountLevelStat | null>(null);
   const [balancePreviewUrl, setBalancePreviewUrl] = useState<string | null>(null);
   const canAdjust = ["owner", "admin"].includes(userRole ?? "");
@@ -497,6 +816,7 @@ export function AccountBreakdownTable({ stats, targetDate, showManualColumn, use
           open={selectedStat !== null}
           onClose={() => setSelectedStat(null)}
           canAdjust={canAdjust}
+          projectId={projectId}
         />
       )}
     </>

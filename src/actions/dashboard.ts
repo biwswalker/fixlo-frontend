@@ -8,6 +8,7 @@ import { runSmartMatch } from "@/lib/smartMatcher";
 import { getServerAuthSession } from "@/lib/auth";
 import { hasPermission } from "@/lib/rbac";
 import { computeKpi } from "@/lib/reconciliationFormula";
+import { normalizeTransferAt } from "@/lib/normalizeTransferAt";
 import { nextState } from "@/lib/transactionState";
 import { buildTransferAt } from "@/lib/transferAt";
 import { resolveProject } from "@/lib/projects";
@@ -820,6 +821,25 @@ export async function rejectTransaction(
 }
 
 /**
+ * Rejects multiple Discord slips in a single batch. Requires manage_projects.
+ * Returns per-id results so the caller can report partial failures.
+ */
+export async function batchRejectTransactions(
+  ids: number[],
+  preset: RejectPreset,
+  customNote?: string,
+): Promise<{ succeeded: number[]; failed: number[] }> {
+  const { partitionRejectResults } = await import("@/lib/partitionRejectResults");
+  const results = await Promise.all(
+    ids.map(async (id) => {
+      const res = await rejectTransaction(String(id), preset, customNote);
+      return { id, success: res.success };
+    }),
+  );
+  return partitionRejectResults(results);
+}
+
+/**
  * Retroactively runs the smart matching logic for unmapped or pending review transactions.
  */
 export async function batchReRunSmartMatch(projectId: string) {
@@ -1194,6 +1214,8 @@ export interface AccountSlip {
   ref_id: string | null;
   image_path: string | null;
   note: string | null;
+  transaction_type_id: number | null;
+  transaction_subtype: string | null;
 }
 
 /**
@@ -1220,7 +1242,9 @@ export async function getAccountSlips(
         adjust_note,
         ref_id,
         image_path,
-        NULL AS note
+        NULL AS note,
+        transaction_type_id,
+        transaction_subtype
       FROM transactions
       WHERE project_account_id = $1
         AND (transfer_at AT TIME ZONE 'UTC')::date = $2::date
@@ -1229,7 +1253,7 @@ export async function getAccountSlips(
 
     const manualSql = `
       SELECT
-        NULL AS id,
+        id,
         'manual' AS source,
         transfer_at,
         NULL AS sender_name,
@@ -1242,7 +1266,9 @@ export async function getAccountSlips(
         NULL AS adjust_note,
         NULL AS ref_id,
         image_path,
-        note
+        note,
+        transaction_type_id,
+        transaction_subtype
       FROM manual_transactions
       WHERE project_account_id = $1
         AND (transfer_at AT TIME ZONE 'UTC')::date = $2::date
@@ -1259,7 +1285,7 @@ export async function getAccountSlips(
     return rows.map((r) => ({
       id: r.id != null ? Number(r.id) : null,
       source: r.source as "discord" | "manual",
-      transfer_at: r.transfer_at instanceof Date ? r.transfer_at.toISOString() : String(r.transfer_at),
+      transfer_at: normalizeTransferAt(r.transfer_at),
       sender_name: r.sender_name ?? null,
       sender_bank: r.sender_bank ?? null,
       sender_account: r.sender_account ?? null,
@@ -1273,6 +1299,8 @@ export async function getAccountSlips(
       ref_id: r.ref_id ?? null,
       image_path: r.image_path ?? null,
       note: r.note ?? null,
+      transaction_type_id: r.transaction_type_id != null ? Number(r.transaction_type_id) : null,
+      transaction_subtype: r.transaction_subtype ?? null,
     }));
   } catch (error) {
     logger.error("getAccountSlips", "Failed to fetch account slips", error);
@@ -1295,6 +1323,8 @@ export async function createManualTransaction(
   transferAt: string,
   imagePath?: string,
   note?: string,
+  transactionTypeId?: number,
+  transactionSubtype?: string,
 ) {
   const session = await getServerAuthSession();
   if (!session || !hasPermission(session.user.role, "manage_projects")) {
@@ -1307,8 +1337,9 @@ export async function createManualTransaction(
 
     await query(
       `INSERT INTO manual_transactions
-         (project_id, project_account_id, amount, transfer_at, image_path, note, created_by)
-       VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+         (project_id, project_account_id, amount, transfer_at, image_path, note, created_by,
+          transaction_type_id, transaction_subtype)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
       [
         projectUuid || projectId,
         projectAccountId,
@@ -1317,6 +1348,8 @@ export async function createManualTransaction(
         imagePath ?? null,
         note ?? null,
         session.user.username,
+        transactionTypeId ?? null,
+        transactionSubtype ?? null,
       ],
     );
 
@@ -1430,5 +1463,162 @@ export async function markUploadProcessed(uploadId: number) {
   } catch (error) {
     logger.error("markUploadProcessed", "Failed to mark upload processed", error);
     return { success: false, error: "Failed to update upload status" };
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Transaction Types (#74)
+// ---------------------------------------------------------------------------
+
+export interface TransactionType {
+  id: number;
+  project_id: number | null;
+  name: string;
+  created_by: string | null;
+  created_at: string;
+}
+
+/**
+ * Returns global types merged with project-scoped types, global first.
+ */
+export async function listTransactionTypes(projectId: string): Promise<TransactionType[]> {
+  try {
+    const isAll = projectId === "all";
+    const project = isAll ? null : await resolveProject(projectId);
+    const projectUuid = project?.id ?? null;
+
+    const sql = projectUuid
+      ? `SELECT id, project_id, name, created_by, created_at
+           FROM transaction_types
+          WHERE project_id IS NULL OR project_id = $1
+          ORDER BY project_id NULLS FIRST, name`
+      : `SELECT id, project_id, name, created_by, created_at
+           FROM transaction_types
+          WHERE project_id IS NULL
+          ORDER BY name`;
+
+    const res = await query(sql, projectUuid ? [projectUuid] : []);
+    return res.rows.map((r) => ({
+      id: Number(r.id),
+      project_id: r.project_id != null ? Number(r.project_id) : null,
+      name: String(r.name),
+      created_by: r.created_by ?? null,
+      created_at: r.created_at instanceof Date ? r.created_at.toISOString() : String(r.created_at),
+    }));
+  } catch (error) {
+    logger.error("listTransactionTypes", "Failed to list transaction types", error);
+    return [];
+  }
+}
+
+export async function createTransactionType(
+  projectId: string,
+  name: string,
+): Promise<{ success: boolean; id?: number; error?: string }> {
+  const session = await getServerAuthSession();
+  if (!session || !hasPermission(session.user.role, "manage_projects")) {
+    return { success: false, error: "Unauthorized" };
+  }
+  const trimmed = name.trim();
+  if (!trimmed) return { success: false, error: "Name is required" };
+
+  try {
+    const isAll = projectId === "all";
+    const project = isAll ? null : await resolveProject(projectId);
+    const projectUuid = project?.id ?? null;
+
+    const res = await query(
+      `INSERT INTO transaction_types (project_id, name, created_by)
+       VALUES ($1, $2, $3)
+       RETURNING id`,
+      [projectUuid, trimmed, session.user.username],
+    );
+    revalidatePath("/dashboard/[projectId]/accounts", "page");
+    return { success: true, id: Number(res.rows[0].id) };
+  } catch (error) {
+    logger.error("createTransactionType", "Failed to create transaction type", error);
+    return { success: false, error: "Failed to create transaction type" };
+  }
+}
+
+export async function deleteTransactionType(
+  typeId: number,
+): Promise<{ success: boolean; error?: string }> {
+  const session = await getServerAuthSession();
+  if (!session || !hasPermission(session.user.role, "manage_projects")) {
+    return { success: false, error: "Unauthorized" };
+  }
+  try {
+    // Block delete if any slip references this type
+    const refCheck = await query(
+      `SELECT 1 FROM transactions WHERE transaction_type_id = $1
+        UNION ALL
+       SELECT 1 FROM manual_transactions WHERE transaction_type_id = $1
+       LIMIT 1`,
+      [typeId],
+    );
+    if ((refCheck.rowCount ?? 0) > 0) {
+      return { success: false, error: "ไม่สามารถลบได้ — มี slip อ้างอิง type นี้อยู่" };
+    }
+    await query("DELETE FROM transaction_types WHERE id = $1", [typeId]);
+    revalidatePath("/dashboard/[projectId]/accounts", "page");
+    return { success: true };
+  } catch (error) {
+    logger.error("deleteTransactionType", "Failed to delete transaction type", error);
+    return { success: false, error: "Failed to delete transaction type" };
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Slip Type Editor (#78)
+// ---------------------------------------------------------------------------
+
+/**
+ * Updates transaction_type_id and transaction_subtype on a single slip.
+ * Works for both 'discord' (transactions table) and 'manual' (manual_transactions table).
+ * Requires manage_projects permission.
+ */
+export async function updateSlipType(
+  source: "discord" | "manual",
+  id: number,
+  typeId: number | null,
+  subtype: string | null,
+): Promise<{ success: boolean; error?: string }> {
+  const session = await getServerAuthSession();
+  if (!session || !hasPermission(session.user.role, "manage_projects")) {
+    return { success: false, error: "Unauthorized" };
+  }
+  try {
+    const table = source === "discord" ? "transactions" : "manual_transactions";
+    await query(
+      `UPDATE ${table} SET transaction_type_id = $1, transaction_subtype = $2 WHERE id = $3`,
+      [typeId, subtype || null, id],
+    );
+    revalidatePath("/dashboard/[projectId]/reconciliation", "page");
+    return { success: true };
+  } catch (error) {
+    logger.error("updateSlipType", "Failed to update slip type", error);
+    return { success: false, error: "Failed to update slip type" };
+  }
+}
+
+/**
+ * Returns distinct non-null transaction_subtype values across both slip tables.
+ * Used for autocomplete in the slip type editor.
+ */
+export async function listSlipSubtypes(): Promise<string[]> {
+  try {
+    const res = await query(
+      `SELECT DISTINCT transaction_subtype AS subtype
+         FROM (
+           SELECT transaction_subtype FROM transactions WHERE transaction_subtype IS NOT NULL
+           UNION ALL
+           SELECT transaction_subtype FROM manual_transactions WHERE transaction_subtype IS NOT NULL
+         ) combined
+         ORDER BY subtype`,
+    );
+    return res.rows.map((r) => String(r.subtype));
+  } catch {
+    return [];
   }
 }

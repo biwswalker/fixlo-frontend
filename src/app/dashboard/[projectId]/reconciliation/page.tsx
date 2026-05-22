@@ -294,6 +294,7 @@ async function ReconciliationContent({
         targetDate={targetDateIso}
         showManualColumn={true}
         userRole={session?.user.role}
+        projectId={projectId}
       />
     </div>
   );

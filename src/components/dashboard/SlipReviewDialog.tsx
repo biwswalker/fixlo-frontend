@@ -17,6 +17,8 @@ import {
 } from "@/actions/dashboard";
 import { hasPermission } from "@/lib/rbac";
 import { formatBaht, formatThaiDate } from "@/lib/utils";
+import { format } from "date-fns";
+import { TZDate } from "@date-fns/tz";
 import {
   AlertCircle,
   CheckCircle2,
@@ -142,9 +144,10 @@ export function SlipReviewDialog({
                     label="วันที่โอน"
                     value={
                       transaction.transfer_at
-                        ? formatThaiDate(transaction.transfer_at.slice(0, 10)) +
-                          " " +
-                          transaction.transfer_at.slice(11, 16)
+                        ? (() => {
+                            const bkk = new TZDate(new Date(transaction.transfer_at), "Asia/Bangkok");
+                            return formatThaiDate(format(bkk, "yyyy-MM-dd")) + " " + format(bkk, "HH:mm");
+                          })()
                         : "—"
                     }
                   />

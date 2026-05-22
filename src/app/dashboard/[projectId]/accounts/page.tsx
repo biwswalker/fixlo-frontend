@@ -1,7 +1,8 @@
 import { getServerAuthSession } from "@/lib/auth";
 import { redirect } from "next/navigation";
-import { getProjectByName, getProjectAccounts } from "@/actions/dashboard";
+import { getProjectByName, getProjectAccounts, listTransactionTypes } from "@/actions/dashboard";
 import { AccountsTable } from "@/components/dashboard/AccountsTable";
+import { TransactionTypesSection } from "@/components/dashboard/TransactionTypesSection";
 import { Building2 } from "lucide-react";
 
 export default async function AccountsPage({
@@ -21,7 +22,10 @@ export default async function AccountsPage({
     redirect("/dashboard/all/accounts");
   }
 
-  const accounts = await getProjectAccounts(projectId);
+  const [accounts, transactionTypes] = await Promise.all([
+    getProjectAccounts(projectId),
+    listTransactionTypes(projectId),
+  ]);
   const displayTitle = project?.project_name ?? (projectId === "all" ? "ทุกโปรเจกต์" : projectId);
 
   return (
@@ -37,6 +41,12 @@ export default async function AccountsPage({
       </div>
 
       <AccountsTable accounts={accounts} projectId={projectId} />
+
+      <TransactionTypesSection
+        types={transactionTypes}
+        projectId={projectId}
+        currentProjectDbId={project?.id ? Number(project.id) : null}
+      />
     </div>
   );
 }

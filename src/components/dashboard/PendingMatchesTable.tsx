@@ -318,7 +318,8 @@ export function PendingMatchesTable({
                         ? new Date(txn.transfer_at).toLocaleString("th-TH", {
                             day: "2-digit",
                             month: "2-digit",
-                            year: "2-digit"
+                            year: "2-digit",
+                            timeZone: "Asia/Bangkok"
                           })
                         : "-"}
                     </TableCell>

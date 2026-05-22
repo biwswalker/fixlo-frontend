@@ -47,7 +47,9 @@ aliases: [transaction, slip]
 
 ## CHECK: `chk_matching_status`
 
-`matching_status` ∈ {`AUTO_MAPPED`, `PENDING_REVIEW`, `MANUAL_MAPPED`, `UNMAPPED`}
+`matching_status` ∈ {`AUTO_MAPPED`, `PENDING_REVIEW`, `MANUAL_MAPPED`, `UNMAPPED`, `REJECTED`}
+
+`REJECTED` เพิ่มใน migration 028 — migration 018 เพิ่ม reject columns แต่ลืม extend constraint (ทำให้ rejectTransaction ล้มเหลวด้วย 23514 จนกว่า 028 จะ apply)
 
 ## Constraints
 
@@ -93,7 +95,7 @@ aliases: [transaction, slip]
 
 ⚠️ **Date field semantics ไม่ตรงกัน 2 paths** — ทำให้ query ลำบาก. dashboard.ts:460 + reconciliation.ts:183,223 query `transfer_date` → row ที่มาจาก worker (มีแต่ `record_date`) จะไม่ติด filter. Schema debt.
 
-⚠️ **Worker drops `aiOutput.date` + `aiOutput.time`** — Gemini extract ค่า `date` (`YYYY-MM-DD`) และ `time` (`HH:MM`) จาก slip แต่ INSERT ใน worker ไม่ใช้. user ไม่รู้ว่าเป็น bug หรือเจตนา. ถ้าตั้งใจจะ merge เป็น `transfer_at`, ควรเอา `aiOutput.date/time` มาใช้แทน `targetDate` ฝั่ง worker.
+**Worker ใช้ `aiOutput.date` + `aiOutput.time` สร้าง `transfer_at`** — worker.js:293-310 construct Bangkok local string `${date}T${time||"00:00"}:00`, subtract 7h → UTC ISO แล้ว INSERT. ถ้า AI ไม่ได้ extract `time`, fallback `00:00` Bangkok → stored as `17:00:00Z`.
 
 ## Amount fields
 
