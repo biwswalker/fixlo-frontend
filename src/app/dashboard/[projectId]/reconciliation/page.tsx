@@ -1,7 +1,7 @@
 import { Suspense } from "react";
 import { format } from "date-fns";
 import { th } from "date-fns/locale";
-import { getReconciliationReport } from "@/actions/reconciliation";
+import { getReconciliationReport, getApayDailyStats } from "@/actions/reconciliation";
 import { getProjectByName } from "@/actions/dashboard";
 import { getServerAuthSession } from "@/lib/auth";
 import { redirect } from "next/navigation";
@@ -10,6 +10,7 @@ import { formatBaht, cn } from "@/lib/utils";
 import { AddAdjustmentDialog } from "@/components/dashboard/AddAdjustmentDialog";
 import { ReconciliationPeriodSelector } from "@/components/dashboard/ReconciliationPeriodSelector";
 import { AccountBreakdownTable } from "@/components/dashboard/AccountBreakdownTable";
+import { ApayGatewayCrossCheck } from "@/components/dashboard/ApayGatewayCrossCheck";
 import {
   ArrowDownToLine,
   ArrowUpFromLine,
@@ -114,9 +115,10 @@ async function ReconciliationContent({
   pendingCount: number;
   pendingBalanceCount: number;
 }) {
-  const [report, session] = await Promise.all([
+  const [report, session, apayStats] = await Promise.all([
     getReconciliationReport(projectId, "day", targetDate),
     getServerAuthSession(),
+    getApayDailyStats(projectId, targetDateIso),
   ]);
 
   // Formatting helpers
@@ -282,6 +284,9 @@ async function ReconciliationContent({
           </div>
         </Link>
       )}
+
+      {/* Apay Gateway Cross-Check Panel */}
+      {apayStats && <ApayGatewayCrossCheck stats={apayStats} />}
 
       {/* Account Breakdown Table */}
       <h2 className="text-xl font-semibold tracking-tight text-gray-900 mt-8 mb-4 flex items-center gap-2">

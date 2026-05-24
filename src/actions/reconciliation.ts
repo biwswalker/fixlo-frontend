@@ -348,6 +348,45 @@ export async function getReconciliationReport(
 }
 
 // ---------------------------------------------------------------------------
+// Apay Gateway Cross-Check
+// ---------------------------------------------------------------------------
+
+export interface ApayDailyStats {
+  depositAmount: number;
+  withdrawalAmount: number;
+  scrapedAt: string | null;
+}
+
+export async function getApayDailyStats(
+  projectId: string,
+  targetDate: string,
+): Promise<ApayDailyStats | null> {
+  if (projectId === "all") return null;
+  try {
+    const result = await query(
+      `SELECT rad.deposit_amount, rad.withdrawal_amount, rad.scraped_at
+       FROM report_apay_daily rad
+       JOIN project_accounts pa ON pa.id = rad.project_account_id
+       WHERE rad.date = $1
+         AND LOWER(pa.bank_code) = 'apay'
+         AND pa.project_id = $2
+         AND pa.deleted_at IS NULL
+       LIMIT 1`,
+      [targetDate, projectId],
+    );
+    if (!result.rows.length) return null;
+    const row = result.rows[0];
+    return {
+      depositAmount: parseFloat(row.deposit_amount),
+      withdrawalAmount: parseFloat(row.withdrawal_amount),
+      scrapedAt: row.scraped_at,
+    };
+  } catch {
+    return null;
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Manual Adjustments
 // ---------------------------------------------------------------------------
 
