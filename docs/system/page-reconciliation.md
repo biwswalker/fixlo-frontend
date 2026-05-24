@@ -80,8 +80,7 @@ WHERE rd.status = 'สำเร็จ'
 ```sql
 SELECT COALESCE(SUM(t.ai_amount), 0) AS total
 FROM transactions t
-WHERE t.is_amount_verified = true
-  AND t.transfer_date::date BETWEEN $startDate AND $endDate
+WHERE t.transfer_at::date BETWEEN $startDate AND $endDate
   AND (t.source_project_id = $projectUuid 
        OR t.target_project_id = $projectUuid 
        OR $isAll = true)
@@ -214,11 +213,12 @@ LIMIT $limit OFFSET $offset
 ### SQL — raw transactions
 
 ```sql
-SELECT t.ai_amount, t.sender_name, t.project_account_id, pa.account_name
+SELECT COALESCE(t.adjusted_amount, t.ai_amount) AS adjusted_amount,
+       t.ai_amount, t.sender_name, t.project_account_id AS account_id,
+       pa.account_name, pa.bank_code, pa.account_number
 FROM transactions t
 LEFT JOIN project_accounts pa ON t.project_account_id = pa.id
-WHERE t.is_amount_verified = true
-  AND t.transfer_date::date BETWEEN $startDate AND $endDate
+WHERE t.transfer_at::date BETWEEN $startDate AND $endDate
   AND (t.source_project_id = $projectUuid 
        OR t.target_project_id = $projectUuid 
        OR $isAll = true)
