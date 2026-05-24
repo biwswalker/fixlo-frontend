@@ -32,7 +32,12 @@ generated: 2026-05-09
 
 ## Cluster: Manual adjustments
 
-- [[manual_adjustments]] — ปรับยอดด้วยมือ
+- [[manual_adjustments]] — ปรับยอดด้วยมือ (⚠️ deprecated — ดู [ADR 0003](../adr/0003-deprecate-manual-adjustments.md))
+
+## Cluster: Manual entries (new)
+
+- [[manual_transactions]] — slip ที่ไม่ผ่าน Discord bot, admin กรอกเอง
+- [[transaction_types]] — lookup table label หมวดหมู่ slip (admin-managed) — ดู [ADR 0008](../adr/0008-transaction-type-managed-table.md)
 
 ## Cluster: External reports (CSV import?)
 
@@ -47,7 +52,7 @@ generated: 2026-05-09
 ## Enums
 
 - `user_role` = `ADMIN | SUPPORT | VIEWER` (ดู [[users]])
-- `transactions.matching_status` (CHECK constraint) = `AUTO_MAPPED | PENDING_REVIEW | MANUAL_MAPPED | UNMAPPED`
+- `transactions.matching_status` (CHECK constraint) = `AUTO_MAPPED | PENDING_REVIEW | MANUAL_MAPPED | UNMAPPED | REJECTED` (migration 028 เพิ่ม REJECTED — ดู [ADR 0007](../adr/0007-reject-confirmed-slips.md))
 
 ## Schema observations (ต้อง grill)
 

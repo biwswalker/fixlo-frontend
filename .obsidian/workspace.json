@@ -11,10 +11,14 @@
             "id": "89974a1285d47f21",
             "type": "leaf",
             "state": {
-              "type": "empty",
-              "state": {},
+              "type": "markdown",
+              "state": {
+                "file": "CONTEXT.md",
+                "mode": "source",
+                "source": false
+              },
               "icon": "lucide-file",
-              "title": "New tab"
+              "title": "CONTEXT"
             }
           }
         ]
@@ -181,6 +185,8 @@
   },
   "active": "89974a1285d47f21",
   "lastOpenFiles": [
+    "docs/db/tables/transaction_types.md",
+    "docs/db/tables/manual_transactions.md",
     "CONTEXT.md",
     "CLAUDE.md",
     "docs/db/tables/report_manual_bonus_in.md",

@@ -19,7 +19,8 @@ aliases: [project account, master account]
 | `account_name` | varchar | NOT NULL | — | ชื่อบัญชี |
 | `account_number` | varchar | NULL | — | เลขบัญชี |
 | `bank_code` | varchar | NOT NULL | — | รหัสธนาคาร (KBANK, SCB, …?) |
-| `aliases` | text | NULL | — | ชื่ออื่นที่ใช้ match? |
+| `aliases` | text | NULL | — | JSON array ชื่อ fuzzy match (ดูด้านล่าง) |
+| `aliases_meta` | jsonb | NULL | — | audit log การเพิ่ม alias: `{value, added_by, added_at, source, from_daily_balance_id?}` — ดู [ADR 0005](../../adr/0005-balance-matcher-v2.md) |
 | `created_at` | timestamp | NULL | `CURRENT_TIMESTAMP` | |
 
 ## Constraints
@@ -30,6 +31,8 @@ aliases: [project account, master account]
 
 - ไม่มี FK ออก (project_id เป็น varchar)
 - FK เข้า: [[transactions]].`project_account_id`
+- FK เข้า: [[daily_balances]].`project_account_id` (migration pending)
+- FK เข้า: [[manual_adjustments]].`master_account` (undeclared, uuid string)
 
 ## Indexes
 

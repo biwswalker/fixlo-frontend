@@ -16,7 +16,7 @@ aliases: [daily balance]
 |---|---|---|---|---|
 | `id` | integer | NOT NULL | seq | PK |
 | `date` | date | NULL | `CURRENT_DATE` | วันที่ snapshot |
-| `image_path` | text | NOT NULL | — | path ภาพ |
+| `image_path` | text | NULL | — | path ภาพ (nullable migration 025 — manual entry ไม่บังคับแนบรูป) |
 | `project_name` | text | NULL | — | ⚠️ ใช้ name ไม่ใช่ id |
 | `raw_ai_output` | jsonb | NULL | — | AI output |
 | `balance_amount` | numeric(15,2) | NULL | — | ยอดคงเหลือ |
@@ -24,12 +24,13 @@ aliases: [daily balance]
 | `created_at` | timestamp | NULL | `CURRENT_TIMESTAMP` | |
 | `discord_message_id` | text | NULL | — | |
 | `platform` | text | NULL | — | platform อะไร? |
+| `source` | text | NULL | `'discord'` | `'discord'` (default) หรือ `'manual'` (admin กรอกเอง) |
 
 ## New columns (migration pending)
 
 | Column | Type | Null | Note |
 |---|---|---|---|
-| `project_account_id` | uuid | NULL | FK → `project_accounts.id` — set by spectre matcher |
+| `project_account_id` | uuid | NULL | FK → [[project_accounts]].id — set by spectre matcher |
 | `matching_status` | text | NOT NULL default `'UNMATCHED'` | `UNMATCHED / PENDING_REVIEW / AUTO_MAPPED / MANUAL_MAPPED` |
 | `matched_by` | text | NULL | username ของ admin ที่ match manual |
 | `match_breakdown` | jsonb | NULL | top-3 candidates + component scores (nameMatched, bankMatched) — เหมือน [[transactions]].match_breakdown |
@@ -37,7 +38,7 @@ aliases: [daily balance]
 ## Constraints
 
 - PK: `id`
-- FK: `project_account_id` → `project_accounts.id` (nullable)
+- FK: `project_account_id` → [[project_accounts]].id (nullable)
 
 ## Sequence
 

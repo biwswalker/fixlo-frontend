@@ -42,8 +42,15 @@ aliases: [transaction, slip]
 | `matching_confidence` | numeric | NULL | — | คะแนน match |
 | `possible_matches` | uuid[] | NULL | — | array candidate accounts |
 | `is_time_anomaly` | boolean | NULL | `false` | เวลาสลิปผิดปกติ? |
-| `transfer_date` | date | NULL | — | จากสลิป |
-| `transfer_time` | varchar(20) | NULL | — | จากสลิป |
+| `transfer_date` | date | NULL | — | จากสลิป (Path B manual fallback เท่านั้น) |
+| `transfer_time` | varchar(20) | NULL | — | จากสลิป (Path B manual fallback เท่านั้น) |
+| `transfer_at` | timestamp | NULL | — | UTC timestamp หลัง convert. Path A: worker สร้างจาก `aiOutput.date+time` Bangkok → UTC. Path B: UI set โดย staff |
+| `match_breakdown` | jsonb | NULL | — | top-3 candidates + component scores (nameMatched, accountMatched, bankMatched) — ดู [[project_accounts]].aliases |
+| `reject_reason` | text | NULL | — | เหตุผล reject (preset 5 ตัว + free text) — เฉพาะ `REJECTED` |
+| `rejected_by` | text | NULL | — | username admin ที่ reject |
+| `rejected_at` | timestamp | NULL | — | เวลา reject (UTC) |
+| `adjusted_amount` | numeric(15,2) | NULL | — | ยอดที่ admin ปรับ (override `ai_amount` ใน outflow calc) |
+| `transaction_subtype` | varchar | NULL | — | label ย่อย freetext, autocomplete จาก DISTINCT values. ดู [[transaction_types]] |
 
 ## CHECK: `chk_matching_status`
 
