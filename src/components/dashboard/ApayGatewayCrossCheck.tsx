@@ -1,6 +1,6 @@
 import { formatBaht } from "@/lib/utils";
 import { ApayDailyStats } from "@/actions/reconciliation";
-import { ArrowDownToLine, ArrowUpFromLine, Clock } from "lucide-react";
+import { ArrowDownToLine, ArrowUpFromLine, Clock, AlertTriangle } from "lucide-react";
 import { format } from "date-fns";
 import { th } from "date-fns/locale";
 
@@ -12,6 +12,7 @@ export function ApayGatewayCrossCheck({ stats }: Props) {
   const scrapedTime = stats.scrapedAt
     ? format(new Date(stats.scrapedAt), "HH:mm น.", { locale: th })
     : null;
+  const isDiscordSource = stats.source === "discord";
 
   return (
     <div className="rounded-2xl border border-purple-100 bg-purple-50 p-4">
@@ -19,12 +20,20 @@ export function ApayGatewayCrossCheck({ stats }: Props) {
         <h3 className="text-sm font-semibold text-purple-900">
           ข้อมูล Apay Gateway (Cross-check)
         </h3>
-        {scrapedTime && (
-          <span className="flex items-center gap-1 text-xs text-purple-500">
-            <Clock className="h-3 w-3" />
-            ดึงข้อมูล {scrapedTime}
-          </span>
-        )}
+        <div className="flex items-center gap-2">
+          {isDiscordSource && (
+            <span className="flex items-center gap-1 text-xs font-medium text-amber-700 bg-amber-100 px-2 py-0.5 rounded-full">
+              <AlertTriangle className="h-3 w-3" />
+              ข้อมูลจาก Discord
+            </span>
+          )}
+          {scrapedTime && (
+            <span className="flex items-center gap-1 text-xs text-purple-500">
+              <Clock className="h-3 w-3" />
+              ดึงข้อมูล {scrapedTime}
+            </span>
+          )}
+        </div>
       </div>
 
       <div className="grid grid-cols-2 gap-3">

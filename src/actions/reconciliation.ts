@@ -11,6 +11,7 @@ import { resolvePeriodToDateRange } from "@/lib/periodUtils";
 import { buildAccountLevelStats } from "@/lib/accountLevelStats";
 import { computePerAccountInflow } from "@/lib/inflowFormula";
 import { depositTotalSql } from "@/lib/kpiSql";
+import { parseApayStatsRow, buildApayStatsQuery } from "@/lib/apayStats";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -354,7 +355,9 @@ export async function getReconciliationReport(
 export interface ApayDailyStats {
   depositAmount: number;
   withdrawalAmount: number;
+  feeAmount: number | null;
   scrapedAt: string | null;
+  source: "scraper" | "discord";
 }
 
 export async function getApayDailyStats(
@@ -364,23 +367,11 @@ export async function getApayDailyStats(
   if (projectId === "all") return null;
   try {
     const result = await query(
-      `SELECT rad.deposit_amount, rad.withdrawal_amount, rad.scraped_at
-       FROM report_apay_daily rad
-       JOIN project_accounts pa ON pa.id = rad.project_account_id
-       WHERE rad.date = $1
-         AND LOWER(pa.bank_code) = 'apay'
-         AND pa.project_id = $2
-         AND pa.deleted_at IS NULL
-       LIMIT 1`,
+      buildApayStatsQuery(),
       [targetDate, projectId],
     );
     if (!result.rows.length) return null;
-    const row = result.rows[0];
-    return {
-      depositAmount: parseFloat(row.deposit_amount),
-      withdrawalAmount: parseFloat(row.withdrawal_amount),
-      scrapedAt: row.scraped_at,
-    };
+    return parseApayStatsRow(result.rows[0]);
   } catch {
     return null;
   }
