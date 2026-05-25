@@ -37,6 +37,7 @@ tags: [domain, glossary]
 - **Slip** — ภาพสลิปธนาคาร — เก็บ [[raw_uploads]] → [[transactions]]
 - **Matching** — process จับคู่ slip/daily_balance กับ project_account. ใช้กับ [[transactions]] (slip→account) และ [[daily_balances]] (balance snapshot→account). Daily balance matcher v2 (ดู [ADR 0005](docs/adr/0005-balance-matcher-v2.md)): **P0** = `acc_num` exact match (graceful — skip ถ้า null), **P1** = name+alias substring/token-fuzzy (Levenshtein ≤ 1 per token, min token length 4, normalize honorific ก่อน), **P2** = platform/bank_code tiebreaker (+10 bonus). Threshold เดิม ≥85 AUTO, ≥50 PENDING. ถ้าไม่ unique → PENDING_REVIEW → admin match manual หรือ reject.
 - **Rejected slip** — transaction ที่ admin ตัดสินใจ reject อย่างมีเหตุผล `matching_status = 'REJECTED'`. ไม่นับใน reconciliation outflow. ยังคงอยู่ใน DB เพื่อ audit trail. ต้องระบุเหตุผล (preset 5 ตัว + free text). Reject ได้จาก 2 จุด: (1) match page (PENDING_REVIEW/UNMAPPED → REJECTED) (2) SlipDrawer ใน reconciliation page (AUTO_MAPPED/MANUAL_MAPPED → REJECTED — slip ที่ confirm แล้วแต่พบภายหลังว่าผิด). ดู [ADR 0007](docs/adr/0007-reject-confirmed-slips.md).
+- **Failed upload** — [[raw_uploads]] ที่ worker ประมวลผลไม่สำเร็จ (`ai_status = 'ERROR'`). Admin จัดการได้ 2 ทาง: (1) **กรอกข้อมูลเอง** — เลือกว่าเป็น slip (→ INSERT [[transactions]]) หรือ balance (→ INSERT [[daily_balances]]) แล้ว mark `ai_status = 'PROCESSED'` (2) **Reject** — mark `ai_status = 'REJECTED'` ตัดออกจากคิวไม่ประมวลผล ไม่ได้ระบุเหตุผล. แสดงใน match page tab "ประมวลผลล้มเหลว".
 - **Match breakdown** ([[transactions]].`match_breakdown` jsonb) — top-3 candidate accounts พร้อม component score (nameMatched, accountMatched, bankMatched) ที่ smartMatcher เก็บตอน matching รัน ใช้โชว์ admin ใน Pending Account Matches table ว่าทำไมสลิปไม่ AUTO_MAPPED
 - **Daily balance** — ยอดคงเหลือ end-of-day ของ master account แต่ละบัญชี เก็บใน [[daily_balances]]. staff ส่งภาพ (BALANCE type) → worker INSERT. ต้อง match กับ [[project_accounts]] (มี matching_status: UNMATCHED/PENDING_REVIEW/AUTO_MAPPED/MANUAL_MAPPED + project_account_id FK). Matcher logic ดู [ADR 0002](docs/adr/0002-daily-balance-account-matching.md) (พื้นฐาน) + [ADR 0005](docs/adr/0005-balance-matcher-v2.md) (v2 — alias substring, token-fuzzy, acc_num P0, auto-alias).
 - **Daily balance inflow formula** — `inflow_D = balance_D - balance_(D-1) + withdrawals_D` โดย `withdrawals_D` = SUM ของ transactions.ai_amount (AUTO_MAPPED/MANUAL_MAPPED) ใน วัน D. `report_summary_daily` ใช้แสดง game-side เปรียบเทียบเท่านั้น ไม่เข้า formula.
@@ -217,7 +218,7 @@ Migration SQL (ordered by dependency):
    - `projects (discord_channel_id)` (1:1 binding)
    - `daily_balances (date, account_name)`
 
-6. **Add CHECK**: `raw_uploads.ai_status IN ('PENDING','PROCESSED','ERROR')`
+6. **Add CHECK**: `raw_uploads.ai_status IN ('PENDING','PROCESSED','ERROR','REJECTED')`
 
 7. **Drop legacy auth**: `DROP TABLE users; DROP TYPE user_role;`
 
@@ -226,7 +227,7 @@ App-level changes (deploy ครั้งเดียวกับ migration):
 - scraper: add UNIQUE-aware INSERT (ON CONFLICT DO NOTHING/UPDATE)
 - fixlo-frontend: drop `is_amount_verified` filter ใน reconciliation, RBAC refactor (hasPermission), drop apiClient, PROJECTS_MAP → DB-driven, fix chart formula, merge getReconciliationStatus + getReconciliationReport
 - bot.js: Fuse 0.1 + strict prefix `#<project>`
-- Add UI section "Failed slips" (`ai_status='ERROR'`)
+- ~~Add UI section "Failed slips" (`ai_status='ERROR'`)~~ **Done** — match page tab "ประมวลผลล้มเหลว" พร้อม reject + manual entry (slip/balance)
 
 ## Multi-tenant rollout (เมื่อ project อื่น active)
 

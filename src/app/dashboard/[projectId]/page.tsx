@@ -11,9 +11,7 @@ import {
   getDashboardSummary,
   getDailyChartData,
   getProjectByName,
-  getFailedSlips,
 } from "@/actions/dashboard";
-import { FailedSlipsTable } from "@/components/dashboard/FailedSlipsTable";
 import { PeriodSelector } from "@/components/dashboard/PeriodSelector";
 import type { Period } from "@/components/dashboard/PeriodSelector";
 import { formatBaht } from "@/lib/utils";
@@ -38,7 +36,7 @@ export default async function ProjectDashboard({
   }>;
 }) {
   const { projectId } = await params;
-  const { period, date, failedPage } = await searchParams as any;
+  const { period, date } = await searchParams as any;
 
   const validPeriod = (["day", "week", "month", "year"].includes(period ?? "")
     ? period
@@ -98,9 +96,6 @@ export default async function ProjectDashboard({
           <ChartSection projectId={projectId} from={from} to={to} />
         </Suspense>
 
-        <Suspense fallback={null}>
-          <FailedSlipsSection projectId={projectId} page={Number(failedPage) || 1} />
-        </Suspense>
       </div>
     </div>
   );
@@ -342,15 +337,3 @@ async function ChartSection({
   return <CashflowChart data={chartData} />;
 }
 
-async function FailedSlipsSection({ projectId, page }: { projectId: string; page: number }) {
-  const result = await getFailedSlips(projectId, page, 50);
-  if (result.totalItems === 0) return null;
-  return (
-    <FailedSlipsTable
-      slips={result.data}
-      totalItems={result.totalItems}
-      totalPages={result.totalPages}
-      currentPage={result.currentPage}
-    />
-  );
-}

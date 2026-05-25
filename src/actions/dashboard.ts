@@ -924,6 +924,7 @@ export interface FailedSlip {
   target_project_id: number | null;
   source_project_name: string | null;
   target_project_name: string | null;
+  target_date: string | null;
   created_at: string;
 }
 
@@ -931,10 +932,27 @@ export interface FailedSlip {
  * Fetches raw_uploads rows with ai_status='ERROR', paginated.
  * Requires approve_transactions permission.
  */
+export async function getFailedSlipsCount(projectId: string): Promise<number> {
+  try {
+    const isAll = projectId === "all";
+    const project = isAll ? null : await resolveProject(projectId);
+    const res = await query(
+      `SELECT COUNT(*) as total FROM raw_uploads ru
+       WHERE ru.ai_status = 'ERROR'
+         AND ($1 = true OR ru.source_project_id::text = $2)`,
+      [isAll, project?.id || null],
+    );
+    return Number(res.rows[0]?.total || 0);
+  } catch {
+    return 0;
+  }
+}
+
 export async function getFailedSlips(
   projectId: string,
   page: number = 1,
   limit: number = 50,
+  search?: string,
 ): Promise<{ data: FailedSlip[]; totalItems: number; totalPages: number; currentPage: number }> {
   const session = await getServerAuthSession();
   if (!session || !hasPermission(session.user.role, 'approve_transactions')) {
@@ -946,11 +964,13 @@ export async function getFailedSlips(
     const project = isAll ? null : await resolveProject(projectId);
     const projectId_ = project?.id || null;
     const OFFSET = (page - 1) * limit;
+    const searchFilter = search ? `%${search}%` : null;
 
     const sql = `
       SELECT
         ru.id, ru.image_path, ru.discord_message_id,
         ru.source_project_id, ru.target_project_id,
+        ru.target_date,
         sp.project_name AS source_project_name,
         tp.project_name AS target_project_name,
         ru.created_at
@@ -959,19 +979,22 @@ export async function getFailedSlips(
       LEFT JOIN projects tp ON ru.target_project_id = tp.id
       WHERE ru.ai_status = 'ERROR'
         AND ($1 = true OR ru.source_project_id::text = $2)
+        AND ($5::text IS NULL OR sp.project_name ILIKE $5 OR ru.discord_message_id ILIKE $5)
       ORDER BY ru.created_at DESC
       LIMIT $3 OFFSET $4
     `;
 
     const countSql = `
       SELECT COUNT(*) AS total FROM raw_uploads ru
+      LEFT JOIN projects sp ON ru.source_project_id = sp.id
       WHERE ru.ai_status = 'ERROR'
         AND ($1 = true OR ru.source_project_id::text = $2)
+        AND ($3::text IS NULL OR sp.project_name ILIKE $3 OR ru.discord_message_id ILIKE $3)
     `;
 
     const [result, countRes] = await Promise.all([
-      query(sql, [isAll, projectId_, limit, OFFSET]),
-      query(countSql, [isAll, projectId_]),
+      query(sql, [isAll, projectId_, limit, OFFSET, searchFilter]),
+      query(countSql, [isAll, projectId_, searchFilter]),
     ]);
 
     const totalItems = Number(countRes.rows[0]?.total || 0);
@@ -981,6 +1004,7 @@ export async function getFailedSlips(
       data: result.rows.map((row) => ({
         ...row,
         created_at: row.created_at?.toISOString() || "",
+        target_date: row.target_date?.toISOString?.()?.slice(0, 10) ?? row.target_date ?? null,
       })),
       totalItems,
       totalPages,
@@ -1003,6 +1027,7 @@ export async function getPendingBalanceMatches(
   page: number = 1,
   limit: number = 50,
   search?: string,
+  transferDate?: string,
 ): Promise<{
   data: import("@/types/dashboard").DailyBalanceRecord[];
   totalItems: number;
@@ -1014,6 +1039,7 @@ export async function getPendingBalanceMatches(
     const project = isAll ? null : await resolveProject(projectId);
     const OFFSET = (page - 1) * limit;
     const searchFilter = search ? `%${search}%` : null;
+    const dateFilter = transferDate ?? null;
 
     const sql = `
       SELECT db.*
@@ -1022,6 +1048,7 @@ export async function getPendingBalanceMatches(
       WHERE (pa.project_id = $1 OR $2 = true OR (db.project_name IS NOT NULL AND $2 = false AND pa.id IS NULL))
         AND db.matching_status IN ('PENDING_REVIEW', 'UNMATCHED')
         AND ($5::text IS NULL OR db.account_name ILIKE $5 OR db.platform ILIKE $5)
+        AND ($6::date IS NULL OR db.date = $6::date)
       ORDER BY db.date DESC, db.created_at DESC
       LIMIT $3 OFFSET $4
     `;
@@ -1033,11 +1060,12 @@ export async function getPendingBalanceMatches(
       WHERE (pa.project_id = $1 OR $2 = true OR (db.project_name IS NOT NULL AND $2 = false AND pa.id IS NULL))
         AND db.matching_status IN ('PENDING_REVIEW', 'UNMATCHED')
         AND ($3::text IS NULL OR db.account_name ILIKE $3 OR db.platform ILIKE $3)
+        AND ($4::date IS NULL OR db.date = $4::date)
     `;
 
     const [result, countRes] = await Promise.all([
-      query(sql, [project?.id || null, isAll, limit, OFFSET, searchFilter]),
-      query(countSql, [project?.id || null, isAll, searchFilter]),
+      query(sql, [project?.id || null, isAll, limit, OFFSET, searchFilter, dateFilter]),
+      query(countSql, [project?.id || null, isAll, searchFilter, dateFilter]),
     ]);
 
     const totalItems = Number(countRes.rows[0]?.total || 0);
@@ -1463,6 +1491,24 @@ export async function markUploadProcessed(uploadId: number) {
   } catch (error) {
     logger.error("markUploadProcessed", "Failed to mark upload processed", error);
     return { success: false, error: "Failed to update upload status" };
+  }
+}
+
+export async function rejectUpload(uploadId: number) {
+  const session = await getServerAuthSession();
+  if (!session || !hasPermission(session.user.role, 'approve_transactions')) {
+    return { success: false, error: "Unauthorized" };
+  }
+  try {
+    await query(
+      "UPDATE raw_uploads SET ai_status = 'REJECTED' WHERE id = $1",
+      [uploadId],
+    );
+    revalidatePath("/dashboard/[projectId]/match", "page");
+    return { success: true };
+  } catch (error) {
+    logger.error("rejectUpload", "Failed to reject upload", error);
+    return { success: false, error: "Failed to reject upload" };
   }
 }
 

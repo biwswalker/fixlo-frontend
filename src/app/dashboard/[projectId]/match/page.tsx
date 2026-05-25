@@ -6,9 +6,14 @@ import {
   getPendingMatches,
   getProjectAccounts,
   getPendingBalanceMatches,
+  getFailedSlips,
+  getPendingMatchCount,
+  getPendingBalanceMatchCount,
+  getFailedSlipsCount,
 } from "@/actions/dashboard";
 import { PendingMatchesTable } from "@/components/dashboard/PendingMatchesTable";
 import { PendingBalanceMatchesTable } from "@/components/dashboard/PendingBalanceMatchesTable";
+import { FailedSlipsTable } from "@/components/dashboard/FailedSlipsTable";
 import { ReRunMatchingButton } from "@/components/dashboard/ReRunMatchingButton";
 import { ReRunBalanceMatchingButton } from "@/components/dashboard/ReRunBalanceMatchingButton";
 import { MatchSearchBar } from "@/components/dashboard/MatchSearchBar";
@@ -42,15 +47,23 @@ export default async function ManualMatchPage({
 
   const projectAccounts = await getProjectAccounts(projectId);
 
+  const isSlipTab = tab === "slip" || tab === undefined;
   const isBalanceTab = tab === "balance";
+  const isFailedTab = tab === "failed";
 
-  const [slipResult, balanceResult] = await Promise.all([
-    !isBalanceTab
+  const [slipResult, balanceResult, failedResult, slipCount, balanceCount, failedCount] = await Promise.all([
+    isSlipTab
       ? getPendingMatches(projectId, Number(page), Number(limit), query, transferDate)
       : Promise.resolve({ data: [], totalPages: 0, totalItems: 0, currentPage: 1 }),
     isBalanceTab
-      ? getPendingBalanceMatches(projectId, Number(page), Number(limit), query)
+      ? getPendingBalanceMatches(projectId, Number(page), Number(limit), query, transferDate)
       : Promise.resolve({ data: [], totalPages: 0, totalItems: 0, currentPage: 1 }),
+    isFailedTab
+      ? getFailedSlips(projectId, Number(page), Number(limit), query)
+      : Promise.resolve({ data: [], totalPages: 0, totalItems: 0, currentPage: 1 }),
+    getPendingMatchCount(projectId),
+    getPendingBalanceMatchCount(projectId),
+    getFailedSlipsCount(projectId),
   ]);
 
   const tabBase = `/dashboard/${projectId}/match`;
@@ -71,16 +84,13 @@ export default async function ManualMatchPage({
           <Suspense>
             <MatchSearchBar />
           </Suspense>
-          {!isBalanceTab && (
+          {(isSlipTab || isBalanceTab) && (
             <Suspense>
               <TransferDatePicker currentDate={transferDate} />
             </Suspense>
           )}
-          {!isBalanceTab ? (
-            <ReRunMatchingButton projectId={projectId} />
-          ) : (
-            <ReRunBalanceMatchingButton projectId={projectId} />
-          )}
+          {isSlipTab && <ReRunMatchingButton projectId={projectId} />}
+          {isBalanceTab && <ReRunBalanceMatchingButton projectId={projectId} />}
         </div>
       </div>
 
@@ -88,28 +98,47 @@ export default async function ManualMatchPage({
       <div className="flex gap-1 p-1 bg-gray-100 rounded-xl w-fit">
         <Link
           href={`${tabBase}?tab=slip`}
-          className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
-            !isBalanceTab
-              ? "bg-white text-gray-900 shadow-sm"
-              : "text-gray-500 hover:text-gray-700"
+          className={`px-4 py-2 rounded-lg text-sm font-medium transition-all flex items-center gap-2 ${
+            isSlipTab ? "bg-white text-gray-900 shadow-sm" : "text-gray-500 hover:text-gray-700"
           }`}
         >
           สลิป
+          {slipCount > 0 && (
+            <span className="bg-amber-100 text-amber-700 text-xs font-semibold px-1.5 py-0.5 rounded-full leading-none">
+              {slipCount}
+            </span>
+          )}
         </Link>
         <Link
           href={`${tabBase}?tab=balance`}
-          className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
-            isBalanceTab
-              ? "bg-white text-gray-900 shadow-sm"
-              : "text-gray-500 hover:text-gray-700"
+          className={`px-4 py-2 rounded-lg text-sm font-medium transition-all flex items-center gap-2 ${
+            isBalanceTab ? "bg-white text-gray-900 shadow-sm" : "text-gray-500 hover:text-gray-700"
           }`}
         >
           ยอดบัญชีรายวัน
+          {balanceCount > 0 && (
+            <span className="bg-amber-100 text-amber-700 text-xs font-semibold px-1.5 py-0.5 rounded-full leading-none">
+              {balanceCount}
+            </span>
+          )}
+        </Link>
+        <Link
+          href={`${tabBase}?tab=failed`}
+          className={`px-4 py-2 rounded-lg text-sm font-medium transition-all flex items-center gap-2 ${
+            isFailedTab ? "bg-white text-gray-900 shadow-sm" : "text-gray-500 hover:text-gray-700"
+          }`}
+        >
+          ประมวลผลล้มเหลว
+          {failedCount > 0 && (
+            <span className="bg-rose-100 text-rose-700 text-xs font-semibold px-1.5 py-0.5 rounded-full leading-none">
+              {failedCount}
+            </span>
+          )}
         </Link>
       </div>
 
       <Suspense fallback={null}>
-        {!isBalanceTab ? (
+        {isSlipTab ? (
           slipResult.data.length === 0 ? (
             <EmptyState />
           ) : (
@@ -122,18 +151,31 @@ export default async function ManualMatchPage({
               limit={Number(limit)}
             />
           )
-        ) : balanceResult.data.length === 0 ? (
-          <EmptyState />
-        ) : (
-          <PendingBalanceMatchesTable
-            records={balanceResult.data}
-            projectAccounts={projectAccounts}
-            totalPages={balanceResult.totalPages}
-            totalItems={balanceResult.totalItems}
-            currentPage={Number(page)}
-            limit={Number(limit)}
-          />
-        )}
+        ) : isBalanceTab ? (
+          balanceResult.data.length === 0 ? (
+            <EmptyState />
+          ) : (
+            <PendingBalanceMatchesTable
+              records={balanceResult.data}
+              projectAccounts={projectAccounts}
+              totalPages={balanceResult.totalPages}
+              totalItems={balanceResult.totalItems}
+              currentPage={Number(page)}
+              limit={Number(limit)}
+            />
+          )
+        ) : isFailedTab ? (
+          failedResult.data.length === 0 ? (
+            <EmptyState />
+          ) : (
+            <FailedSlipsTable
+              slips={failedResult.data}
+              totalItems={failedResult.totalItems}
+              totalPages={failedResult.totalPages}
+              currentPage={Number(page)}
+            />
+          )
+        ) : null}
       </Suspense>
     </div>
   );

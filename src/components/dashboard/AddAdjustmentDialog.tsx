@@ -364,11 +364,9 @@ function AccountField({
               <SelectItem key={acc.id} value={acc.id}>
                 <div className="flex flex-col leading-tight">
                   <span>{acc.account_name}</span>
-                  {last4 && (
-                    <span className="text-[10px] text-muted-foreground font-mono">
-                      {acc.bank_code} — *{last4}
-                    </span>
-                  )}
+                  <span className="text-[10px] text-muted-foreground font-mono">
+                    {acc.bank_code}{last4 ? ` — *${last4}` : ""}
+                  </span>
                 </div>
               </SelectItem>
             );
