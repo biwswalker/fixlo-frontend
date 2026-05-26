@@ -366,9 +366,11 @@ export async function getApayDailyStats(
 ): Promise<ApayDailyStats | null> {
   if (projectId === "all") return null;
   try {
+    const project = await resolveProject(projectId);
+    if (!project) return null;
     const result = await query(
       buildApayStatsQuery(),
-      [targetDate, projectId],
+      [targetDate, String(project.id)],
     );
     if (!result.rows.length) return null;
     return parseApayStatsRow(result.rows[0]);
