@@ -19,7 +19,7 @@ aliases: [daily balance]
 | `image_path` | text | NULL | — | path ภาพ (nullable migration 025 — manual entry ไม่บังคับแนบรูป) |
 | `project_name` | text | NULL | — | ⚠️ ใช้ name ไม่ใช่ id |
 | `raw_ai_output` | jsonb | NULL | — | AI output |
-| `balance_amount` | numeric(15,2) | NULL | — | ยอดคงเหลือ |
+| `balance_amount` | numeric(15,2) | NULL | — | ยอดคงเหลือ. Worker maps: `BALANCE`→`aiOutput.amount`, `GATEWAY_BALANCE`→`aiOutput.balance_amount` |
 | `account_name` | text | NULL | — | ชื่อบัญชี |
 | `created_at` | timestamp | NULL | `CURRENT_TIMESTAMP` | |
 | `discord_message_id` | text | NULL | — | |

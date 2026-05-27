@@ -95,11 +95,12 @@ tags: [domain, glossary]
    - **Enqueue deduplication**: ใช้ `jobId='upload-{uploadId}'` ป้องกัน multi-trigger enqueue ซ้ำ. เช็ค existing job ก่อน add.
    - Worker (`worker.js`) ใช้ BullMQ + Redis, concurrency=5 (parallel processing):
      - SELECT PENDING uploads → enqueue jobs (attempts=3, exponential backoff)
-     - แต่ละ job: ดึงรูป → Gemini AI extract (`type, amount, ref, s_*, r_*, date, time, acc_name, platform, acc_num`) + Bangkok timezone conversion
+     - แต่ละ job: ดึงรูป → Gemini AI extract (`type, amount, ref, s_*, r_*, date, time, acc_name, platform, acc_num, balance_amount, deposit_amount, withdrawal_amount`) + Bangkok timezone conversion
      - AI fallback chain: `gemini-3.1-flash-lite-preview` → `gemma-4-31b-it` → `gemma-4-26b-a4b-it` → Ollama (gemma4, localhost:11434)
      - Performance logging: elapsed time per job + queue depth tracking
      - Route by `aiOutput.type`:
-       - `BALANCE | BANK_APP_BALANCE | GATEWAY_BALANCE` → INSERT [[daily_balances]] + balance matcher v2 (acc_num P0, platform/alias fuzzy P1, tiebreaker P2)
+       - `BALANCE | BANK_APP_BALANCE` → INSERT [[daily_balances]] (`balance_amount` ← `aiOutput.amount`) + balance matcher v2
+       - `GATEWAY_BALANCE` (Apay, Wealth.wave, Badoo) → INSERT [[daily_balances]] (`balance_amount` ← `aiOutput.balance_amount`) + balance matcher v2. ⚠️ ต่างจาก BALANCE: AI เก็บยอดคงเหลือใน `balance_amount` field ไม่ใช่ `amount`
        - `SLIP` → smartMatch(sender) กับ project_accounts → INSERT [[transactions]] (duplicate check: ref_id + manual_transactions transfer_at+amount match)
        - `UNKNOWN` → ignore
      - UPDATE `raw_uploads.ai_status = 'PROCESSED' | 'ERROR'`
@@ -132,7 +133,7 @@ tags: [domain, glossary]
    - frontend: ลบ UI ที่อ้างถึง qr_* (SlipReviewDialog, ตารางที่โชว์ amount mismatch)
 
 -1. **Worker / bot bugs** ที่จะ patch:
-   - [worker.js:266-268] `aiOutput.amount ? ...` → `aiOutput.amount != null ? ...` (เคส 0)
+   - **[FIXED]** `balance_amount` null สำหรับ GATEWAY_BALANCE type — worker ใช้ `aiOutput.amount` (null สำหรับ non-slip) แทน `aiOutput.balance_amount`. Fix: `aiOutput.balance_amount ?? aiOutput.amount`. Migration 034 backfill 3 affected rows. See fixlo-spectre commit ed3f3f6.
    - [worker.js:274] match อาจต้อง update logic ตาม [ADR 0001](docs/adr/0001-unified-fuzzy-account-matcher.md)
    - Worker ใช้ `aiOutput.date + aiOutput.time` populate `transfer_at` (หลัง schema migration)
    - bot.js Fuse threshold 0.3 false-positive บ่อย (project shortnames สั้นใกล้กัน) — เพิ่ม strict pattern เช่น `#<project>` หรือ exact match-only
