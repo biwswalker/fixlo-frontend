@@ -44,7 +44,7 @@ aliases: [transaction, slip]
 | `is_time_anomaly` | boolean | NULL | `false` | เวลาสลิปผิดปกติ? |
 | `transfer_date` | date | NULL | — | จากสลิป (Path B manual fallback เท่านั้น) |
 | `transfer_time` | varchar(20) | NULL | — | จากสลิป (Path B manual fallback เท่านั้น) |
-| `transfer_at` | timestamp | NULL | — | UTC timestamp หลัง convert. Path A: worker สร้างจาก `aiOutput.date+time` Bangkok → UTC. Path B: UI set โดย staff |
+| `transfer_at` | timestamp | NULL | — | UTC timestamp หลัง convert. Path A: worker สร้างจาก `targetDate+aiOutput.time` Bangkok → UTC. Path B: UI set โดย staff |
 | `match_breakdown` | jsonb | NULL | — | top-3 candidates + component scores (nameMatched, accountMatched, bankMatched) — ดู [[project_accounts]].aliases |
 | `reject_reason` | text | NULL | — | เหตุผล reject (preset 5 ตัว + free text) — เฉพาะ `REJECTED` |
 | `rejected_by` | text | NULL | — | username admin ที่ reject |
@@ -102,7 +102,9 @@ aliases: [transaction, slip]
 
 ⚠️ **Date field semantics ไม่ตรงกัน 2 paths** — ทำให้ query ลำบาก. dashboard.ts:460 + reconciliation.ts:183,223 query `transfer_date` → row ที่มาจาก worker (มีแต่ `record_date`) จะไม่ติด filter. Schema debt.
 
-**Worker ใช้ `aiOutput.date` + `aiOutput.time` สร้าง `transfer_at`** — worker.js:293-310 construct Bangkok local string `${date}T${time||"00:00"}:00`, subtract 7h → UTC ISO แล้ว INSERT. ถ้า AI ไม่ได้ extract `time`, fallback `00:00` Bangkok → stored as `17:00:00Z`.
+**Worker ใช้ `targetDate` + `aiOutput.time` สร้าง `transfer_at`** — worker.js construct Bangkok string `${targetDate}T${time||"00:00"}:00+07:00` → UTC ISO แล้ว INSERT. ใช้ `targetDate` (จาก Discord message timestamp — reliable) แทน `aiOutput.date` เพื่อป้องกัน OCR year error (เช่น TrueMoney slip แสดง พ.ศ. 2 หลัก — AI อาจอ่าน "69" เป็น "67" → ปีผิด). fallback `aiOutput.date` ถ้าไม่มี targetDate. ถ้า AI ไม่ได้ extract `time`, fallback `00:00` Bangkok → stored as `17:00:00Z` (prev UTC day).
+
+**⚠️ Timezone query pattern** — `transfer_at` เก็บ UTC ดังนั้น query ที่ filter ตามวัน Bangkok ต้องใช้ `(transfer_at + INTERVAL '7 hours')::date` ไม่ใช่ `transfer_at::date` (UTC) มิฉะนั้น slip ช่วง Bangkok 00:00–06:59 ตกวันที่ผิด. pg-node OID 1114 parser ถูก configure ใน `src/lib/db.ts` ให้ parse as UTC เพื่อป้องกัน double-conversion ใน Bangkok TZ process.
 
 ## Amount fields
 
