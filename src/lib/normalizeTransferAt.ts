@@ -1,10 +1,10 @@
 /**
  * Normalises a raw pg timestamp value to a UTC ISO 8601 string.
  *
- * pg-node returns timestamptz columns as Date objects. When the value arrives
- * as a plain string (e.g. via a raw query mapping), the string may lack
- * timezone info — in that case we assume Asia/Bangkok (UTC+7) because the DB
- * session timezone is set to Asia/Bangkok.
+ * pg-node returns Date objects for timestamp columns (db.ts sets OID 1114 parser
+ * to treat stored values as UTC). String inputs with an explicit offset are
+ * normalised to UTC; bare strings (no offset) are assumed Asia/Bangkok (UTC+7)
+ * since those originate from UI paths that supply local time.
  */
 export function normalizeTransferAt(raw: unknown): string {
   if (raw instanceof Date) return raw.toISOString();

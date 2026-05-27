@@ -1,4 +1,9 @@
-import { Pool } from 'pg';
+import { Pool, types } from 'pg';
+
+// OID 1114 = timestamp without timezone. pg-types parses these as local time,
+// but all our timestamp columns store UTC values. Parse as UTC to avoid a
+// 7-hour shift when the process timezone is Asia/Bangkok.
+types.setTypeParser(1114, (val: string) => new Date(val.replace(' ', 'T') + 'Z'));
 
 /**
  * Database connection pool using standard environment variables.

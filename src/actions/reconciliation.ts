@@ -151,7 +151,7 @@ export async function getReconciliationReport(
     const outflowSql = `
       SELECT COALESCE(SUM(t.ai_amount), 0) AS total
       FROM transactions t
-      WHERE t.transfer_at::date BETWEEN $1 AND $2
+      WHERE (t.transfer_at + INTERVAL '7 hours')::date BETWEEN $1 AND $2
         AND (
           t.source_project_id = $3
           OR t.target_project_id = $3
@@ -194,7 +194,7 @@ export async function getReconciliationReport(
              pa.account_name, pa.bank_code, pa.account_number
       FROM transactions t
       LEFT JOIN project_accounts pa ON t.project_account_id = pa.id
-      WHERE t.transfer_at::date BETWEEN $1 AND $2
+      WHERE (t.transfer_at + INTERVAL '7 hours')::date BETWEEN $1 AND $2
         AND (
           t.source_project_id = $3
           OR t.target_project_id = $3
@@ -250,7 +250,7 @@ export async function getReconciliationReport(
       SELECT pa.account_name, mt.amount
       FROM manual_transactions mt
       JOIN project_accounts pa ON mt.project_account_id = pa.id
-      WHERE mt.transfer_at::date BETWEEN $1 AND $2
+      WHERE (mt.transfer_at + INTERVAL '7 hours')::date BETWEEN $1 AND $2
         AND (mt.project_id = $3 OR $4 = true)
     `;
 
