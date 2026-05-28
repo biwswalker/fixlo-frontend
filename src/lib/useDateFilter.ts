@@ -8,6 +8,11 @@ function isValidDateParam(s: string): boolean {
   return DATE_REGEX.test(s);
 }
 
+/** Returns today's date in Bangkok timezone as YYYY-MM-DD. */
+export function todayBangkok(now: Date = new Date()): string {
+  return new Date(now.getTime() + 7 * 60 * 60 * 1000).toISOString().slice(0, 10);
+}
+
 /** Returns yesterday's date in Bangkok timezone as YYYY-MM-DD. */
 export function yesterdayBangkok(now: Date = new Date()): string {
   // Bangkok is UTC+7

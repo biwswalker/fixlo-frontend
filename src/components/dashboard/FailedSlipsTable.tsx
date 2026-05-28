@@ -39,6 +39,7 @@ import { toast } from "sonner";
 import { useRouter } from "next/navigation";
 import { Loader2, FileImage, AlertTriangle, Ban } from "lucide-react";
 import { buildTransferAt } from "@/lib/transferAt";
+import { todayBangkok } from "@/lib/useDateFilter";
 
 interface FailedSlipsTableProps {
   slips: FailedSlip[];
@@ -97,7 +98,7 @@ export function FailedSlipsTable({
   const [balanceForm, setBalanceForm] = useState<BalanceForm>({
     project_account_id: "",
     balance_amount: "",
-    date: new Date().toISOString().split("T")[0],
+    date: todayBangkok(),
   });
 
   useEffect(() => {
@@ -132,7 +133,7 @@ export function FailedSlipsTable({
     setBalanceForm({
       project_account_id: "",
       balance_amount: "",
-      date: new Date().toISOString().split("T")[0],
+      date: todayBangkok(),
     });
   };
 
@@ -250,7 +251,7 @@ export function FailedSlipsTable({
                     {slip.target_date || "—"}
                   </TableCell>
                   <TableCell className="text-xs text-gray-500">
-                    {slip.created_at ? new Date(slip.created_at).toLocaleString("th-TH") : "—"}
+                    {slip.created_at ? new Date(slip.created_at).toLocaleString("th-TH", { timeZone: "Asia/Bangkok" }) : "—"}
                   </TableCell>
                   <TableCell className="text-right px-6">
                     <div className="flex items-center justify-end gap-2">
