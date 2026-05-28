@@ -62,31 +62,33 @@ export default function HeaderClient({
 
   const user = session?.user;
   const userRole = user?.role;
+  const dateParam = searchParams?.get("date");
+  const dateSuffix = dateParam ? `?date=${dateParam}` : "";
 
   const navItems = [
     {
       label: "หน้าปัดหลัก",
-      href: `/dashboard/${currentProject}`,
+      href: `/dashboard/${currentProject}${dateSuffix}`,
       icon: LayoutDashboard,
       active: pathname === `/dashboard/${currentProject}`,
     },
     {
       label: "กระทบยอดบัญชี",
-      href: `/dashboard/${currentProject}/reconciliation`,
+      href: `/dashboard/${currentProject}/reconciliation${dateSuffix}`,
       icon: Scale,
       active: pathname === `/dashboard/${currentProject}/reconciliation`,
       hidden: !["owner", "admin"].includes(userRole || ""),
     },
     {
       label: "จับคู่บัญชี",
-      href: `/dashboard/${currentProject}/match`,
+      href: `/dashboard/${currentProject}/match${dateSuffix}`,
       icon: GitMerge,
       active: pathname === `/dashboard/${currentProject}/match`,
       hidden: !["owner", "admin"].includes(userRole || ""),
     },
     {
       label: "จัดการบัญชี",
-      href: `/dashboard/${currentProject}/accounts`,
+      href: `/dashboard/${currentProject}/accounts${dateSuffix}`,
       icon: Building2,
       active: pathname === `/dashboard/${currentProject}/accounts`,
       hidden: !["owner", "admin"].includes(userRole || ""),

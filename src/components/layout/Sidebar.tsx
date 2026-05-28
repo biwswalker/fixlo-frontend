@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname, useParams } from "next/navigation";
+import { usePathname, useParams, useSearchParams } from "next/navigation";
 import { LayoutDashboard, Scale, GitMerge, Building2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -10,35 +10,38 @@ import { useSession } from "next-auth/react";
 export function Sidebar() {
   const pathname = usePathname();
   const params = useParams();
+  const searchParams = useSearchParams();
   const { data: session } = useSession();
   const projectId = (params?.projectId as string) || "all";
 
   const userRole = session?.user?.role;
+  const dateParam = searchParams?.get("date");
+  const dateSuffix = dateParam ? `?date=${dateParam}` : "";
 
   const navItems = [
     {
       label: "หน้าปัดหลัก",
-      href: `/dashboard/${projectId}`,
+      href: `/dashboard/${projectId}${dateSuffix}`,
       icon: LayoutDashboard,
       active: pathname === `/dashboard/${projectId}`,
     },
     {
       label: "กระทบยอดบัญชี",
-      href: `/dashboard/${projectId}/reconciliation`,
+      href: `/dashboard/${projectId}/reconciliation${dateSuffix}`,
       icon: Scale,
       active: pathname === `/dashboard/${projectId}/reconciliation`,
       hidden: !["owner", "admin"].includes(userRole || ""),
     },
     {
       label: "จับคู่บัญชี",
-      href: `/dashboard/${projectId}/match`,
+      href: `/dashboard/${projectId}/match${dateSuffix}`,
       icon: GitMerge,
       active: pathname === `/dashboard/${projectId}/match`,
       hidden: !["owner", "admin"].includes(userRole || ""),
     },
     {
       label: "จัดการบัญชี",
-      href: `/dashboard/${projectId}/accounts`,
+      href: `/dashboard/${projectId}/accounts${dateSuffix}`,
       icon: Building2,
       active: pathname === `/dashboard/${projectId}/accounts`,
       hidden: !["owner", "admin"].includes(userRole || ""),
