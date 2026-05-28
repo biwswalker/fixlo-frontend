@@ -42,9 +42,9 @@ aliases: [transaction, slip]
 | `matching_confidence` | numeric | NULL | — | คะแนน match |
 | `possible_matches` | uuid[] | NULL | — | array candidate accounts |
 | `is_time_anomaly` | boolean | NULL | `false` | เวลาสลิปผิดปกติ? |
-| `transfer_date` | date | NULL | — | จากสลิป (Path B manual fallback เท่านั้น) |
-| `transfer_time` | varchar(20) | NULL | — | จากสลิป (Path B manual fallback เท่านั้น) |
-| `transfer_at` | timestamp | NULL | — | UTC timestamp หลัง convert. Path A: worker สร้างจาก `targetDate+aiOutput.time` Bangkok → UTC. Path B: UI set โดย staff |
+| `transfer_date` | date | NULL | — | จากสลิป (เฉพาะ manual write — staff กรอก) |
+| `transfer_time` | varchar(20) | NULL | — | จากสลิป (เฉพาะ manual write — staff กรอก) |
+| `transfer_at` | timestamp | NULL | — | UTC timestamp. **worker write**: spectre worker สร้างจาก `targetDate+aiOutput.time` Bangkok → UTC. **manual write**: staff กรอกผ่าน UI (`buildTransferAt` แปลง Bangkok → UTC) |
 | `match_breakdown` | jsonb | NULL | — | top-3 candidates + component scores (nameMatched, accountMatched, bankMatched) — ดู [[project_accounts]].aliases |
 | `reject_reason` | text | NULL | — | เหตุผล reject (preset 5 ตัว + free text) — เฉพาะ `REJECTED` |
 | `rejected_by` | text | NULL | — | username admin ที่ reject |
@@ -92,7 +92,7 @@ aliases: [transaction, slip]
 
 ## Two write paths
 
-| | Path A (auto) | Path B (manual fallback) |
+| | worker write (auto) | manual write (UI fallback) |
 |---|---|---|
 | Source | Discord bot → spectre worker | Staff form ใน UI |
 | When | AI extract + match สำเร็จ | AI extract/match ไม่ได้ → staff กรอกเอง |
@@ -104,7 +104,9 @@ aliases: [transaction, slip]
 
 **Worker ใช้ `targetDate` + `aiOutput.time` สร้าง `transfer_at`** — worker.js construct Bangkok string `${targetDate}T${time||"00:00"}:00+07:00` → UTC ISO แล้ว INSERT. ใช้ `targetDate` (จาก Discord message timestamp — reliable) แทน `aiOutput.date` เพื่อป้องกัน OCR year error (เช่น TrueMoney slip แสดง พ.ศ. 2 หลัก — AI อาจอ่าน "69" เป็น "67" → ปีผิด). fallback `aiOutput.date` ถ้าไม่มี targetDate. ถ้า AI ไม่ได้ extract `time`, fallback `00:00` Bangkok → stored as `17:00:00Z` (prev UTC day).
 
-**⚠️ Timezone query pattern** — `transfer_at` เก็บ UTC ดังนั้น query ที่ filter ตามวัน Bangkok ต้องใช้ `(transfer_at + INTERVAL '7 hours')::date` ไม่ใช่ `transfer_at::date` (UTC) มิฉะนั้น slip ช่วง Bangkok 00:00–06:59 ตกวันที่ผิด. pg-node OID 1114 parser ถูก configure ใน `src/lib/db.ts` ให้ parse as UTC เพื่อป้องกัน double-conversion ใน Bangkok TZ process.
+**Manual write ก็เก็บ UTC** — UI form input เป็น Bangkok local. `buildTransferAt(date, time)` ใน `src/lib/transferAt.ts` แปลงเป็น UTC ISO ก่อน INSERT. ทั้ง 2 paths share convention เดียวกัน.
+
+**⚠️ Timezone query pattern** — `transfer_at` เก็บ UTC ดังนั้น query ที่ filter ตามวัน Bangkok ต้องใช้ `(transfer_at AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Bangkok')::date` ไม่ใช่ `transfer_at::date` (UTC) มิฉะนั้น slip ช่วง Bangkok 00:00–06:59 ตกวันที่ผิด. pg-node OID 1114 parser ถูก configure ใน `src/lib/db.ts` ให้ parse as UTC เพื่อป้องกัน double-conversion ใน Bangkok TZ process.
 
 ## Amount fields
 
