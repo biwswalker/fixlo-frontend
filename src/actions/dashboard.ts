@@ -1008,7 +1008,9 @@ export async function getFailedSlips(
       data: result.rows.map((row) => ({
         ...row,
         created_at: row.created_at?.toISOString() || "",
-        target_date: row.target_date?.toISOString?.()?.slice(0, 10) ?? row.target_date ?? null,
+        target_date: row.target_date instanceof Date
+          ? new Date(row.target_date.getTime() + 7 * 60 * 60 * 1000).toISOString().slice(0, 10)
+          : row.target_date ?? null,
       })),
       totalItems,
       totalPages,
@@ -1084,7 +1086,9 @@ export async function getPendingBalanceMatches(
       id: Number(row.id),
       balance_amount: row.balance_amount !== null ? Number(row.balance_amount) : null,
       created_at: row.created_at?.toISOString() || "",
-      date: row.date?.toISOString?.()?.slice(0, 10) ?? String(row.date),
+      date: row.date instanceof Date
+        ? new Date(row.date.getTime() + 7 * 60 * 60 * 1000).toISOString().slice(0, 10)
+        : String(row.date),
       match_breakdown: row.match_breakdown ?? null,
     }));
 
