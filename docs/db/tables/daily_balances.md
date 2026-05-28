@@ -25,15 +25,13 @@ aliases: [daily balance]
 | `discord_message_id` | text | NULL | — | |
 | `platform` | text | NULL | — | platform อะไร? |
 | `source` | text | NULL | `'discord'` | `'discord'` (default) หรือ `'manual'` (admin กรอกเอง) |
-
-## New columns (migration pending)
-
-| Column | Type | Null | Note |
-|---|---|---|---|
 | `project_account_id` | uuid | NULL | FK → [[project_accounts]].id — set by spectre matcher |
-| `matching_status` | text | NOT NULL default `'UNMATCHED'` | `UNMATCHED / PENDING_REVIEW / AUTO_MAPPED / MANUAL_MAPPED` |
+| `matching_status` | text | NOT NULL | default `'UNMATCHED'`. Values: `UNMATCHED / PENDING_REVIEW / AUTO_MAPPED / MANUAL_MAPPED / REJECTED` |
 | `matched_by` | text | NULL | username ของ admin ที่ match manual |
 | `match_breakdown` | jsonb | NULL | top-3 candidates + component scores (nameMatched, bankMatched) — เหมือน [[transactions]].match_breakdown |
+| `reject_reason` | text | NULL | เหตุผล reject (preset หรือ free text สำหรับ "อื่นๆ") |
+| `rejected_by` | text | NULL | username ของ admin ที่ reject |
+| `rejected_at` | timestamptz | NULL | เวลา reject (UTC) |
 
 ## Constraints
 
@@ -59,7 +57,7 @@ Set โดย Gemini AI ใน worker (จาก prompt — ดู [worker.js:15
 
 ⚠️ Case ไม่ normalize (`Apay` vs `BBL` vs `TrueMoney`).
 
-## Dedup constraint (migration pending)
+## Dedup constraint
 
 `UNIQUE(date, discord_message_id)` — ป้องกัน staff ส่งภาพเดิมซ้ำใน Discord. เทียบเท่า `ref_id` UNIQUE ใน [[transactions]].
 
