@@ -661,7 +661,8 @@ export async function getPendingMatches(
   page: number = 1,
   limit: number = 50,
   search?: string,
-  transferDate?: string,
+  dateFrom?: string,
+  dateTo?: string,
 ): Promise<{
   data: TransactionRecord[];
   totalItems: number;
@@ -674,7 +675,8 @@ export async function getPendingMatches(
 
     const OFFSET = (page - 1) * limit;
     const searchFilter = search ? `%${search}%` : null;
-    const dateFilter = transferDate ?? null;
+    const fromFilter = dateFrom ?? null;
+    const toFilter = dateTo ?? null;
 
     const sql = `
       SELECT t.*, p.project_name
@@ -683,7 +685,8 @@ export async function getPendingMatches(
       WHERE (t.source_project_id = $1 OR $2 = true)
         AND t.matching_status IN ('PENDING_REVIEW', 'UNMAPPED')
         AND ($5::text IS NULL OR t.ref_id ILIKE $5 OR t.sender_name ILIKE $5 OR t.sender_acc_num ILIKE $5)
-        AND ($6::date IS NULL OR (t.transfer_at AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Bangkok')::date = $6::date)
+        AND ($6::date IS NULL OR (t.transfer_at AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Bangkok')::date >= $6::date)
+        AND ($7::date IS NULL OR (t.transfer_at AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Bangkok')::date <= $7::date)
       ORDER BY t.created_at DESC
       LIMIT $3 OFFSET $4
     `;
@@ -694,12 +697,13 @@ export async function getPendingMatches(
       WHERE (t.source_project_id = $1 OR $2 = true)
         AND t.matching_status IN ('PENDING_REVIEW', 'UNMAPPED')
         AND ($3::text IS NULL OR t.ref_id ILIKE $3 OR t.sender_name ILIKE $3 OR t.sender_acc_num ILIKE $3)
-        AND ($4::date IS NULL OR (t.transfer_at AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Bangkok')::date = $4::date)
+        AND ($4::date IS NULL OR (t.transfer_at AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Bangkok')::date >= $4::date)
+        AND ($5::date IS NULL OR (t.transfer_at AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Bangkok')::date <= $5::date)
     `;
 
     const [result, countRes] = await Promise.all([
-      query(sql, [project?.id || null, isAll, limit, OFFSET, searchFilter, dateFilter]),
-      query(countSql, [project?.id || null, isAll, searchFilter, dateFilter]),
+      query(sql, [project?.id || null, isAll, limit, OFFSET, searchFilter, fromFilter, toFilter]),
+      query(countSql, [project?.id || null, isAll, searchFilter, fromFilter, toFilter]),
     ]);
 
     const totalItems = Number(countRes.rows[0]?.total || 0);
@@ -1027,7 +1031,8 @@ export async function getPendingBalanceMatches(
   page: number = 1,
   limit: number = 50,
   search?: string,
-  transferDate?: string,
+  dateFrom?: string,
+  dateTo?: string,
 ): Promise<{
   data: import("@/types/dashboard").DailyBalanceRecord[];
   totalItems: number;
@@ -1039,7 +1044,8 @@ export async function getPendingBalanceMatches(
     const project = isAll ? null : await resolveProject(projectId);
     const OFFSET = (page - 1) * limit;
     const searchFilter = search ? `%${search}%` : null;
-    const dateFilter = transferDate ?? null;
+    const fromFilter = dateFrom ?? null;
+    const toFilter = dateTo ?? null;
 
     const sql = `
       SELECT db.*
@@ -1048,7 +1054,8 @@ export async function getPendingBalanceMatches(
       WHERE (pa.project_id = $1 OR $2 = true OR (db.project_name IS NOT NULL AND $2 = false AND pa.id IS NULL))
         AND db.matching_status IN ('PENDING_REVIEW', 'UNMATCHED')
         AND ($5::text IS NULL OR db.account_name ILIKE $5 OR db.platform ILIKE $5)
-        AND ($6::date IS NULL OR db.date = $6::date)
+        AND ($6::date IS NULL OR db.date >= $6::date)
+        AND ($7::date IS NULL OR db.date <= $7::date)
       ORDER BY db.date DESC, db.created_at DESC
       LIMIT $3 OFFSET $4
     `;
@@ -1060,12 +1067,13 @@ export async function getPendingBalanceMatches(
       WHERE (pa.project_id = $1 OR $2 = true OR (db.project_name IS NOT NULL AND $2 = false AND pa.id IS NULL))
         AND db.matching_status IN ('PENDING_REVIEW', 'UNMATCHED')
         AND ($3::text IS NULL OR db.account_name ILIKE $3 OR db.platform ILIKE $3)
-        AND ($4::date IS NULL OR db.date = $4::date)
+        AND ($4::date IS NULL OR db.date >= $4::date)
+        AND ($5::date IS NULL OR db.date <= $5::date)
     `;
 
     const [result, countRes] = await Promise.all([
-      query(sql, [project?.id || null, isAll, limit, OFFSET, searchFilter, dateFilter]),
-      query(countSql, [project?.id || null, isAll, searchFilter, dateFilter]),
+      query(sql, [project?.id || null, isAll, limit, OFFSET, searchFilter, fromFilter, toFilter]),
+      query(countSql, [project?.id || null, isAll, searchFilter, fromFilter, toFilter]),
     ]);
 
     const totalItems = Number(countRes.rows[0]?.total || 0);
@@ -1229,6 +1237,8 @@ export async function batchReRunBalanceMatch(projectId: string) {
 
 export interface AccountSlip {
   id: number | null;
+  /** UUID for manual_transactions rows; null for discord slips */
+  uuid_id: string | null;
   source: "discord" | "manual";
   transfer_at: string;
   sender_name: string | null;
@@ -1244,6 +1254,7 @@ export interface AccountSlip {
   note: string | null;
   transaction_type_id: number | null;
   transaction_subtype: string | null;
+  project_account_id: string | null;
 }
 
 /**
@@ -1258,6 +1269,8 @@ export async function getAccountSlips(
     const discordSql = `
       SELECT
         id,
+        NULL AS uuid_id,
+        project_account_id,
         'discord' AS source,
         transfer_at,
         sender_name,
@@ -1281,7 +1294,9 @@ export async function getAccountSlips(
 
     const manualSql = `
       SELECT
-        id,
+        NULL AS id,
+        id AS uuid_id,
+        project_account_id,
         'manual' AS source,
         transfer_at,
         NULL AS sender_name,
@@ -1312,6 +1327,7 @@ export async function getAccountSlips(
 
     return rows.map((r) => ({
       id: r.id != null ? Number(r.id) : null,
+      uuid_id: r.uuid_id ?? null,
       source: r.source as "discord" | "manual",
       transfer_at: normalizeTransferAt(r.transfer_at),
       sender_name: r.sender_name ?? null,
@@ -1329,6 +1345,7 @@ export async function getAccountSlips(
       note: r.note ?? null,
       transaction_type_id: r.transaction_type_id != null ? Number(r.transaction_type_id) : null,
       transaction_subtype: r.transaction_subtype ?? null,
+      project_account_id: r.project_account_id ?? null,
     }));
   } catch (error) {
     logger.error("getAccountSlips", "Failed to fetch account slips", error);
@@ -1432,6 +1449,190 @@ export async function createManualBalance(
 }
 
 // ---------------------------------------------------------------------------
+// Edit/Delete/Re-match daily_balances (#93)
+// ---------------------------------------------------------------------------
+
+export interface DailyBalanceChanges {
+  balance_amount?: number;
+  date?: string;
+  note?: string | null;
+  project_account_id?: string | null;
+}
+
+export async function editDailyBalance(
+  id: number,
+  changes: DailyBalanceChanges,
+  note?: string,
+): Promise<{ success: boolean; error?: string }> {
+  const session = await getServerAuthSession();
+  if (!session || !hasPermission(session.user.role, "manage_projects")) {
+    return { success: false, error: "Unauthorized" };
+  }
+
+  const sourceRes = await query(`SELECT source FROM daily_balances WHERE id = $1`, [id]);
+  const source: string = sourceRes.rows[0]?.source ?? "discord";
+
+  const { validateEdit } = await import("@/lib/editValidation");
+  const { withEditAudit } = await import("@/lib/auditFields");
+
+  const validation = validateEdit({ table: "daily_balances", source }, Object.keys(changes));
+  if (!validation.allowed) {
+    return { success: false, error: validation.denyReason };
+  }
+
+  const audit = withEditAudit({}, { by: session.user.username, note });
+  const sets: string[] = [];
+  const params: unknown[] = [];
+  let idx = 1;
+
+  for (const [key, value] of Object.entries(changes)) {
+    sets.push(`${key} = $${idx++}`);
+    params.push(value);
+  }
+  sets.push(`last_edited_by = $${idx++}`);
+  params.push(audit.last_edited_by);
+  sets.push(`last_edited_at = $${idx++}`);
+  params.push(audit.last_edited_at);
+  if (note !== undefined) {
+    sets.push(`last_edited_note = $${idx++}`);
+    params.push(audit.last_edited_note ?? null);
+  }
+  params.push(id);
+
+  try {
+    await query(`UPDATE daily_balances SET ${sets.join(", ")} WHERE id = $${idx}`, params);
+    revalidatePath("/dashboard/[projectId]/reconciliation", "page");
+    revalidatePath("/dashboard/[projectId]/match", "page");
+    return { success: true };
+  } catch (error) {
+    logger.error("editDailyBalance", "Failed to edit daily balance", error);
+    return { success: false, error: "Failed to edit daily balance" };
+  }
+}
+
+export async function deleteDailyBalance(
+  id: number,
+  reason: string,
+): Promise<{ success: boolean; error?: string }> {
+  const session = await getServerAuthSession();
+  if (!session || !hasPermission(session.user.role, "manage_projects")) {
+    return { success: false, error: "Unauthorized" };
+  }
+  if (!reason.trim()) {
+    return { success: false, error: "Delete reason is required" };
+  }
+
+  const { withDeleteAudit } = await import("@/lib/auditFields");
+  const audit = withDeleteAudit({ by: session.user.username, reason });
+
+  try {
+    await query("BEGIN");
+    await query(
+      `UPDATE daily_balances
+          SET deleted_at = $1, deleted_by = $2, delete_reason = $3
+        WHERE id = $4`,
+      [audit.deleted_at, audit.deleted_by, audit.delete_reason, id],
+    );
+    await query(`DELETE FROM daily_balances WHERE id = $1`, [id]);
+    await query("COMMIT");
+    revalidatePath("/dashboard/[projectId]/reconciliation", "page");
+    revalidatePath("/dashboard/[projectId]/match", "page");
+    return { success: true };
+  } catch (error) {
+    await query("COMMIT").catch(() => {});
+    logger.error("deleteDailyBalance", "Failed to delete daily balance", error);
+    return { success: false, error: "Failed to delete daily balance" };
+  }
+}
+
+export async function rematchDailyBalance(
+  id: number,
+  projectAccountId: string,
+): Promise<{ success: boolean; error?: string; warning?: string }> {
+  const session = await getServerAuthSession();
+  if (!session || !hasPermission(session.user.role, "manage_projects")) {
+    return { success: false, error: "Unauthorized" };
+  }
+
+  const actor = session.user.username ?? session.user.name ?? "admin";
+
+  try {
+    // Load scanned name for alias auto-append (same as confirmBalanceMapping)
+    const scannedRes = await query(
+      `SELECT account_name FROM daily_balances WHERE id = $1`,
+      [id],
+    );
+    const scannedName: string | null = scannedRes.rows[0]?.account_name ?? null;
+
+    const targetRes = await query(
+      `SELECT id, project_id, account_name, account_number, bank_code, aliases, aliases_meta, created_at
+       FROM project_accounts WHERE id = $1`,
+      [projectAccountId],
+    );
+    const target = targetRes.rows[0];
+
+    let warning: string | undefined;
+
+    if (target && scannedName) {
+      const siblingsRes = await query(
+        `SELECT id, project_id, account_name, account_number, bank_code, aliases, aliases_meta, created_at
+         FROM project_accounts
+         WHERE project_id = $1 AND deleted_at IS NULL`,
+        [target.project_id],
+      );
+      const { proposeAliasAddition } = await import("@/lib/accountAliases");
+      const proposal = proposeAliasAddition(target, scannedName, siblingsRes.rows, actor, id);
+      if (proposal.ok) {
+        await query(
+          `UPDATE project_accounts SET aliases = $1, aliases_meta = $2 WHERE id = $3`,
+          [JSON.stringify(proposal.aliasesNext), JSON.stringify(proposal.aliasesMetaNext), projectAccountId],
+        );
+      } else if (proposal.reason === "cross_master_collision") {
+        const colliding = siblingsRes.rows.find((r) => r.id === proposal.collidingAccountId);
+        warning = `ไม่สามารถเพิ่ม alias อัตโนมัติได้: ชื่อ "${scannedName}" ชนกับ alias ของบัญชี "${colliding?.account_name ?? proposal.collidingAccountId}"`;
+      }
+    }
+
+    await query(
+      `UPDATE daily_balances
+         SET project_account_id = $1,
+             matching_status    = 'MANUAL_MAPPED',
+             matched_by         = $2,
+             last_edited_by     = $2,
+             last_edited_at     = NOW()
+       WHERE id = $3`,
+      [projectAccountId, actor, id],
+    );
+    revalidatePath("/dashboard/[projectId]/match", "page");
+    revalidatePath("/dashboard/[projectId]/reconciliation", "page");
+    return warning ? { success: true, warning } : { success: true };
+  } catch (error) {
+    logger.error("rematchDailyBalance", "Failed to re-match daily balance", error);
+    return { success: false, error: "Failed to re-match daily balance" };
+  }
+}
+
+export async function getDailyBalanceForAccountDate(
+  projectAccountId: string,
+  date: string,
+): Promise<{ id: number; source: string; matching_status: string } | null> {
+  try {
+    const res = await query(
+      `SELECT id, source, matching_status
+         FROM daily_balances
+        WHERE project_account_id = $1 AND date = $2::date
+        LIMIT 1`,
+      [projectAccountId, date],
+    );
+    if (!res.rows[0]) return null;
+    const r = res.rows[0];
+    return { id: Number(r.id), source: String(r.source), matching_status: String(r.matching_status) };
+  } catch {
+    return null;
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Slip Adjustment (#57)
 // ---------------------------------------------------------------------------
 
@@ -1453,16 +1654,18 @@ export async function adjustTransactionAmount(
     if (adjustedAmount !== null) {
       await query(
         `UPDATE transactions
-         SET adjusted_amount = $1, adjusted_by = $2, adjusted_at = NOW(), adjust_note = $3
+         SET adjusted_amount = $1, adjusted_by = $2, adjusted_at = NOW(), adjust_note = $3,
+             last_edited_by = $2, last_edited_at = NOW()
          WHERE id = $4`,
         [adjustedAmount, session.user.username, note ?? null, transactionId],
       );
     } else {
       await query(
         `UPDATE transactions
-         SET adjusted_amount = NULL, adjusted_by = NULL, adjusted_at = NULL, adjust_note = NULL
-         WHERE id = $1`,
-        [transactionId],
+         SET adjusted_amount = NULL, adjusted_by = NULL, adjusted_at = NULL, adjust_note = NULL,
+             last_edited_by = $1, last_edited_at = NOW()
+         WHERE id = $2`,
+        [session.user.username, transactionId],
       );
     }
     revalidatePath("/dashboard/[projectId]/reconciliation", "page");
@@ -1470,6 +1673,68 @@ export async function adjustTransactionAmount(
   } catch (error) {
     logger.error("adjustTransactionAmount", "Failed to adjust transaction amount", error);
     return { success: false, error: "Failed to adjust transaction amount" };
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Edit Discord Slip Metadata (#92)
+// ---------------------------------------------------------------------------
+
+export interface TransactionChanges {
+  transfer_at?: string;
+  transaction_type_id?: number | null;
+  transaction_subtype?: string | null;
+  project_account_id?: string | null;
+}
+
+export async function editTransaction(
+  id: number,
+  changes: TransactionChanges,
+  note?: string,
+): Promise<{ success: boolean; error?: string }> {
+  const session = await getServerAuthSession();
+  if (!session || !hasPermission(session.user.role, "manage_projects")) {
+    return { success: false, error: "Unauthorized" };
+  }
+
+  const { validateEdit } = await import("@/lib/editValidation");
+  const { withEditAudit } = await import("@/lib/auditFields");
+
+  const validation = validateEdit({ table: "transactions" }, Object.keys(changes));
+  if (!validation.allowed) {
+    return { success: false, error: validation.denyReason };
+  }
+
+  const audit = withEditAudit({}, { by: session.user.username, note });
+  const sets: string[] = [];
+  const params: unknown[] = [];
+  let idx = 1;
+
+  for (const [key, value] of Object.entries(changes)) {
+    sets.push(`${key} = $${idx++}`);
+    params.push(value);
+  }
+  sets.push(`last_edited_by = $${idx++}`);
+  params.push(audit.last_edited_by);
+  sets.push(`last_edited_at = $${idx++}`);
+  params.push(audit.last_edited_at);
+  if (note !== undefined) {
+    sets.push(`last_edited_note = $${idx++}`);
+    params.push(audit.last_edited_note ?? null);
+  }
+  params.push(id);
+
+  try {
+    await query(
+      `UPDATE transactions SET ${sets.join(", ")} WHERE id = $${idx}`,
+      params,
+    );
+    revalidatePath("/dashboard/[projectId]/reconciliation", "page");
+    revalidatePath("/dashboard/[projectId]/match", "page");
+    return { success: true };
+  } catch (error) {
+    logger.error("editTransaction", "Failed to edit transaction", error);
+    return { success: false, error: "Failed to edit transaction" };
   }
 }
 
@@ -1652,6 +1917,106 @@ export async function updateSlipType(
  * Returns distinct non-null transaction_subtype values across both slip tables.
  * Used for autocomplete in the slip type editor.
  */
+// ---------------------------------------------------------------------------
+// Edit/Delete Manual Transactions (#91)
+// ---------------------------------------------------------------------------
+
+export interface ManualTransactionChanges {
+  amount?: number;
+  transfer_at?: string;
+  project_account_id?: string;
+  transaction_type_id?: number | null;
+  transaction_subtype?: string | null;
+  note?: string | null;
+  image_path?: string | null;
+}
+
+export async function editManualTransaction(
+  id: string,
+  changes: ManualTransactionChanges,
+  note?: string,
+): Promise<{ success: boolean; error?: string }> {
+  const session = await getServerAuthSession();
+  if (!session || !hasPermission(session.user.role, "manage_projects")) {
+    return { success: false, error: "Unauthorized" };
+  }
+
+  const { validateEdit } = await import("@/lib/editValidation");
+  const { withEditAudit } = await import("@/lib/auditFields");
+
+  const validation = validateEdit({ table: "manual_transactions" }, Object.keys(changes));
+  if (!validation.allowed) {
+    return { success: false, error: validation.denyReason };
+  }
+
+  const audit = withEditAudit({}, { by: session.user.username, note });
+  const sets: string[] = [];
+  const params: unknown[] = [];
+  let idx = 1;
+
+  for (const [key, value] of Object.entries(changes)) {
+    sets.push(`${key} = $${idx++}`);
+    params.push(value);
+  }
+  sets.push(`last_edited_by = $${idx++}`);
+  params.push(audit.last_edited_by);
+  sets.push(`last_edited_at = $${idx++}`);
+  params.push(audit.last_edited_at);
+  if (note !== undefined) {
+    sets.push(`last_edited_note = $${idx++}`);
+    params.push(audit.last_edited_note ?? null);
+  }
+  params.push(id);
+
+  try {
+    await query(
+      `UPDATE manual_transactions SET ${sets.join(", ")} WHERE id = $${idx}`,
+      params,
+    );
+    revalidatePath("/dashboard/[projectId]/reconciliation", "page");
+    return { success: true };
+  } catch (error) {
+    logger.error("editManualTransaction", "Failed to edit manual transaction", error);
+    return { success: false, error: "Failed to edit manual transaction" };
+  }
+}
+
+export async function deleteManualTransaction(
+  id: string,
+  reason: string,
+): Promise<{ success: boolean; error?: string }> {
+  const session = await getServerAuthSession();
+  if (!session || !hasPermission(session.user.role, "manage_projects")) {
+    return { success: false, error: "Unauthorized" };
+  }
+
+  if (!reason.trim()) {
+    return { success: false, error: "Delete reason is required" };
+  }
+
+  const { withDeleteAudit } = await import("@/lib/auditFields");
+  const audit = withDeleteAudit({ by: session.user.username, reason });
+
+  try {
+    // Stamp audit columns then hard-delete in one transaction
+    await query("BEGIN");
+    await query(
+      `UPDATE manual_transactions
+          SET deleted_at = $1, deleted_by = $2, delete_reason = $3
+        WHERE id = $4`,
+      [audit.deleted_at, audit.deleted_by, audit.delete_reason, id],
+    );
+    await query(`DELETE FROM manual_transactions WHERE id = $1`, [id]);
+    await query("COMMIT");
+    revalidatePath("/dashboard/[projectId]/reconciliation", "page");
+    return { success: true };
+  } catch (error) {
+    await query("COMMIT").catch(() => {});
+    logger.error("deleteManualTransaction", "Failed to delete manual transaction", error);
+    return { success: false, error: "Failed to delete manual transaction" };
+  }
+}
+
 export async function listSlipSubtypes(): Promise<string[]> {
   try {
     const res = await query(

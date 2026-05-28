@@ -17,7 +17,9 @@ import { FailedSlipsTable } from "@/components/dashboard/FailedSlipsTable";
 import { ReRunMatchingButton } from "@/components/dashboard/ReRunMatchingButton";
 import { ReRunBalanceMatchingButton } from "@/components/dashboard/ReRunBalanceMatchingButton";
 import { MatchSearchBar } from "@/components/dashboard/MatchSearchBar";
-import { TransferDatePicker } from "@/components/dashboard/TransferDatePicker";
+import { GlobalDateBar } from "@/components/dashboard/GlobalDateBar";
+import { rangeFor } from "@/lib/dateRange";
+import type { Period } from "@/lib/periodUtils";
 import { GitMerge } from "lucide-react";
 import Link from "next/link";
 
@@ -26,7 +28,7 @@ export default async function ManualMatchPage({
   searchParams,
 }: {
   params: Promise<{ projectId: string }>;
-  searchParams: Promise<{ page?: string; limit?: string; query?: string; tab?: string; transferDate?: string }>;
+  searchParams: Promise<{ page?: string; limit?: string; query?: string; tab?: string; transferDate?: string; date?: string; period?: string }>;
 }) {
   const session = await getServerAuthSession();
 
@@ -35,7 +37,10 @@ export default async function ManualMatchPage({
   }
 
   const { projectId } = await params;
-  const { page = "1", limit = "50", query, tab = "slip", transferDate } = await searchParams;
+  const { page = "1", limit = "50", query, tab = "slip", transferDate, date, period = "day" } = await searchParams;
+
+  // Backward compat: ?transferDate= seeds the date if ?date= is absent
+  const activeDate = date ?? transferDate;
 
   const project = await getProjectByName(projectId);
   if (!project && projectId !== "all") {
@@ -47,16 +52,26 @@ export default async function ManualMatchPage({
 
   const projectAccounts = await getProjectAccounts(projectId);
 
+  const activePeriod = (["day", "week", "month", "year"].includes(period) ? period : "day") as Period;
+  let dateFrom: string | undefined;
+  let dateTo: string | undefined;
+  if (activeDate) {
+    const d = new Date(`${activeDate}T00:00:00.000Z`);
+    const { from, to } = rangeFor(d, activePeriod);
+    dateFrom = from.toISOString().slice(0, 10);
+    dateTo = to.toISOString().slice(0, 10);
+  }
+
   const isSlipTab = tab === "slip" || tab === undefined;
   const isBalanceTab = tab === "balance";
   const isFailedTab = tab === "failed";
 
   const [slipResult, balanceResult, failedResult, slipCount, balanceCount, failedCount] = await Promise.all([
     isSlipTab
-      ? getPendingMatches(projectId, Number(page), Number(limit), query, transferDate)
+      ? getPendingMatches(projectId, Number(page), Number(limit), query, dateFrom, dateTo)
       : Promise.resolve({ data: [], totalPages: 0, totalItems: 0, currentPage: 1 }),
     isBalanceTab
-      ? getPendingBalanceMatches(projectId, Number(page), Number(limit), query, transferDate)
+      ? getPendingBalanceMatches(projectId, Number(page), Number(limit), query, dateFrom, dateTo)
       : Promise.resolve({ data: [], totalPages: 0, totalItems: 0, currentPage: 1 }),
     isFailedTab
       ? getFailedSlips(projectId, Number(page), Number(limit), query)
@@ -85,9 +100,7 @@ export default async function ManualMatchPage({
             <MatchSearchBar />
           </Suspense>
           {(isSlipTab || isBalanceTab) && (
-            <Suspense>
-              <TransferDatePicker currentDate={transferDate} />
-            </Suspense>
+            <GlobalDateBar showPeriod pageKey="match" />
           )}
           {isSlipTab && <ReRunMatchingButton projectId={projectId} />}
           {isBalanceTab && <ReRunBalanceMatchingButton projectId={projectId} />}

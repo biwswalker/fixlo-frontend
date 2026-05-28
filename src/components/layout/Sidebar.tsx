@@ -46,33 +46,61 @@ export function Sidebar() {
   ].filter((item) => !item.hidden);
 
   return (
-    <aside className="fixed inset-y-0 left-0 z-10 hidden w-[72px] flex-col border-r bg-white/95 backdrop-blur supports-[backdrop-filter]:bg-white/60 sm:flex">
-      <div className="flex justify-center py-6 border-b border-gray-100/50">
-        <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-blue-600 text-white font-bold text-lg shadow-sm shadow-blue-600/20 transition-transform hover:scale-105">
-          Fx
+    <>
+      {/* Desktop sidebar */}
+      <aside className="fixed inset-y-0 left-0 z-10 hidden w-[72px] flex-col border-r bg-white/95 backdrop-blur supports-[backdrop-filter]:bg-white/60 sm:flex">
+        <div className="flex justify-center py-6 border-b border-gray-100/50">
+          <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-blue-600 text-white font-bold text-lg shadow-sm shadow-blue-600/20 transition-transform hover:scale-105">
+            Fx
+          </div>
         </div>
-      </div>
-      <nav className="flex flex-col items-center gap-6 px-2 py-8">
+        <nav className="flex flex-col items-center gap-6 px-2 py-8">
+          {navItems.map((item) => (
+            <Link
+              key={item.label}
+              href={item.href}
+              title={item.label}
+              className={cn(
+                "group flex h-12 w-12 items-center justify-center rounded-xl transition-all hover:shadow-sm",
+                item.active
+                  ? "bg-blue-600 text-white shadow-md shadow-blue-600/20"
+                  : "text-gray-400 hover:bg-blue-50 hover:text-blue-600",
+              )}
+            >
+              <item.icon
+                className="h-6 w-6 transition-transform group-hover:scale-110"
+                strokeWidth={1.5}
+              />
+              <span className="sr-only">{item.label}</span>
+            </Link>
+          ))}
+        </nav>
+      </aside>
+
+      {/* Mobile bottom navigation */}
+      <nav className="fixed bottom-0 left-0 right-0 z-30 flex items-center justify-around border-t border-gray-100 bg-white/95 backdrop-blur supports-[backdrop-filter]:bg-white/60 pb-safe sm:hidden">
         {navItems.map((item) => (
           <Link
             key={item.label}
             href={item.href}
-            title={item.label}
             className={cn(
-              "group flex h-12 w-12 items-center justify-center rounded-xl transition-all hover:shadow-sm",
-              item.active
-                ? "bg-blue-600 text-white shadow-md shadow-blue-600/20"
-                : "text-gray-400 hover:bg-blue-50 hover:text-blue-600",
+              "flex flex-col items-center gap-1 px-4 py-2.5 min-w-0 flex-1 transition-colors",
+              item.active ? "text-blue-600" : "text-gray-400",
             )}
           >
             <item.icon
-              className="h-6 w-6 transition-transform group-hover:scale-110"
+              className={cn(
+                "h-5 w-5 transition-transform",
+                item.active && "scale-110",
+              )}
               strokeWidth={1.5}
             />
-            <span className="sr-only">{item.label}</span>
+            <span className="text-[10px] font-medium leading-none truncate">
+              {item.label}
+            </span>
           </Link>
         ))}
       </nav>
-    </aside>
+    </>
   );
 }

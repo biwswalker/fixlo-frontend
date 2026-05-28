@@ -36,8 +36,9 @@ import type { BalanceMatchBreakdown } from "@/lib/balanceMatcher";
 import { confirmBalanceMapping } from "@/actions/dashboard";
 import { formatBaht } from "@/lib/utils";
 import { toast } from "sonner";
-import { FileImage, HelpCircle, Loader2, Sparkles } from "lucide-react";
+import { FileImage, HelpCircle, Loader2, Sparkles, FileText } from "lucide-react";
 import { useRouter } from "next/navigation";
+import { DailyBalanceDrawer, type DailyBalanceInfo } from "@/components/dashboard/DailyBalanceDrawer";
 
 function BalanceBreakdownPopover({
   breakdown,
@@ -156,6 +157,8 @@ interface PendingBalanceMatchesTableProps {
   totalItems: number;
   currentPage: number;
   limit: number;
+  userRole?: string | null;
+  projectId?: string;
 }
 
 export function PendingBalanceMatchesTable({
@@ -165,10 +168,14 @@ export function PendingBalanceMatchesTable({
   totalItems,
   currentPage,
   limit,
+  userRole,
+  projectId = "all",
 }: PendingBalanceMatchesTableProps) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
   const [mappings, setMappings] = useState<Record<number, string>>({});
+  const [detailBalance, setDetailBalance] = useState<DailyBalanceInfo | null>(null);
+  const canManage = ["owner", "admin"].includes(userRole ?? "");
 
   const handleMapChange = (id: number, accountId: string) => {
     setMappings((prev) => ({ ...prev, [id]: accountId }));
@@ -213,6 +220,7 @@ export function PendingBalanceMatchesTable({
     record.match_breakdown?.candidates.slice(0, 3).map((c) => c.accountId) ?? [];
 
   return (
+    <>
     <Card className="border-none shadow-xl shadow-gray-200/50 rounded-2xl overflow-hidden bg-white">
       <CardContent className="p-0">
         <Table>
@@ -338,14 +346,36 @@ export function PendingBalanceMatchesTable({
                       )}
                     </TableCell>
                     <TableCell className="text-right px-6">
-                      <Button
-                        size="sm"
-                        className="bg-blue-600 hover:bg-blue-700 text-white rounded-xl px-6 h-9 shadow-lg shadow-blue-600/20 transition-all active:scale-95 disabled:opacity-50 font-bold text-xs"
-                        onClick={() => handleConfirm(rec.id)}
-                        disabled={isPending || !mappings[rec.id]}
-                      >
-                        {isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : "ยืนยัน"}
-                      </Button>
+                      <div className="flex gap-2 justify-end">
+                        {canManage && (
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            className="h-9 px-3 rounded-xl text-gray-500 hover:text-blue-600"
+                            title="รายละเอียด / แก้ไข"
+                            onClick={() => setDetailBalance({
+                              id: rec.id,
+                              date: rec.date,
+                              balance_amount: rec.balance_amount,
+                              account_name: rec.account_name,
+                              source: rec.source ?? "discord",
+                              matching_status: rec.matching_status,
+                              project_account_id: rec.project_account_id,
+                              image_path: rec.image_path,
+                            })}
+                          >
+                            <FileText className="h-4 w-4" />
+                          </Button>
+                        )}
+                        <Button
+                          size="sm"
+                          className="bg-blue-600 hover:bg-blue-700 text-white rounded-xl px-6 h-9 shadow-lg shadow-blue-600/20 transition-all active:scale-95 disabled:opacity-50 font-bold text-xs"
+                          onClick={() => handleConfirm(rec.id)}
+                          disabled={isPending || !mappings[rec.id]}
+                        >
+                          {isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : "ยืนยัน"}
+                        </Button>
+                      </div>
                     </TableCell>
                   </TableRow>
                 );
@@ -399,5 +429,14 @@ export function PendingBalanceMatchesTable({
         </div>
       </CardContent>
     </Card>
+    <DailyBalanceDrawer
+      balance={detailBalance}
+      open={detailBalance !== null}
+      onClose={() => setDetailBalance(null)}
+      canManage={canManage}
+      projectId={projectId}
+      onChanged={() => router.refresh()}
+    />
+    </>
   );
 }

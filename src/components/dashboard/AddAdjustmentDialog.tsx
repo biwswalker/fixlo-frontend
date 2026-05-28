@@ -34,11 +34,14 @@ import {
   createManualBalance,
   listTransactionTypes,
   listSlipSubtypes,
+  getDailyBalanceForAccountDate,
 } from "@/actions/dashboard";
 import type { TransactionType } from "@/actions/dashboard";
 import type { ProjectAccount } from "@/types/dashboard";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
+import { DailyBalanceDrawer, type DailyBalanceInfo } from "@/components/dashboard/DailyBalanceDrawer";
+import { AlertTriangle } from "lucide-react";
 
 interface AddAdjustmentDialogProps {
   projectId: string;
@@ -74,6 +77,10 @@ export function AddAdjustmentDialog({ projectId }: AddAdjustmentDialogProps) {
   const [balImageUploading, setBalImageUploading] = useState(false);
   const balFileRef = useRef<HTMLInputElement>(null);
 
+  // Pre-check: existing balance for same (account, date)
+  const [existingBalance, setExistingBalance] = useState<{ id: number; source: string; matching_status: string } | null>(null);
+  const [editBalanceTarget, setEditBalanceTarget] = useState<DailyBalanceInfo | null>(null);
+
   useEffect(() => {
     if (!open) return;
     let cancelled = false;
@@ -92,6 +99,17 @@ export function AddAdjustmentDialog({ projectId }: AddAdjustmentDialogProps) {
   }, [open, projectId]);
 
   const close = () => setOpen(false);
+
+  // Reactive pre-check: when both balAccount and balDate are set, check for existing row
+  useEffect(() => {
+    if (!balAccount || !balDate) { setExistingBalance(null); return; }
+    let cancelled = false;
+    const dateStr = format(balDate, "yyyy-MM-dd");
+    getDailyBalanceForAccountDate(balAccount, dateStr).then((row) => {
+      if (!cancelled) setExistingBalance(row);
+    });
+    return () => { cancelled = true; };
+  }, [balAccount, balDate]);
 
   const uploadImage = async (
     file: File,
@@ -173,6 +191,7 @@ export function AddAdjustmentDialog({ projectId }: AddAdjustmentDialogProps) {
   };
 
   return (
+    <>
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger
         render={
@@ -301,13 +320,60 @@ export function AddAdjustmentDialog({ projectId }: AddAdjustmentDialogProps) {
                 className="rounded-xl text-sm min-h-[60px]" />
             </div>
 
-            <Button className="w-full bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl" onClick={handleManualBalance} disabled={isPending || balImageUploading}>
+            {existingBalance && (
+              <div className="flex items-start gap-2 rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800">
+                <AlertTriangle className="h-4 w-4 text-amber-500 shrink-0 mt-0.5" />
+                <div>
+                  <p className="font-medium">
+                    บัญชีนี้มียอดคงเหลือวันที่ {format(balDate, "d MMM yyyy", { locale: th })} อยู่แล้ว
+                    (source: {existingBalance.source})
+                  </p>
+                  <Button
+                    size="sm"
+                    variant="link"
+                    className="h-auto p-0 text-xs text-amber-700 underline mt-1"
+                    onClick={() => {
+                      const acct = accounts.find((a) => a.id === balAccount);
+                      setEditBalanceTarget({
+                        id: existingBalance.id,
+                        date: format(balDate, "yyyy-MM-dd"),
+                        balance_amount: null,
+                        account_name: acct?.account_name ?? null,
+                        source: existingBalance.source,
+                        matching_status: existingBalance.matching_status,
+                        project_account_id: balAccount,
+                      });
+                      close();
+                    }}
+                  >
+                    ไปแก้ไขรายการเดิม →
+                  </Button>
+                </div>
+              </div>
+            )}
+
+            <Button
+              className="w-full bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl"
+              onClick={handleManualBalance}
+              disabled={isPending || balImageUploading || !!existingBalance}
+            >
               {isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : "บันทึก Manual Balance"}
             </Button>
           </TabsContent>
         </Tabs>
       </DialogContent>
     </Dialog>
+    {editBalanceTarget && (
+      <DailyBalanceDrawer
+        balance={editBalanceTarget}
+        open={true}
+        onClose={() => setEditBalanceTarget(null)}
+        canManage
+        projectId={projectId}
+        onChanged={() => setEditBalanceTarget(null)}
+      />
+    )}
+    </>
   );
 }
 

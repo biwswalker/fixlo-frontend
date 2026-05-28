@@ -23,13 +23,30 @@ import { computePerAccountInflow } from "@/lib/inflowFormula";
 import {
   getAccountSlips, adjustTransactionAmount, rejectTransaction, batchRejectTransactions,
   updateSlipType, listTransactionTypes, listSlipSubtypes,
+  editManualTransaction, deleteManualTransaction, editTransaction,
 } from "@/actions/dashboard";
 import type { AccountLevelStat } from "@/actions/reconciliation";
 import type { AccountSlip, RejectPreset, TransactionType } from "@/actions/dashboard";
 import { format } from "date-fns";
 import { th } from "date-fns/locale";
 import { TZDate } from "@date-fns/tz";
-import { ArrowUpFromLine, Loader2, ExternalLink, Pencil, Image, FileText, XCircle } from "lucide-react";
+
+function utcToDatetimeLocal(utcIso: string): string {
+  try {
+    const bangkokMs = new Date(utcIso).getTime() + 7 * 60 * 60 * 1000;
+    return new Date(bangkokMs).toISOString().slice(0, 16);
+  } catch { return ""; }
+}
+
+function datetimeLocalToUtc(local: string): string {
+  if (!local) return "";
+  const [datePart, timePart] = local.split("T");
+  const [year, month, day] = datePart.split("-").map(Number);
+  const [hour, minute] = timePart.split(":").map(Number);
+  return new Date(Date.UTC(year, month - 1, day, hour - 7, minute)).toISOString();
+}
+import { ArrowUpFromLine, Loader2, ExternalLink, Pencil, Image, FileText, XCircle, Trash2, AlertTriangle, Settings } from "lucide-react";
+import { DailyBalanceDrawer, type DailyBalanceInfo } from "@/components/dashboard/DailyBalanceDrawer";
 import { toast } from "sonner";
 import {
   Select,
@@ -136,6 +153,316 @@ function AdjustPopover({ slip, onSaved }: AdjustPopoverProps) {
   );
 }
 
+interface DiscordSlipEditDialogProps {
+  slip: AccountSlip;
+  open: boolean;
+  onClose: () => void;
+  onSaved: (updated: AccountSlip) => void;
+}
+
+function DiscordSlipEditDialog({ slip, open, onClose, onSaved }: DiscordSlipEditDialogProps) {
+  const [transferAt, setTransferAt] = useState(slip.transfer_at);
+
+  React.useEffect(() => {
+    if (open) { setTransferAt(slip.transfer_at); }
+  }, [open, slip.transfer_at]);
+  const [editNote, setEditNote] = useState("");
+  const [warnOpen, setWarnOpen] = useState(false);
+  const [pendingTransferAt, setPendingTransferAt] = useState<string | null>(null);
+  const [isPending, start] = useTransition();
+
+  const bangkokDate = (iso: string) => {
+    try {
+      return format(new TZDate(new Date(iso), "Asia/Bangkok"), "d MMM yyyy HH:mm", { locale: th });
+    } catch {
+      return iso;
+    }
+  };
+
+  const handleSave = () => {
+    if (!slip.id) return;
+    const newTransferAt = transferAt;
+    const oldDate = bangkokDate(slip.transfer_at);
+    const newDate = bangkokDate(newTransferAt);
+    if (newDate !== oldDate && !warnOpen) {
+      setPendingTransferAt(newTransferAt);
+      setWarnOpen(true);
+      return;
+    }
+    commitSave(newTransferAt);
+  };
+
+  const commitSave = (finalTransferAt: string) => {
+    if (!slip.id) return;
+    start(async () => {
+      const res = await editTransaction(
+        slip.id!,
+        { transfer_at: finalTransferAt },
+        editNote || undefined,
+      );
+      if (res.success) {
+        toast.success("บันทึกการแก้ไขสำเร็จ");
+        onSaved({ ...slip, transfer_at: finalTransferAt });
+        setWarnOpen(false);
+        onClose();
+      } else {
+        toast.error(res.error || "เกิดข้อผิดพลาด");
+      }
+    });
+  };
+
+  return (
+    <>
+      <Dialog open={open} onOpenChange={(v) => { if (!v) onClose(); }}>
+        <DialogContent showCloseButton className="max-w-sm">
+          <div className="font-semibold text-sm mb-3">แก้ไข Metadata Discord Slip</div>
+          <p className="text-xs text-muted-foreground mb-3">
+            ⚠️ AI fields (ai_amount, ref_id, acc_name, image) ไม่สามารถแก้ไขได้<br />
+            ใช้ปุ่ม "แก้ไขจำนวน" สำหรับ override ยอด
+          </p>
+          <div className="space-y-3 text-sm">
+            <div>
+              <label className="text-xs text-muted-foreground mb-1 block">เวลาโอน (เวลาไทย)</label>
+              <input
+                type="datetime-local"
+                value={utcToDatetimeLocal(transferAt)}
+                onChange={(e) => setTransferAt(datetimeLocalToUtc(e.target.value))}
+                className="w-full h-8 rounded-md border border-input bg-background px-3 text-sm"
+              />
+            </div>
+            <div>
+              <label className="text-xs text-muted-foreground mb-1 block">บันทึกการแก้ไข (ไม่บังคับ)</label>
+              <Input value={editNote} onChange={(e) => setEditNote(e.target.value)} className="h-8 text-sm" placeholder="เหตุผลการแก้ไข..." />
+            </div>
+          </div>
+          <div className="flex gap-2 mt-4 justify-end">
+            <Button variant="outline" size="sm" onClick={onClose}>ยกเลิก</Button>
+            <Button size="sm" onClick={handleSave} disabled={isPending}>
+              {isPending && <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" />}
+              บันทึก
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+      <Dialog open={warnOpen} onOpenChange={(v) => { if (!v) setWarnOpen(false); }}>
+        <DialogContent showCloseButton className="max-w-sm">
+          <div className="flex items-start gap-2">
+            <AlertTriangle className="h-5 w-5 text-amber-500 mt-0.5 shrink-0" />
+            <div>
+              <p className="font-semibold text-sm mb-1">ยืนยันการเปลี่ยนเวลาโอน</p>
+              <p className="text-xs text-muted-foreground">
+                การแก้ไขนี้กระทบ ยอดรับ ของวันที่{" "}
+                <strong>{bangkokDate(slip.transfer_at)}</strong> และวันที่{" "}
+                <strong>{bangkokDate(pendingTransferAt ?? transferAt)}</strong>
+              </p>
+            </div>
+          </div>
+          <div className="flex gap-2 mt-4 justify-end">
+            <Button variant="outline" size="sm" onClick={() => setWarnOpen(false)}>กลับไปแก้ไข</Button>
+            <Button size="sm" variant="destructive" onClick={() => commitSave(pendingTransferAt ?? transferAt)} disabled={isPending}>
+              {isPending && <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" />}
+              ยืนยัน
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+    </>
+  );
+}
+
+interface ManualSlipEditDialogProps {
+  slip: AccountSlip;
+  open: boolean;
+  onClose: () => void;
+  onSaved: (updated: AccountSlip) => void;
+}
+
+function ManualSlipEditDialog({ slip, open, onClose, onSaved }: ManualSlipEditDialogProps) {
+  const [amount, setAmount] = useState(String(slip.ai_amount));
+  const [transferAt, setTransferAt] = useState(slip.transfer_at);
+  const [note, setNote] = useState(slip.note ?? "");
+  const [editNote, setEditNote] = useState("");
+  const [warnOpen, setWarnOpen] = useState(false);
+  const [pendingTransferAt, setPendingTransferAt] = useState<string | null>(null);
+  const [isPending, start] = useTransition();
+
+  React.useEffect(() => {
+    if (open) {
+      setAmount(String(slip.ai_amount));
+      setTransferAt(slip.transfer_at);
+      setNote(slip.note ?? "");
+      setEditNote("");
+      setPendingTransferAt(null);
+    }
+  }, [open, slip]);
+
+  const bangkokDate = (iso: string) => {
+    try {
+      return format(new TZDate(new Date(iso), "Asia/Bangkok"), "d MMM yyyy HH:mm", { locale: th });
+    } catch {
+      return iso;
+    }
+  };
+
+  const handleSave = () => {
+    if (!slip.uuid_id) return;
+    const newTransferAt = pendingTransferAt ?? transferAt;
+    const oldDate = bangkokDate(slip.transfer_at);
+    const newDate = bangkokDate(newTransferAt);
+    if (newDate !== oldDate && !warnOpen) {
+      setPendingTransferAt(newTransferAt);
+      setWarnOpen(true);
+      return;
+    }
+    commitSave(newTransferAt);
+  };
+
+  const commitSave = (finalTransferAt: string) => {
+    if (!slip.uuid_id) return;
+    start(async () => {
+      const parsed = parseFloat(amount);
+      if (isNaN(parsed)) { toast.error("กรุณากรอกจำนวนที่ถูกต้อง"); return; }
+      const res = await editManualTransaction(
+        slip.uuid_id!,
+        { amount: parsed, transfer_at: finalTransferAt, note: note || null },
+        editNote || undefined,
+      );
+      if (res.success) {
+        toast.success("บันทึกการแก้ไขสำเร็จ");
+        onSaved({ ...slip, ai_amount: parsed, transfer_at: finalTransferAt, note: note || null });
+        setWarnOpen(false);
+        onClose();
+      } else {
+        toast.error(res.error || "เกิดข้อผิดพลาด");
+      }
+    });
+  };
+
+  return (
+    <>
+      <Dialog open={open} onOpenChange={(v) => { if (!v) onClose(); }}>
+        <DialogContent showCloseButton className="max-w-sm">
+          <div className="font-semibold text-sm mb-3">แก้ไข Manual Slip</div>
+          <div className="space-y-3 text-sm">
+            <div>
+              <label className="text-xs text-muted-foreground mb-1 block">จำนวนเงิน (฿)</label>
+              <Input value={amount} onChange={(e) => setAmount(e.target.value)} className="h-8 text-sm" />
+            </div>
+            <div>
+              <label className="text-xs text-muted-foreground mb-1 block">เวลาโอน (เวลาไทย)</label>
+              <input
+                type="datetime-local"
+                value={utcToDatetimeLocal(transferAt)}
+                onChange={(e) => setTransferAt(datetimeLocalToUtc(e.target.value))}
+                className="w-full h-8 rounded-md border border-input bg-background px-3 text-sm"
+              />
+            </div>
+            <div>
+              <label className="text-xs text-muted-foreground mb-1 block">หมายเหตุ</label>
+              <Input value={note} onChange={(e) => setNote(e.target.value)} className="h-8 text-sm" placeholder="ไม่ระบุ" />
+            </div>
+            <div>
+              <label className="text-xs text-muted-foreground mb-1 block">บันทึกการแก้ไข (ไม่บังคับ)</label>
+              <Input value={editNote} onChange={(e) => setEditNote(e.target.value)} className="h-8 text-sm" placeholder="เหตุผลการแก้ไข..." />
+            </div>
+          </div>
+          <div className="flex gap-2 mt-4 justify-end">
+            <Button variant="outline" size="sm" onClick={onClose}>ยกเลิก</Button>
+            <Button size="sm" onClick={handleSave} disabled={isPending}>
+              {isPending && <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" />}
+              บันทึก
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+      <Dialog open={warnOpen} onOpenChange={(v) => { if (!v) setWarnOpen(false); }}>
+        <DialogContent showCloseButton className="max-w-sm">
+          <div className="flex items-start gap-2">
+            <AlertTriangle className="h-5 w-5 text-amber-500 mt-0.5 shrink-0" />
+            <div>
+              <p className="font-semibold text-sm mb-1">ยืนยันการเปลี่ยนเวลาโอน</p>
+              <p className="text-xs text-muted-foreground">
+                การแก้ไขนี้กระทบ ยอดรับ ของวันที่{" "}
+                <strong>{bangkokDate(slip.transfer_at)}</strong> และวันที่{" "}
+                <strong>{bangkokDate(pendingTransferAt ?? transferAt)}</strong>
+              </p>
+            </div>
+          </div>
+          <div className="flex gap-2 mt-4 justify-end">
+            <Button variant="outline" size="sm" onClick={() => setWarnOpen(false)}>กลับไปแก้ไข</Button>
+            <Button size="sm" variant="destructive" onClick={() => commitSave(pendingTransferAt ?? transferAt)} disabled={isPending}>
+              {isPending && <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" />}
+              ยืนยัน
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+    </>
+  );
+}
+
+interface ManualSlipDeleteDialogProps {
+  slip: AccountSlip;
+  open: boolean;
+  onClose: () => void;
+  onDeleted: () => void;
+}
+
+function ManualSlipDeleteDialog({ slip, open, onClose, onDeleted }: ManualSlipDeleteDialogProps) {
+  const [reason, setReason] = useState("");
+  const [isPending, start] = useTransition();
+
+  const handleDelete = () => {
+    if (!slip.uuid_id || !reason.trim()) return;
+    start(async () => {
+      const res = await deleteManualTransaction(slip.uuid_id!, reason);
+      if (res.success) {
+        toast.success("ลบรายการสำเร็จ");
+        onDeleted();
+        onClose();
+      } else {
+        toast.error(res.error || "เกิดข้อผิดพลาด");
+      }
+    });
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={(v) => { if (!v) onClose(); }}>
+      <DialogContent showCloseButton className="max-w-sm">
+        <div className="flex items-start gap-2">
+          <Trash2 className="h-5 w-5 text-rose-500 mt-0.5 shrink-0" />
+          <div>
+            <p className="font-semibold text-sm mb-1">ลบ Manual Slip</p>
+            <p className="text-xs text-muted-foreground mb-3">
+              จำนวน <strong>{formatBaht(slip.ai_amount)}</strong> ·{" "}
+              {slip.note || "ไม่มีหมายเหตุ"}
+            </p>
+            <label className="text-xs text-muted-foreground mb-1 block">เหตุผลการลบ (บังคับ)</label>
+            <Textarea
+              value={reason}
+              onChange={(e) => setReason(e.target.value)}
+              className="text-sm h-20 resize-none"
+              placeholder="กรอกเหตุผล..."
+            />
+          </div>
+        </div>
+        <div className="flex gap-2 mt-4 justify-end">
+          <Button variant="outline" size="sm" onClick={onClose}>ยกเลิก</Button>
+          <Button
+            size="sm"
+            variant="destructive"
+            onClick={handleDelete}
+            disabled={isPending || !reason.trim()}
+          >
+            {isPending && <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" />}
+            ลบรายการ
+          </Button>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 interface SlipDrawerProps {
   stat: AccountLevelStat;
   date: string;
@@ -160,6 +487,9 @@ function SlipDrawer({ stat, date, open, onClose, canAdjust, projectId }: SlipDra
   const [bulkRejectOpen, setBulkRejectOpen] = useState(false);
   const [bulkPreset, setBulkPreset] = useState<RejectPreset | "">("");
   const [bulkNote, setBulkNote] = useState("");
+  const [editTarget, setEditTarget] = useState<{ slip: AccountSlip; index: number } | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<{ slip: AccountSlip; index: number } | null>(null);
+  const [discordEditTarget, setDiscordEditTarget] = useState<{ slip: AccountSlip; index: number } | null>(null);
 
   const imageServerUrl = process.env.NEXT_PUBLIC_IMAGE_SERVER_URL ?? "";
 
@@ -571,7 +901,18 @@ function SlipDrawer({ stat, date, open, onClose, canAdjust, projectId }: SlipDra
                     {canAdjust && (
                       <TableCell>
                         {slip.source === "discord" && slip.id !== null && (
-                          <AdjustPopover slip={slip} onSaved={(updated) => updateSlip(i, updated)} />
+                          <div className="flex gap-1">
+                            <AdjustPopover slip={slip} onSaved={(updated) => updateSlip(i, updated)} />
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              className="h-7 w-7 p-0 rounded-full text-gray-400 hover:text-blue-600"
+                              title="แก้ไข Metadata"
+                              onClick={() => setDiscordEditTarget({ slip, index: i })}
+                            >
+                              <FileText className="h-3.5 w-3.5" />
+                            </Button>
+                          </div>
                         )}
                       </TableCell>
                     )}
@@ -588,6 +929,28 @@ function SlipDrawer({ stat, date, open, onClose, canAdjust, projectId }: SlipDra
                             <XCircle className="h-3.5 w-3.5" />
                           </Button>
                         )}
+                        {slip.source === "manual" && slip.uuid_id !== null && (
+                          <div className="flex gap-1">
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              className="h-7 w-7 p-0 rounded-full text-gray-400 hover:text-blue-600"
+                              title="แก้ไข Manual Slip"
+                              onClick={() => setEditTarget({ slip, index: i })}
+                            >
+                              <Pencil className="h-3.5 w-3.5" />
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              className="h-7 w-7 p-0 rounded-full text-gray-400 hover:text-rose-600"
+                              title="ลบ Manual Slip"
+                              onClick={() => setDeleteTarget({ slip, index: i })}
+                            >
+                              <Trash2 className="h-3.5 w-3.5" />
+                            </Button>
+                          </div>
+                        )}
                       </TableCell>
                     )}
                   </TableRow>
@@ -599,6 +962,39 @@ function SlipDrawer({ stat, date, open, onClose, canAdjust, projectId }: SlipDra
         )}
       </SheetContent>
     </Sheet>
+    {editTarget && (
+      <ManualSlipEditDialog
+        slip={editTarget.slip}
+        open={true}
+        onClose={() => setEditTarget(null)}
+        onSaved={(updated) => {
+          updateSlip(editTarget.index, updated);
+          setEditTarget(null);
+        }}
+      />
+    )}
+    {deleteTarget && (
+      <ManualSlipDeleteDialog
+        slip={deleteTarget.slip}
+        open={true}
+        onClose={() => setDeleteTarget(null)}
+        onDeleted={() => {
+          setSlips((prev) => prev ? prev.filter((_, idx) => idx !== deleteTarget.index) : prev);
+          setDeleteTarget(null);
+        }}
+      />
+    )}
+    {discordEditTarget && (
+      <DiscordSlipEditDialog
+        slip={discordEditTarget.slip}
+        open={true}
+        onClose={() => setDiscordEditTarget(null)}
+        onSaved={(updated) => {
+          updateSlip(discordEditTarget.index, updated);
+          setDiscordEditTarget(null);
+        }}
+      />
+    )}
     </>
   );
 }
@@ -614,6 +1010,7 @@ interface AccountBreakdownTableProps {
 export function AccountBreakdownTable({ stats, targetDate, showManualColumn, userRole, projectId }: AccountBreakdownTableProps) {
   const [selectedStat, setSelectedStat] = useState<AccountLevelStat | null>(null);
   const [balancePreviewUrl, setBalancePreviewUrl] = useState<string | null>(null);
+  const [balanceDetail, setBalanceDetail] = useState<DailyBalanceInfo | null>(null);
   const canAdjust = ["owner", "admin"].includes(userRole ?? "");
   const imageServerUrl = process.env.NEXT_PUBLIC_IMAGE_SERVER_URL ?? "";
 
@@ -624,6 +1021,13 @@ export function AccountBreakdownTable({ stats, targetDate, showManualColumn, use
 
   return (
     <>
+      <DailyBalanceDrawer
+        balance={balanceDetail}
+        open={balanceDetail !== null}
+        onClose={() => setBalanceDetail(null)}
+        canManage={canAdjust}
+        projectId={projectId}
+      />
       <Dialog open={balancePreviewUrl !== null} onOpenChange={(v) => { if (!v) setBalancePreviewUrl(null); }}>
         <DialogContent className="w-auto max-w-[90vw] max-h-[90vh] p-2 bg-black/90 border-none overflow-hidden flex items-center justify-center" showCloseButton>
           {balancePreviewUrl && (
@@ -731,6 +1135,26 @@ export function AccountBreakdownTable({ stats, targetDate, showManualColumn, use
                               <Image className="h-3 w-3" />
                             </Button>
                           )}
+                          {canAdjust && item.prevDayBalanceId != null && (
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              className="h-5 w-5 p-0 rounded-full text-gray-300 hover:text-blue-500"
+                              title="จัดการยอดเปิด"
+                              onClick={() => setBalanceDetail({
+                                id: item.prevDayBalanceId!,
+                                date: targetDate ? new Date(new Date(targetDate + "T00:00:00").getTime() - 86400000).toISOString().slice(0, 10) : "",
+                                balance_amount: item.prevDayBalance,
+                                account_name: item.account,
+                                source: item.prevDaySource ?? "discord",
+                                matching_status: item.prevDayStatus ?? "AUTO_MAPPED",
+                                project_account_id: item.accountId,
+                                image_path: item.prevDayImagePath,
+                              })}
+                            >
+                              <Settings className="h-3 w-3" />
+                            </Button>
+                          )}
                         </div>
                         {/* selected day */}
                         <div className="flex items-center gap-1 mt-1">
@@ -747,6 +1171,26 @@ export function AccountBreakdownTable({ stats, targetDate, showManualColumn, use
                               title="ดูรูปยอดคงเหลือ"
                             >
                               <Image className="h-3 w-3" />
+                            </Button>
+                          )}
+                          {canAdjust && item.selectedDayBalanceId != null && (
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              className="h-5 w-5 p-0 rounded-full text-gray-300 hover:text-blue-500"
+                              title="จัดการยอดปิด"
+                              onClick={() => setBalanceDetail({
+                                id: item.selectedDayBalanceId!,
+                                date: targetDate ?? "",
+                                balance_amount: item.selectedDayBalance,
+                                account_name: item.account,
+                                source: item.selectedDaySource ?? "discord",
+                                matching_status: item.selectedDayStatus ?? "AUTO_MAPPED",
+                                project_account_id: item.accountId,
+                                image_path: item.selectedDayImagePath,
+                              })}
+                            >
+                              <Settings className="h-3 w-3" />
                             </Button>
                           )}
                         </div>

@@ -50,6 +50,14 @@ export interface AccountLevelStat {
   selectedDayImagePath: string | null;
   /** Image path of daily_balance for previous day; null if no balance or no image */
   prevDayImagePath: string | null;
+  /** DB id of daily_balance for selected date; null if no balance */
+  selectedDayBalanceId: number | null;
+  /** DB id of daily_balance for previous day; null if no balance */
+  prevDayBalanceId: number | null;
+  /** Source of daily_balance for selected date (discord/scraper/manual); null if none */
+  selectedDaySource: string | null;
+  /** Source of daily_balance for previous day; null if none */
+  prevDaySource: string | null;
 }
 
 export interface ReconciliationReport {
@@ -232,6 +240,8 @@ export async function getReconciliationReport(
     const dualBalSql = `
       SELECT
         pa.account_name,
+        db.id,
+        db.source,
         db.balance_amount,
         db.date::text AS date,
         db.matching_status,

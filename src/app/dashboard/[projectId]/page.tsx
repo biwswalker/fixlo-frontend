@@ -12,15 +12,15 @@ import {
   getDailyChartData,
   getProjectByName,
 } from "@/actions/dashboard";
-import { PeriodSelector } from "@/components/dashboard/PeriodSelector";
-import type { Period } from "@/components/dashboard/PeriodSelector";
+import { GlobalDateBar } from "@/components/dashboard/GlobalDateBar";
+import type { Period } from "@/lib/periodUtils";
 import { formatBaht } from "@/lib/utils";
 import {
   KPISkeleton,
   ChartSkeleton,
 } from "@/components/dashboard/DashboardSkeletons";
 import { Separator } from "@/components/ui/separator";
-import { format, subDays } from "date-fns";
+import { subDays, format } from "date-fns";
 import { redirect } from "next/navigation";
 import { resolvePeriodToDateRange } from "@/lib/periodUtils";
 
@@ -55,8 +55,6 @@ export default async function ProjectDashboard({
   const displayTitle =
     project?.project_name || (projectId === "all" ? "ทุกโปรเจกต์" : projectId);
 
-  const currentDate = new Date(validDate);
-
   return (
     <div className="grid gap-6 animate-in fade-in duration-500">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
@@ -69,17 +67,7 @@ export default async function ProjectDashboard({
           </p>
         </div>
         <div className="flex items-center gap-3">
-          <div className="flex items-center gap-3 bg-white p-2 text-sm rounded-3xl shadow-sm border border-gray-100">
-            <span className="text-muted-foreground font-medium pl-2 hidden sm:inline-block">
-              มุมมอง:
-            </span>
-            <Suspense>
-              <PeriodSelector
-                currentPeriod={validPeriod}
-                currentDate={currentDate}
-              />
-            </Suspense>
-          </div>
+          <GlobalDateBar showPeriod pageKey="dashboard" />
         </div>
       </div>
 

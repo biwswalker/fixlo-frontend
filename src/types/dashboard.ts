@@ -70,4 +70,5 @@ export interface DailyBalanceRecord {
   matching_status: "UNMATCHED" | "PENDING_REVIEW" | "AUTO_MAPPED" | "MANUAL_MAPPED";
   matched_by: string | null;
   match_breakdown: import("@/lib/balanceMatcher").BalanceMatchBreakdown | null;
+  source: "discord" | "scraper" | "manual";
 }

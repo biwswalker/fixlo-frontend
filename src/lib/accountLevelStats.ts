@@ -24,6 +24,8 @@ export interface DayBalanceRow {
   balance_amount: number | string | null;
   matching_status?: string;
   image_path?: string;
+  id?: number | string | null;
+  source?: string | null;
 }
 
 type AccountEntry = {
@@ -118,6 +120,8 @@ export function buildAccountLevelStats(
   const selectedBalMap = new Map<string, number | null>();
   const selectedStatusMap = new Map<string, string | null>();
   const selectedImageMap = new Map<string, string | null>();
+  const selectedIdMap = new Map<string, number | null>();
+  const selectedSourceMap = new Map<string, string | null>();
   for (const row of selectedBalRows) {
     const name = row.account_name || "Unmapped";
     selectedBalMap.set(name, row.balance_amount !== null && row.balance_amount !== undefined
@@ -125,11 +129,15 @@ export function buildAccountLevelStats(
       : null);
     selectedStatusMap.set(name, row.matching_status ?? null);
     selectedImageMap.set(name, row.image_path ?? null);
+    selectedIdMap.set(name, row.id != null ? Number(row.id) : null);
+    selectedSourceMap.set(name, row.source ?? null);
   }
 
   const prevBalMap = new Map<string, number | null>();
   const prevStatusMap = new Map<string, string | null>();
   const prevImageMap = new Map<string, string | null>();
+  const prevIdMap = new Map<string, number | null>();
+  const prevSourceMap = new Map<string, string | null>();
   for (const row of prevBalRows) {
     const name = row.account_name || "Unmapped";
     prevBalMap.set(name, row.balance_amount !== null && row.balance_amount !== undefined
@@ -137,6 +145,8 @@ export function buildAccountLevelStats(
       : null);
     prevStatusMap.set(name, row.matching_status ?? null);
     prevImageMap.set(name, row.image_path ?? null);
+    prevIdMap.set(name, row.id != null ? Number(row.id) : null);
+    prevSourceMap.set(name, row.source ?? null);
   }
 
   return Array.from(accountMap.entries())
@@ -157,6 +167,10 @@ export function buildAccountLevelStats(
       prevDayStatus: prevStatusMap.get(account) ?? null,
       selectedDayImagePath: selectedImageMap.get(account) ?? null,
       prevDayImagePath: prevImageMap.get(account) ?? null,
+      selectedDayBalanceId: selectedIdMap.get(account) ?? null,
+      prevDayBalanceId: prevIdMap.get(account) ?? null,
+      selectedDaySource: selectedSourceMap.get(account) ?? null,
+      prevDaySource: prevSourceMap.get(account) ?? null,
     }))
     .sort((a, b) => b.effectiveOutflow - a.effectiveOutflow);
 }

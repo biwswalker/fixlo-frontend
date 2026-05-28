@@ -8,7 +8,7 @@ import { redirect } from "next/navigation";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { formatBaht, cn } from "@/lib/utils";
 import { AddAdjustmentDialog } from "@/components/dashboard/AddAdjustmentDialog";
-import { ReconciliationPeriodSelector } from "@/components/dashboard/ReconciliationPeriodSelector";
+import { GlobalDateBar } from "@/components/dashboard/GlobalDateBar";
 import { AccountBreakdownTable } from "@/components/dashboard/AccountBreakdownTable";
 import { ApayGatewayCrossCheck } from "@/components/dashboard/ApayGatewayCrossCheck";
 import {
@@ -76,7 +76,7 @@ export default async function ReconciliationPage({
         </div>
 
         <div className="flex items-center gap-3">
-          <ReconciliationPeriodSelector currentDate={targetDate} />
+          <GlobalDateBar />
           {["owner", "admin"].includes(session.user.role || "") && projectId !== "all" && (
             <AddAdjustmentDialog projectId={projectId} />
           )}
