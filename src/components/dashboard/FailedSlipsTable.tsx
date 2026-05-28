@@ -248,7 +248,9 @@ export function FailedSlipsTable({
                     {slip.discord_message_id || "—"}
                   </TableCell>
                   <TableCell className="text-xs text-gray-500">
-                    {slip.target_date || "—"}
+                    {slip.target_date
+                      ? new Date(slip.target_date + "T12:00:00Z").toLocaleDateString("th-TH", { timeZone: "Asia/Bangkok" })
+                      : "—"}
                   </TableCell>
                   <TableCell className="text-xs text-gray-500">
                     {slip.created_at ? new Date(slip.created_at).toLocaleString("th-TH", { timeZone: "Asia/Bangkok" }) : "—"}

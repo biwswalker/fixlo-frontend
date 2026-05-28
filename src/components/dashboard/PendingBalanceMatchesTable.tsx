@@ -293,7 +293,9 @@ export function PendingBalanceMatchesTable({
                       {rec.balance_amount !== null ? formatBaht(rec.balance_amount) : "-"}
                     </TableCell>
                     <TableCell className="text-xs text-gray-500 whitespace-nowrap">
-                      {rec.date || "-"}
+                      {rec.date
+                        ? new Date(rec.date + "T12:00:00Z").toLocaleDateString("th-TH", { timeZone: "Asia/Bangkok" })
+                        : "-"}
                     </TableCell>
                     <TableCell>
                       <StatusBadge status={rec.matching_status} />
