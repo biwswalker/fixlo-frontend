@@ -33,10 +33,12 @@ import {
 } from "@/components/ui/dialog";
 import type { DailyBalanceRecord, ProjectAccount } from "@/types/dashboard";
 import type { BalanceMatchBreakdown } from "@/lib/balanceMatcher";
-import { confirmBalanceMapping } from "@/actions/dashboard";
+import { confirmBalanceMapping, rejectDailyBalance } from "@/actions/dashboard";
+import type { BalanceRejectPreset } from "@/actions/dashboard";
 import { formatBaht } from "@/lib/utils";
 import { toast } from "sonner";
-import { FileImage, HelpCircle, Loader2, Sparkles, FileText } from "lucide-react";
+import { FileImage, HelpCircle, Loader2, Sparkles, FileText, XCircle } from "lucide-react";
+import { Textarea } from "@/components/ui/textarea";
 import { useRouter } from "next/navigation";
 import { DailyBalanceDrawer, type DailyBalanceInfo } from "@/components/dashboard/DailyBalanceDrawer";
 
@@ -175,7 +177,36 @@ export function PendingBalanceMatchesTable({
   const [isPending, startTransition] = useTransition();
   const [mappings, setMappings] = useState<Record<number, string>>({});
   const [detailBalance, setDetailBalance] = useState<DailyBalanceInfo | null>(null);
+  const [rejectTarget, setRejectTarget] = useState<DailyBalanceRecord | null>(null);
+  const [rejectPreset, setRejectPreset] = useState<BalanceRejectPreset | "">("");
+  const [rejectNote, setRejectNote] = useState("");
   const canManage = ["owner", "admin"].includes(userRole ?? "");
+
+  const BALANCE_REJECT_PRESETS: BalanceRejectPreset[] = ["ยอดซ้ำ", "บัญชีผิด", "วันที่ผิด", "ยอดผิดพลาด", "อื่นๆ"];
+
+  const openRejectDialog = (rec: DailyBalanceRecord) => {
+    setRejectTarget(rec);
+    setRejectPreset("");
+    setRejectNote("");
+  };
+
+  const handleReject = () => {
+    if (!rejectTarget || !rejectPreset) return;
+    startTransition(async () => {
+      const res = await rejectDailyBalance(
+        rejectTarget.id,
+        rejectPreset,
+        rejectPreset === "อื่นๆ" ? rejectNote.trim() : undefined,
+      );
+      if (res.success) {
+        toast.success("ปฏิเสธยอดคงเหลือเรียบร้อยแล้ว");
+        setRejectTarget(null);
+        router.refresh();
+      } else {
+        toast.error(res.error ?? "เกิดข้อผิดพลาด");
+      }
+    });
+  };
 
   const handleMapChange = (id: number, accountId: string) => {
     setMappings((prev) => ({ ...prev, [id]: accountId }));
@@ -367,6 +398,18 @@ export function PendingBalanceMatchesTable({
                             <FileText className="h-4 w-4" />
                           </Button>
                         )}
+                        {canManage && (
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            className="h-9 px-3 rounded-xl text-rose-400 hover:text-rose-600 hover:bg-rose-50"
+                            title="ปฏิเสธรายการนี้"
+                            onClick={() => openRejectDialog(rec)}
+                            disabled={isPending}
+                          >
+                            <XCircle className="h-4 w-4" />
+                          </Button>
+                        )}
                         <Button
                           size="sm"
                           className="bg-blue-600 hover:bg-blue-700 text-white rounded-xl px-6 h-9 shadow-lg shadow-blue-600/20 transition-all active:scale-95 disabled:opacity-50 font-bold text-xs"
@@ -437,6 +480,57 @@ export function PendingBalanceMatchesTable({
       projectId={projectId}
       onChanged={() => router.refresh()}
     />
+
+    {/* Reject daily balance dialog */}
+    <Dialog open={rejectTarget !== null} onOpenChange={(v) => { if (!v) setRejectTarget(null); }}>
+      <DialogContent className="max-w-sm">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2 text-base">
+            <XCircle className="h-5 w-5 text-rose-600" />
+            ปฏิเสธยอดคงเหลือ
+          </DialogTitle>
+        </DialogHeader>
+        <div className="space-y-4 pt-1">
+          <div className="space-y-1.5">
+            <label className="text-xs font-medium text-gray-700">เหตุผล</label>
+            <Select value={rejectPreset} onValueChange={(v) => setRejectPreset(v as BalanceRejectPreset)}>
+              <SelectTrigger className="h-9 rounded-xl text-sm">
+                <SelectValue placeholder="เลือกเหตุผล..." />
+              </SelectTrigger>
+              <SelectContent>
+                {BALANCE_REJECT_PRESETS.map((p) => (
+                  <SelectItem key={p} value={p}>{p}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          {rejectPreset === "อื่นๆ" && (
+            <div className="space-y-1.5">
+              <label className="text-xs font-medium text-gray-700">ระบุเหตุผล</label>
+              <Textarea
+                value={rejectNote}
+                onChange={(e) => setRejectNote(e.target.value)}
+                className="text-sm rounded-xl min-h-[60px]"
+                placeholder="เหตุผลเพิ่มเติม..."
+              />
+            </div>
+          )}
+          <div className="flex gap-2 justify-end">
+            <Button variant="outline" size="sm" className="rounded-xl" onClick={() => setRejectTarget(null)} disabled={isPending}>
+              ยกเลิก
+            </Button>
+            <Button
+              size="sm"
+              className="rounded-xl bg-rose-600 hover:bg-rose-700 text-white min-w-[80px]"
+              onClick={handleReject}
+              disabled={isPending || !rejectPreset || (rejectPreset === "อื่นๆ" && !rejectNote.trim())}
+            >
+              {isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : "ปฏิเสธ"}
+            </Button>
+          </div>
+        </div>
+      </DialogContent>
+    </Dialog>
     </>
   );
 }

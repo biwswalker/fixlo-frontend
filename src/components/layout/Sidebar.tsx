@@ -77,30 +77,6 @@ export function Sidebar() {
         </nav>
       </aside>
 
-      {/* Mobile bottom navigation */}
-      <nav className="fixed bottom-0 left-0 right-0 z-30 flex items-center justify-around border-t border-gray-100 bg-white/95 backdrop-blur supports-[backdrop-filter]:bg-white/60 pb-safe sm:hidden">
-        {navItems.map((item) => (
-          <Link
-            key={item.label}
-            href={item.href}
-            className={cn(
-              "flex flex-col items-center gap-1 px-4 py-2.5 min-w-0 flex-1 transition-colors",
-              item.active ? "text-blue-600" : "text-gray-400",
-            )}
-          >
-            <item.icon
-              className={cn(
-                "h-5 w-5 transition-transform",
-                item.active && "scale-110",
-              )}
-              strokeWidth={1.5}
-            />
-            <span className="text-[10px] font-medium leading-none truncate">
-              {item.label}
-            </span>
-          </Link>
-        ))}
-      </nav>
     </>
   );
 }

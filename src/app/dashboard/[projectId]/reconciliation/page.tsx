@@ -238,7 +238,7 @@ async function ReconciliationContent({
       {/* Pending Matches Section */}
       {pendingCount > 0 && (
         <Link
-          href={`/dashboard/${projectId}/match?transferDate=${targetDateIso}`}
+          href={`/dashboard/${projectId}/match?date=${targetDateIso}`}
           className="flex items-center justify-between gap-4 mt-4 p-4 rounded-2xl border border-amber-200 bg-amber-50 hover:bg-amber-100 transition-colors group"
         >
           <div className="flex items-center gap-3">
@@ -263,7 +263,7 @@ async function ReconciliationContent({
       {/* Pending Balance Matches Section */}
       {pendingBalanceCount > 0 && (
         <Link
-          href={`/dashboard/${projectId}/match?tab=balance&transferDate=${targetDateIso}`}
+          href={`/dashboard/${projectId}/match?tab=balance&date=${targetDateIso}`}
           className="flex items-center justify-between gap-4 mt-4 p-4 rounded-2xl border border-amber-200 bg-amber-50 hover:bg-amber-100 transition-colors group"
         >
           <div className="flex items-center gap-3">

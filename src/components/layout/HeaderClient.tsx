@@ -5,11 +5,14 @@ import { useRouter, useParams, usePathname, useSearchParams } from "next/navigat
 import { useSession, signOut } from "next-auth/react";
 import {
   Bell,
-  LogOut,
   ChevronDown,
+  Menu,
+  LayoutDashboard,
+  Scale,
   GitMerge,
+  Building2,
 } from "lucide-react";
-import { buttonVariants } from "@/components/ui/button";
+import { buttonVariants, Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import {
   DropdownMenu,
@@ -32,6 +35,14 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
+import {
+  Sheet,
+  SheetContent,
+  SheetHeader,
+  SheetTitle,
+} from "@/components/ui/sheet";
+import Link from "next/link";
+import { useState } from "react";
 
 import type { ProjectOption } from "@/actions/dashboard";
 
@@ -47,7 +58,41 @@ export default function HeaderClient({
   const searchParams = useSearchParams();
   const currentProject = (params?.projectId as string) || "all";
 
+  const [drawerOpen, setDrawerOpen] = useState(false);
+
   const user = session?.user;
+  const userRole = user?.role;
+
+  const navItems = [
+    {
+      label: "หน้าปัดหลัก",
+      href: `/dashboard/${currentProject}`,
+      icon: LayoutDashboard,
+      active: pathname === `/dashboard/${currentProject}`,
+    },
+    {
+      label: "กระทบยอดบัญชี",
+      href: `/dashboard/${currentProject}/reconciliation`,
+      icon: Scale,
+      active: pathname === `/dashboard/${currentProject}/reconciliation`,
+      hidden: !["owner", "admin"].includes(userRole || ""),
+    },
+    {
+      label: "จับคู่บัญชี",
+      href: `/dashboard/${currentProject}/match`,
+      icon: GitMerge,
+      active: pathname === `/dashboard/${currentProject}/match`,
+      hidden: !["owner", "admin"].includes(userRole || ""),
+    },
+    {
+      label: "จัดการบัญชี",
+      href: `/dashboard/${currentProject}/accounts`,
+      icon: Building2,
+      active: pathname === `/dashboard/${currentProject}/accounts`,
+      hidden: !["owner", "admin"].includes(userRole || ""),
+    },
+  ].filter((item) => !item.hidden);
+
   const roleLabels: Record<string, string> = {
     owner: "เจ้าของ",
     admin: "ผู้ดูแลระบบ",
@@ -60,8 +105,50 @@ export default function HeaderClient({
     : "ผู้ใช้งาน";
 
   return (
+    <>
+    <Sheet open={drawerOpen} onOpenChange={setDrawerOpen}>
+      <SheetContent side="left" className="w-64 p-0">
+        <SheetHeader className="px-5 py-4 border-b border-gray-100">
+          <SheetTitle className="flex items-center gap-2.5">
+            <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-blue-600 text-white font-bold text-sm">
+              Fx
+            </div>
+            <span className="text-sm font-semibold text-gray-800">Fixlo</span>
+          </SheetTitle>
+        </SheetHeader>
+        <nav className="flex flex-col gap-1 p-3">
+          {navItems.map((item) => (
+            <Link
+              key={item.label}
+              href={item.href}
+              onClick={() => setDrawerOpen(false)}
+              className={cn(
+                "flex items-center gap-3 px-3 py-2.5 rounded-xl transition-colors",
+                item.active
+                  ? "bg-blue-600 text-white"
+                  : "text-gray-600 hover:bg-gray-100 hover:text-gray-900",
+              )}
+            >
+              <item.icon className="h-5 w-5 shrink-0" strokeWidth={1.5} />
+              <span className="text-sm font-medium">{item.label}</span>
+            </Link>
+          ))}
+        </nav>
+      </SheetContent>
+    </Sheet>
+
     <header className="sticky top-0 z-30 flex h-20 items-center justify-between border-b border-gray-100 bg-white/95 px-6 backdrop-blur supports-[backdrop-filter]:bg-white/60">
       <div className="flex items-center flex-1 gap-4">
+        {/* Burger button: mobile only */}
+        <Button
+          variant="ghost"
+          size="icon"
+          className="sm:hidden h-9 w-9 rounded-xl text-gray-500"
+          onClick={() => setDrawerOpen(true)}
+          aria-label="เมนู"
+        >
+          <Menu className="h-5 w-5" />
+        </Button>
         <Select
           value={currentProject}
           onValueChange={(val) => {
@@ -178,5 +265,6 @@ export default function HeaderClient({
         </DropdownMenu>
       </div>
     </header>
+    </>
   );
 }

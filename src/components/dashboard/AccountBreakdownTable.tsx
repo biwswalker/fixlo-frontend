@@ -1027,6 +1027,7 @@ export function AccountBreakdownTable({ stats, targetDate, showManualColumn, use
         onClose={() => setBalanceDetail(null)}
         canManage={canAdjust}
         projectId={projectId}
+        restrictedEdit
       />
       <Dialog open={balancePreviewUrl !== null} onOpenChange={(v) => { if (!v) setBalancePreviewUrl(null); }}>
         <DialogContent className="w-auto max-w-[90vw] max-h-[90vh] p-2 bg-black/90 border-none overflow-hidden flex items-center justify-center" showCloseButton>

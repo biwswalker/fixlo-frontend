@@ -1612,6 +1612,40 @@ export async function rematchDailyBalance(
   }
 }
 
+export type BalanceRejectPreset = "ยอดซ้ำ" | "บัญชีผิด" | "วันที่ผิด" | "ยอดผิดพลาด" | "อื่นๆ";
+
+export async function rejectDailyBalance(
+  id: number,
+  preset: BalanceRejectPreset,
+  customNote?: string,
+): Promise<{ success: boolean; error?: string }> {
+  const session = await getServerAuthSession();
+  if (!session) return { success: false, error: "Unauthorized" };
+  if (!["owner", "admin"].includes(session.user.role ?? "")) {
+    return { success: false, error: "Unauthorized" };
+  }
+
+  const reason = preset === "อื่นๆ" ? (customNote ?? "อื่นๆ") : preset;
+
+  try {
+    await query(
+      `UPDATE daily_balances
+         SET matching_status = 'REJECTED',
+             reject_reason   = $1,
+             rejected_by     = $2,
+             rejected_at     = NOW()
+       WHERE id = $3
+         AND matching_status IN ('UNMATCHED', 'PENDING_REVIEW')`,
+      [reason, session.user.username, id],
+    );
+    revalidatePath("/dashboard/[projectId]/match", "page");
+    return { success: true };
+  } catch (error) {
+    logger.error("rejectDailyBalance", "Failed to reject daily balance", error);
+    return { success: false, error: "Failed to reject daily balance" };
+  }
+}
+
 export async function getDailyBalanceForAccountDate(
   projectAccountId: string,
   date: string,
