@@ -80,7 +80,7 @@ WHERE rd.status = 'สำเร็จ'
 ```sql
 SELECT COALESCE(SUM(t.ai_amount), 0) AS total
 FROM transactions t
-WHERE (t.transfer_at + INTERVAL '7 hours')::date BETWEEN $startDate AND $endDate
+WHERE (t.transfer_at AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Bangkok')::date BETWEEN $startDate AND $endDate
   AND (t.source_project_id = $projectUuid 
        OR t.target_project_id = $projectUuid 
        OR $isAll = true)
@@ -218,7 +218,7 @@ SELECT COALESCE(t.adjusted_amount, t.ai_amount) AS adjusted_amount,
        pa.account_name, pa.bank_code, pa.account_number
 FROM transactions t
 LEFT JOIN project_accounts pa ON t.project_account_id = pa.id
-WHERE (t.transfer_at + INTERVAL '7 hours')::date BETWEEN $startDate AND $endDate
+WHERE (t.transfer_at AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Bangkok')::date BETWEEN $startDate AND $endDate
   AND (t.source_project_id = $projectUuid 
        OR t.target_project_id = $projectUuid 
        OR $isAll = true)
