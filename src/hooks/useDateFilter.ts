@@ -89,6 +89,18 @@ export function useDateFilter(options: UseDateFilterOptions = {}): DateFilterRes
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [urlPeriod]);
 
+  // On mount: if URL has no ?date=, push the resolved date into the URL so the
+  // server component re-renders with the correct date (eliminates server/client
+  // mismatch when navigating without an explicit date param).
+  useEffect(() => {
+    if (!urlDate) {
+      const params = new URLSearchParams(searchParams?.toString() ?? "");
+      params.set("date", date);
+      router.replace(`${pathname}?${params.toString()}`);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   // Sync from URL on mount / URL change
   useEffect(() => {
     if (urlDate && urlDate !== date) {
