@@ -175,6 +175,8 @@ export default async function ManualMatchPage({
               totalItems={balanceResult.totalItems}
               currentPage={Number(page)}
               limit={Number(limit)}
+              userRole={session.user.role}
+              projectId={projectId}
             />
           )
         ) : isFailedTab ? (
