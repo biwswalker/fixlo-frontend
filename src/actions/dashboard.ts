@@ -531,7 +531,7 @@ export interface OcrResultInput {
   sender_account: string;
   sender_bank: string;
   receiver_name: string;
-  /** naive local timestamp, e.g. "2026-01-15 14:30:00" — use buildTransferAt() to construct */
+  /** UTC ISO timestamp — use buildTransferAt() to construct from Bangkok-local inputs */
   transfer_at: string;
   image_path: string;
 }
@@ -628,7 +628,7 @@ export async function getPendingMatchCount(projectId: string, date?: string): Pr
       `SELECT COUNT(*) as total FROM transactions
        WHERE (source_project_id = $1 OR $2 = true)
          AND matching_status IN ('PENDING_REVIEW', 'UNMAPPED')
-         AND ($3::date IS NULL OR (transfer_at + INTERVAL '7 hours')::date = $3::date)`,
+         AND ($3::date IS NULL OR (transfer_at AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Bangkok')::date = $3::date)`,
       [project?.id || null, isAll, date ?? null],
     );
     return Number(res.rows[0]?.total || 0);
@@ -683,7 +683,7 @@ export async function getPendingMatches(
       WHERE (t.source_project_id = $1 OR $2 = true)
         AND t.matching_status IN ('PENDING_REVIEW', 'UNMAPPED')
         AND ($5::text IS NULL OR t.ref_id ILIKE $5 OR t.sender_name ILIKE $5 OR t.sender_acc_num ILIKE $5)
-        AND ($6::date IS NULL OR (t.transfer_at + INTERVAL '7 hours')::date = $6::date)
+        AND ($6::date IS NULL OR (t.transfer_at AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Bangkok')::date = $6::date)
       ORDER BY t.created_at DESC
       LIMIT $3 OFFSET $4
     `;
@@ -694,7 +694,7 @@ export async function getPendingMatches(
       WHERE (t.source_project_id = $1 OR $2 = true)
         AND t.matching_status IN ('PENDING_REVIEW', 'UNMAPPED')
         AND ($3::text IS NULL OR t.ref_id ILIKE $3 OR t.sender_name ILIKE $3 OR t.sender_acc_num ILIKE $3)
-        AND ($4::date IS NULL OR (t.transfer_at + INTERVAL '7 hours')::date = $4::date)
+        AND ($4::date IS NULL OR (t.transfer_at AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Bangkok')::date = $4::date)
     `;
 
     const [result, countRes] = await Promise.all([
@@ -1275,7 +1275,7 @@ export async function getAccountSlips(
         transaction_subtype
       FROM transactions
       WHERE project_account_id = $1
-        AND (transfer_at + INTERVAL '7 hours')::date = $2::date
+        AND (transfer_at AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Bangkok')::date = $2::date
         AND matching_status IN ('AUTO_MAPPED', 'MANUAL_MAPPED')
     `;
 
@@ -1299,7 +1299,7 @@ export async function getAccountSlips(
         transaction_subtype
       FROM manual_transactions
       WHERE project_account_id = $1
-        AND (transfer_at + INTERVAL '7 hours')::date = $2::date
+        AND (transfer_at AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Bangkok')::date = $2::date
     `;
 
     const [discordRes, manualRes] = await Promise.all([
