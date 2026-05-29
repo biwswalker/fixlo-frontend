@@ -68,16 +68,22 @@ netCashflow = totalDeposits − totalWithdrawals
 
 **ตัวเลขที่แสดง**: `formatBaht(totalDeposits)`
 
-**SQL** (อยู่ใน `getDashboardSummary`, alias `reportDepositsQuery`):
+**SQL** (ผ่าน `depositTotalSql` ใน `src/lib/kpiSql.ts`):
 ```sql
-SELECT COALESCE(SUM(amount), 0) as total_deposits
-FROM report_deposits
-WHERE status = 'สำเร็จ'
-  AND trans_date::date BETWEEN $from AND $to
+SELECT COALESCE(SUM(amount), 0) as total
+FROM (
+  SELECT amount FROM report_deposits
+    WHERE status = 'สำเร็จ'
+      AND trans_date::date BETWEEN $1 AND $2
+      AND project_id = $3
+  UNION ALL
+  SELECT amount FROM report_manual_credit_in
+    WHERE trans_date::date BETWEEN $1 AND $2
+      AND project_id = $3
+) _deposit_combined
 ```
 
-⚠️ **หมายเหตุ**: ใบนี้ **ไม่กรองด้วย project_id** — แสดงรวมทุก project แม้ว่า URL จะระบุ project เดียว.
-ที่มา: scraper [[../db/tables/report_deposits|report_deposits]] — เก็บรายการฝากจากเว็บเกม.
+กรอง `project_id integer FK` (migration 041). ที่มา: [[../db/tables/report_deposits|report_deposits]].
 
 ### 1.3 ยอดถอนรวม (Total Withdrawal)
 
@@ -87,7 +93,7 @@ WHERE status = 'สำเร็จ'
 ```sql
 SELECT COALESCE(SUM(withdraw + manual_out + redeem + affiliate + cashback), 0) as total_withdrawals
 FROM report_summary_daily
-WHERE (project_id ILIKE '%' || $projectName || '%' OR $isAll = true)
+WHERE (project_id = $1 OR $2 = true)
   AND report_date::date BETWEEN $from AND $to
 ```
 
@@ -139,7 +145,7 @@ ORDER BY total DESC
 
 ผลลัพธ์ aggregate รวมตามชื่อ formatted แล้ว sort `total DESC`.
 
-⚠️ **เหมือน 1.2 — ไม่กรอง project_id**.
+กรอง `project_id = $N` เหมือน Section 1.2 ผ่าน `idOrAll`.
 
 ### 2.2 ฝั่งรายจ่าย (Expense)
 
@@ -171,7 +177,7 @@ ORDER BY total DESC
 
 ที่มา: [[../db/tables/report_withdrawals|report_withdrawals]]. แปลงชื่อบัญชีเหมือน deposit breakdown.
 
-⚠️ **ไม่กรอง project_id เช่นกัน**.
+กรอง `project_id = $N` ผ่าน `idOrAll` เช่นกัน.
 
 ### Progress bar — % ใน label
 
@@ -187,36 +193,32 @@ percentage = (amount / total) * 100
 
 ดึงผ่าน `getDailyChartData(projectId, from, to)`. แสดง bar chart + line chart.
 
-**SQL** (CTE):
+**SQL** (ผ่าน `depositPerDaySql` + `withdrawPerDaySql` ใน `src/lib/kpiSql.ts`):
 ```sql
-WITH daily_reports AS (
-  SELECT 
-    report_date::date as day,
-    SUM(COALESCE(withdraw,0) + COALESCE(manual_out,0) + COALESCE(redeem,0) 
-        + COALESCE(affiliate,0) + COALESCE(cashback,0)) as withdrawals
-  FROM report_summary_daily
-  WHERE (project_id ILIKE '%' || $projectName || '%' OR $isAll = true)
-    AND report_date::date BETWEEN $from AND $to
-  GROUP BY report_date::date
-),
-daily_deposits AS (
-  SELECT
-    trans_date::date as day,
-    SUM(COALESCE(amount, 0)) as deposits
-  FROM report_deposits
-  WHERE status = 'สำเร็จ'
-    AND trans_date::date BETWEEN $from AND $to
-  GROUP BY trans_date::date
-)
-SELECT
-  COALESCE(r.day, t.day) as report_date,
-  COALESCE(t.deposits, 0) as deposits,
-  COALESCE(r.withdrawals, 0) as withdrawals,
-  (COALESCE(t.deposits,0) - COALESCE(r.withdrawals,0)) as net_diff
-FROM daily_reports r
-FULL OUTER JOIN daily_deposits t ON r.day = t.day
-ORDER BY report_date ASC
+-- deposits per day
+SELECT trans_date::date::text AS day_date, COALESCE(SUM(amount), 0) AS total
+FROM (
+  SELECT trans_date, amount FROM report_deposits
+    WHERE status = 'สำเร็จ'
+      AND trans_date::date BETWEEN $1 AND $2
+      AND project_id = $3
+  UNION ALL
+  SELECT trans_date, amount FROM report_manual_credit_in
+    WHERE trans_date::date BETWEEN $1 AND $2
+      AND project_id = $3
+) _deposit_daily
+GROUP BY trans_date::date ORDER BY trans_date::date ASC;
+
+-- withdrawals per day
+SELECT trans_date::date::text AS day_date, COALESCE(SUM(amount), 0) AS total
+FROM report_withdrawals
+WHERE status = 'สำเร็จ'
+  AND trans_date::date BETWEEN $1 AND $2
+  AND project_id = $3
+GROUP BY trans_date::date ORDER BY trans_date::date ASC;
 ```
+
+Merged ใน `mergeDailyChartRows` (JS) เป็น `{day, deposits, withdrawals, netDiff}`.
 
 **ที่มาของแต่ละแท่ง/เส้น**:
 
@@ -226,7 +228,7 @@ ORDER BY report_date ASC
 | `withdrawals` (แท่งแดง) | [[../db/tables/report_summary_daily|report_summary_daily]] | `withdraw + manual_out + redeem + affiliate + cashback` ต่อวัน |
 | `netDiff` (เส้น) | คำนวณ inline | `deposits − withdrawals` |
 
-⚠️ **deposits ไม่กรอง project_id** เช่นกัน. withdrawals กรองตาม `project_name ILIKE`.
+ทั้ง deposits และ withdrawals กรอง `project_id = $3` ตาม project ที่เลือก.
 
 `day` field แปลงเป็นชื่อวัน อังกฤษย่อ (`Mon`, `Tue`, …) ด้วย `Intl.DateTimeFormat("en-US", { weekday: "short" })`.
 
@@ -238,6 +240,6 @@ ORDER BY report_date ASC
 
 ## ⚠️ ความเสี่ยง / Bug ที่ควรรู้
 
-1. **ยอดฝาก + breakdown ไม่กรอง project_id**: เลือก project A หรือ project B ก็ได้ผลเหมือนกันในส่วนนี้. ส่งผลให้ `Net Cashflow` ของ single-project เพี้ยน เพราะ deposit รวมทุก project แต่ withdraw กรอง project เดียว
+1. ~~**ยอดฝาก + breakdown ไม่กรอง project_id**~~ — **Resolved**: ทุก query กรอง `project_id = $N` ผ่าน `idOrAll` / `kpiSql.ts` แล้ว.
 2. **`status = 'สำเร็จ'` hardcoded ภาษาไทย** — ถ้า scraper เปลี่ยน label → ตัวเลขเป็น 0
 3. **`totalDeposits` (Section 1) override `summary.deposit` (Section 2)** ด้วยค่าเดียวกัน — แต่ทั้งคู่มาจาก [[../db/tables/report_deposits|report_deposits]] ไม่ใช่ `report_summary_daily.deposit`. ดังนั้น progress bar ของ "ฝากเงิน" จะเทียบกับ totalIncome ที่มี deposit ใหญ่ผิดสัดส่วนกับ field อื่นถ้าข้อมูลคนละช่วง
