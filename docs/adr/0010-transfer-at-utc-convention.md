@@ -31,14 +31,26 @@ returned by pg for `date` columns) inside a template literal, producing
 an unparseable string and leaving fresh `transfer_at` values either
 incorrect or null. Fixing that bug exposed the convention drift.
 
+A second null-transfer_at bug was discovered 2026-05-29: `bot.js` enqueued
+`upload.target_date` (a pg `Date` object) directly into BullMQ. BullMQ
+serialises job data via `JSON.stringify`, converting the `Date` to an ISO
+timestamp string (`"2026-05-28T17:00:00.000Z"`). When `worker.js` received
+the job, `targetDate` was a string, so the `instanceof Date` guard was always
+false, and `targetDateStr` was set to the raw ISO string. The resulting
+`bangkokStr` (`"2026-05-28T17:00:00.000ZT14:30:00+07:00"`) was unparseable,
+leaving `transfer_at = null` for every worker-processed row. Fix: normalise
+`target_date → YYYY-MM-DD` in `bot.js` before `slipQueue.add()` so the worker
+always receives a clean date string regardless of serialisation.
+
 ## Decision
 
 Both write paths store **UTC** instants in `transfer_at`. The column type
 remains `timestamp without time zone` — the value is an instant whose
 timezone is UTC by convention, not by column metadata.
 
-- **worker write** normalizes `targetDate` (pg `Date`) to `YYYY-MM-DD`
-  first, then `${date}T${time}:00+07:00` → `Date.toISOString()`.
+- **worker write** receives `targetDate` as a plain `YYYY-MM-DD` string
+  (normalised by `bot.js` before enqueue to survive BullMQ JSON round-trip),
+  then `${date}T${time}:00+07:00` → `Date.toISOString()`.
 - **manual write** runs the same conversion in `buildTransferAt(date, time)`
   in TypeScript: input is Bangkok-local strings; output is a UTC ISO
   string. The DB receives an ISO with `Z` and stores it as the UTC
