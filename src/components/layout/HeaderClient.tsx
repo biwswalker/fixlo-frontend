@@ -170,7 +170,7 @@ export default function HeaderClient({
             {projectOptions.map((option) => (
               <SelectItem
                 key={option.id}
-                value={option.id === "all" ? "all" : option.name}
+                value={option.code}
                 className="cursor-pointer rounded-lg py-2"
               >
                 <div className="flex items-center gap-2.5">

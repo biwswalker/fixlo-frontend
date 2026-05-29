@@ -14,7 +14,7 @@ import { buildTransferAt } from "@/lib/transferAt";
 import { resolveProject } from "@/lib/projects";
 import { canSoftDelete } from "@/lib/projectAccountRules";
 import { aggregateBreakdown } from "@/lib/accountFormatters";
-import { nameOrAll } from "@/lib/projectFilter";
+import { idOrAll } from "@/lib/projectFilter";
 import { mergeDailyChartRows } from "@/lib/cashflowChart";
 import {
   depositTotalSql,
@@ -64,6 +64,7 @@ export async function getActiveProjects(): Promise<
 
 export interface ProjectOption {
   id: string;
+  code: string;
   name: string;
   color: string;
 }
@@ -95,44 +96,35 @@ function projectColor(name: string): string {
 export async function getProjectOptions(): Promise<ProjectOption[]> {
   try {
     const sql =
-      "SELECT id, project_name FROM projects WHERE status = 'ACTIVE' ORDER BY project_name ASC";
+      "SELECT id, code, project_name FROM projects WHERE status = 'ACTIVE' ORDER BY project_name ASC";
     const result = await query(sql);
     const projects: ProjectOption[] = result.rows.map((row) => ({
-      id: row.id,
+      id: String(row.id),
+      code: row.code,
       name: row.project_name,
       color: projectColor(row.project_name),
     }));
     return [
-      { id: "all", name: "ทุกโปรเจกต์", color: "bg-gray-700" },
+      { id: "all", code: "all", name: "ทุกโปรเจกต์", color: "bg-gray-700" },
       ...projects,
     ];
   } catch (error) {
     logger.error("getProjectOptions", "Failed to fetch project options", error);
-    return [{ id: "all", name: "ทุกโปรเจกต์", color: "bg-gray-700" }];
+    return [{ id: "all", code: "all", name: "ทุกโปรเจกต์", color: "bg-gray-700" }];
   }
 }
 
 /**
- * Fetches a single project's details by its Name (from URL).
+ * Resolves a project URL slug to { id, project_name } for page-level use.
+ * Delegates to resolveProject (exact code + alias lookup, no ILIKE).
  */
 export async function getProjectByName(
-  name: string,
+  slug: string,
 ): Promise<{ id: string; project_name: string } | null> {
-  if (name === "all") return { id: "all", project_name: "ทุกโปรเจกต์" };
-  try {
-    const result = await query(
-      "SELECT id, project_name FROM projects WHERE project_name ILIKE '%' || $1 || '%' AND status = 'ACTIVE' LIMIT 1",
-      [name],
-    );
-    return result.rows[0] || null;
-  } catch (error) {
-    logger.error(
-      "getProjectByName",
-      `Failed to fetch project by name: ${name}`,
-      error,
-    );
-    return null;
-  }
+  if (slug === "all") return { id: "all", project_name: "ทุกโปรเจกต์" };
+  const ref = await resolveProject(slug);
+  if (!ref) return null;
+  return { id: String(ref.id), project_name: ref.name };
 }
 
 /**
@@ -165,7 +157,7 @@ export async function getDashboardSummary(
       };
     }
 
-    const projectName = project?.name || "";
+    const projectIntId = project?.id ?? null;
 
     // latestBalance continues to read report_summary_daily.balance (ADR 0004)
     const balanceQuery = isAll
@@ -181,17 +173,21 @@ export async function getDashboardSummary(
       : `
         SELECT COALESCE(balance, 0) as latest_balance
         FROM report_summary_daily
-        WHERE project_id ILIKE '%' || $1 || '%'
+        WHERE project_id = $1
         AND report_date <= $2
         ORDER BY report_date DESC
         LIMIT 1
       `;
+
+    const projectFilter = isAll ? "" : "AND project_id = $3";
+    const reportParams = isAll ? [startDate, endDate] : [startDate, endDate, projectIntId];
 
     const depositsBreakdownQuery = `
       SELECT web_acc as account, COALESCE(SUM(amount), 0) as total
       FROM report_deposits
       WHERE trans_date::date BETWEEN $1 AND $2
       AND status = 'สำเร็จ'
+      ${projectFilter}
       GROUP BY web_acc
       ORDER BY total DESC
     `;
@@ -201,6 +197,7 @@ export async function getDashboardSummary(
       FROM report_withdrawals
       WHERE trans_date::date BETWEEN $1 AND $2
       AND status = 'สำเร็จ'
+      ${projectFilter}
       GROUP BY web_acc
       ORDER BY total DESC
     `;
@@ -210,12 +207,14 @@ export async function getDashboardSummary(
       FROM report_deposits
       WHERE status = 'สำเร็จ'
       AND trans_date::date BETWEEN $1 AND $2
+      ${projectFilter}
     `;
 
     const manualInQuery = `
       SELECT COALESCE(SUM(amount), 0) as total
       FROM report_manual_credit_in
       WHERE trans_date::date BETWEEN $1 AND $2
+      ${projectFilter}
     `;
 
     const withdrawOnlyQuery = `
@@ -223,12 +222,14 @@ export async function getDashboardSummary(
       FROM report_withdrawals
       WHERE status = 'สำเร็จ'
       AND trans_date::date BETWEEN $1 AND $2
+      ${projectFilter}
     `;
 
     const manualOutQuery = `
       SELECT COALESCE(SUM(amount), 0) as total
       FROM report_manual_credit_out
       WHERE trans_date::date BETWEEN $1 AND $2
+      ${projectFilter}
     `;
 
     logger.debug(
@@ -237,7 +238,7 @@ export async function getDashboardSummary(
       project,
     );
 
-    const dateParams = [startDate, endDate];
+    const kpiProjectParam = isAll ? undefined : 3;
 
     const [
       balanceRes,
@@ -250,15 +251,15 @@ export async function getDashboardSummary(
       totalDepositRes,
       totalWithdrawRes,
     ] = await Promise.all([
-      query(balanceQuery, isAll ? [endDate] : [projectName, endDate]),
-      query(depositsBreakdownQuery, dateParams),
-      query(withdrawalsBreakdownQuery, dateParams),
-      query(depositOnlyQuery, dateParams),
-      query(manualInQuery, dateParams),
-      query(withdrawOnlyQuery, dateParams),
-      query(manualOutQuery, dateParams),
-      query(depositTotalSql(1, 2), dateParams),
-      query(withdrawTotalSql(1, 2), dateParams),
+      query(balanceQuery, isAll ? [endDate] : [projectIntId, endDate]),
+      query(depositsBreakdownQuery, reportParams),
+      query(withdrawalsBreakdownQuery, reportParams),
+      query(depositOnlyQuery, reportParams),
+      query(manualInQuery, reportParams),
+      query(withdrawOnlyQuery, reportParams),
+      query(manualOutQuery, reportParams),
+      query(depositTotalSql(1, 2, kpiProjectParam), reportParams),
+      query(withdrawTotalSql(1, 2, kpiProjectParam), reportParams),
     ]);
 
     const deposit = Number(depositOnlyRes.rows[0]?.total || 0);
@@ -404,9 +405,7 @@ export async function getProjectAccounts(
     const isAll = projectId === "all";
     const project = isAll ? null : await resolveProject(projectId);
 
-    // project_accounts.project_id stores the integer projects.id as a string (e.g. "1"),
-    // NOT the project name — use exact match on the resolved numeric ID.
-    const projectNumericId = project ? String(project.id) : null;
+    const projectIntId = project?.id ?? null;
 
     const sql = `
       SELECT id, project_id, account_name, account_number, bank_code, aliases, created_at
@@ -416,7 +415,7 @@ export async function getProjectAccounts(
       ORDER BY account_name ASC
     `;
 
-    const result = await query(sql, [projectNumericId, isAll]);
+    const result = await query(sql, [projectIntId, isAll]);
 
     return result.rows.map((row) => ({
       ...row,
@@ -455,7 +454,7 @@ export async function createProjectAccount(
     await query(
       `INSERT INTO project_accounts (project_id, account_name, bank_code, account_number, aliases)
        VALUES ($1, $2, $3, $4, $5)`,
-      [String(project.id), accountName, bankCode, accountNumber || null, JSON.stringify(aliases)],
+      [project.id, accountName, bankCode, accountNumber || null, JSON.stringify(aliases)],
     );
     revalidatePath(`/dashboard/${projectId}/accounts`);
     return { success: true };
@@ -645,7 +644,7 @@ export async function getPendingBalanceMatchCount(projectId: string, date?: stri
       `SELECT COUNT(*) as total
        FROM daily_balances db
        LEFT JOIN project_accounts pa ON db.project_account_id = pa.id
-       WHERE (pa.project_id = $1 OR $2 = true OR (db.project_name IS NOT NULL AND $2 = false AND pa.id IS NULL))
+       WHERE (pa.project_id = $1 OR $2 = true OR (db.project_id = $1 AND $2 = false AND pa.id IS NULL))
          AND db.matching_status IN ('PENDING_REVIEW', 'UNMATCHED')
          AND ($3::date IS NULL OR db.date = $3::date)`,
       [project?.id || null, isAll, date ?? null],
@@ -1053,7 +1052,7 @@ export async function getPendingBalanceMatches(
       SELECT db.*
       FROM daily_balances db
       LEFT JOIN project_accounts pa ON db.project_account_id = pa.id
-      WHERE (pa.project_id = $1 OR $2 = true OR (db.project_name IS NOT NULL AND $2 = false AND pa.id IS NULL))
+      WHERE (pa.project_id = $1 OR $2 = true OR (db.project_id = $1 AND $2 = false AND pa.id IS NULL))
         AND db.matching_status IN ('PENDING_REVIEW', 'UNMATCHED')
         AND ($5::text IS NULL OR db.account_name ILIKE $5 OR db.platform ILIKE $5)
         AND ($6::date IS NULL OR db.date >= $6::date)
@@ -1066,7 +1065,7 @@ export async function getPendingBalanceMatches(
       SELECT COUNT(*) as total
       FROM daily_balances db
       LEFT JOIN project_accounts pa ON db.project_account_id = pa.id
-      WHERE (pa.project_id = $1 OR $2 = true OR (db.project_name IS NOT NULL AND $2 = false AND pa.id IS NULL))
+      WHERE (pa.project_id = $1 OR $2 = true OR (db.project_id = $1 AND $2 = false AND pa.id IS NULL))
         AND db.matching_status IN ('PENDING_REVIEW', 'UNMATCHED')
         AND ($3::text IS NULL OR db.account_name ILIKE $3 OR db.platform ILIKE $3)
         AND ($4::date IS NULL OR db.date >= $4::date)
@@ -1189,11 +1188,10 @@ export async function batchReRunBalanceMatch(projectId: string) {
     const sql = `
       SELECT db.id, db.account_name, db.platform
       FROM daily_balances db
-      LEFT JOIN project_accounts pa ON pa.project_id = $1
-      WHERE ($2 = true OR pa.project_id = $1)
+      WHERE ($2 = true OR db.project_id = $1)
         AND db.matching_status IN ('UNMATCHED', 'PENDING_REVIEW')
     `;
-    const result = await query(sql, [project?.id || null, isAll]);
+    const result = await query(sql, [project?.id ?? null, isAll]);
     const rows = result.rows;
 
     if (rows.length === 0) return { success: true, count: 0 };

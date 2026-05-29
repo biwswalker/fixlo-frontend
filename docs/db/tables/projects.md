@@ -14,17 +14,20 @@ aliases: [project]
 
 | Column | Type | Null | Default | Note |
 |---|---|---|---|---|
-| `id` | integer | NOT NULL | seq | PK |
-| `project_name` | text | NOT NULL | — | UNIQUE |
-| `discord_channel_id` | text | NULL | — | ผูก channel |
-| `status` | text | NULL | `'ACTIVE'` | ไม่มี CHECK — ค่าจริงมีอะไรบ้าง? |
+| `id` | integer | NOT NULL | seq | PK — canonical FK key cross-table |
+| `project_name` | text | NOT NULL | — | UNIQUE — display label (mutable) |
+| `code` | text | NOT NULL | — | UNIQUE — URL slug + natural key (immutable). See [ADR 0013](../../adr/0013-project-canonical-identifier.md) |
+| `aliases` | text[] | NOT NULL | `{}` | short forms ที่ staff พิมพ์ `#<alias>` ใน Discord (cross-project lending) |
+| `discord_channel_id` | text | NULL | — | ผูก channel (NOT NULL เมื่อ ACTIVE via CHECK) |
+| `status` | text | NULL | `'ACTIVE'` | values: `ACTIVE`, `INACTIVE` |
 | `created_at` | timestamp | NULL | `CURRENT_TIMESTAMP` | |
-| `active_date` | date | NULL | — | วันเริ่ม active? |
+| `active_date` | date | NULL | — | scrape anchor (NOT NULL เมื่อ ACTIVE via CHECK) |
 
 ## Constraints
 
 - PK: `id`
-- UNIQUE: `project_name`
+- UNIQUE: `project_name`, `code`, `discord_channel_id` (partial WHERE NOT NULL)
+- CHECK: `status != 'ACTIVE' OR (discord_channel_id IS NOT NULL AND active_date IS NOT NULL)`
 
 ## Sequence
 
@@ -38,17 +41,19 @@ FK เข้า:
 - [[transactions]].`source_project_id` (ON DELETE SET NULL)
 - [[transactions]].`target_project_id` (ON DELETE SET NULL)
 
-⚠️ ตารางอื่นใช้ `project_id varchar` → ไม่ FK กับ `projects.id`:
-- [[project_accounts]].`project_id`
-- [[manual_adjustments]].`project_id`
-- [[report_summary_daily]].`project_id`
+⚠️ Migration plan ([ADR 0013](../../adr/0013-project-canonical-identifier.md)) — convert ทุก reference เป็น `project_id integer FK`:
+- [[project_accounts]].`project_id` varchar → integer FK
+- [[manual_adjustments]].`project_id` varchar → integer FK
+- [[report_summary_daily]].`project_id` varchar → integer FK
+- [[daily_balances]] drop `project_name`, add `project_id integer FK`
+- `report_deposits`, `report_withdrawals`, `report_manual_credit_*`, `report_manual_bonus_*` — ADD `project_id integer NOT NULL DEFAULT 1` + FK (scraper rewrite จะ populate per-project ภายหลัง)
 
 ## Indexes
 
 ไม่มี (PK + UNIQUE)
 
-## ต้อง grill
+## Resolved (see [ADR 0013](../../adr/0013-project-canonical-identifier.md))
 
-- `status` ค่าจริงใน dump: **`ACTIVE`**, **`INACTIVE`** — มีค่าอื่น? อยากเป็น CHECK enum?
-- `active_date` = วันที่ใช้เป็น **anchor** ใน scraping job (ดึงข้อมูลจาก external API ตั้งแต่วันนี้เป็นต้นไป — ไม่ได้แปลว่าวันสร้าง)
-- ทำไม project_id ตารางอื่นเป็น varchar? เคยเป็น project_name string?
+- `status` enum = `ACTIVE` | `INACTIVE` enforced via CHECK + ACTIVE invariant
+- `active_date` = scrape anchor (NOT explained as create date)
+- `project_id` varchar history = ad-hoc dev. Plan: integer FK ทุกที่

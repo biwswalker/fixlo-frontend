@@ -17,7 +17,10 @@ tags: [domain, glossary]
 - **Fixlo** — ชื่อผลิตภัณฑ์ (product name)
 - **Spectre** — codename ภายในของ DB/version (เลข `090526` ใน backup file = วันที่ dump 2026-05-09)
 - **juno168** — ชื่อ project ลูกค้า/tenant (ใช้เป็น default ใน [[report_summary_daily]].`project_id`)
-- **Project** — โปรเจกต์ลูกค้าใน [[projects]] table; ผูก Discord channel
+- **Project** — โปรเจกต์ลูกค้าใน [[projects]] table; ผูก Discord channel. Canonical identifier = `id integer PK` (FK ทุกที่). `code text UNIQUE NOT NULL` = stable URL slug + cross-table natural key (เช่น `juno168`, `uno168`). `project_name` = display label (mutable). ดู [ADR 0013](docs/adr/0013-project-canonical-identifier.md).
+- **Project code** — `projects.code` URL slug + natural key. Immutable หลังสร้าง. ใช้ใน `/dashboard/<code>/...` route + resolve เป็น integer id ก่อน query.
+- **Project aliases** — `projects.aliases text[]` short form ที่ staff พิมพ์ `#<alias>` ใน Discord caption สำหรับ cross-project lending (เช่น `['juno', 'jn']`). Match case-insensitive vs code OR aliases. ถ้าไม่เจอ → target null → admin fix manual.
+- **Project ACTIVE invariant** — `status='ACTIVE'` ⇒ `discord_channel_id NOT NULL AND active_date NOT NULL`. Enforced by DB CHECK. Activate = manual SQL UPDATE + restart bot (cache `projectsData` load ครั้งเดียวตอน start ไม่มี hot reload). Onboard project นานๆ ครั้ง → ไม่มี UI.
 - **Project account** — บัญชีธนาคารใน [[project_accounts]] (= master account ของโปรเจกต์)
 - **Cross-project lending** — โปรเจกต์ A ยืมเงินจากบัญชีของโปรเจกต์ B
   - `source_project_id` = เจ้าของบัญชี (ได้รับ/มีสลิป)
@@ -144,12 +147,19 @@ tags: [domain, glossary]
    - **[FIXED] Job queue duplication** — staff trigger "รันคิว" หลายครั้งใน short time ⇒ enqueue PENDING uploads ซ้ำ. BullMQ no jobId dedup ⇒ 20,984 jobs for 8,956 uploads (12,917 dupes). Fix: use `jobId='upload-{uploadId}'` in `bot.js:179` + check existing job ก่อน add. Cleanup script ลบ 9,538+ duplicate waiting jobs. See fixlo-spectre commit f0ce6c3.
    - **[FIXED] transfer_at null (BullMQ serialisation)** — `bot.js` enqueue `upload.target_date` (pg `Date` object) ตรงๆ ใน BullMQ job data. `JSON.stringify` แปลง Date → ISO string `"2026-05-28T17:00:00.000Z"`. Worker รับ string → `instanceof Date = false` → `targetDateStr = "2026-05-28T17:00:00.000Z"` → `bangkokStr` invalid → `transfer_at = null`. Fix: normalise `target_date → YYYY-MM-DD` ใน `bot.js` ก่อน `slipQueue.add()`. Migration 038 backfill 326 null rows. ดู [ADR 0010](docs/adr/0010-transfer-at-utc-convention.md).
 
-0. **Project naming**: rename plan locked
-   - `projects.id=1`: `juno` → `juno168` (UPDATE single row)
-   - audit `uno`, `gaza`, `yb` (id 2-4 INACTIVE) — สมมติ `<short>168` pattern
-   - canonical = full name with brand suffix (`juno168`)
+0. **Project naming + code seed** (locked, ดู [ADR 0013](docs/adr/0013-project-canonical-identifier.md))
+   - Seed table:
+     | id | project_name (display) | code (URL slug + FK key) | aliases (Discord `#`) |
+     |---|---|---|---|
+     | 1 | `juno168` (rename จาก `juno`) | `juno168` | `['juno', 'jn']` |
+     | 2 | `uno168` | `uno168` | `['uno']` |
+     | 3 | `gaza168` | `gaza168` | `['gaza']` |
+     | 4 | `yb168` | `yb168` | `['yb']` |
+   - URL migration: `/dashboard/juno/...` → `/dashboard/juno168/...` (old URL จะ 404 — ต้องการ redirect?)
 
-1. **`project_id` type ไม่ตรงกัน** — [[projects]].id = integer, แต่ [[project_accounts]] / [[manual_adjustments]] / [[report_summary_daily]] ใช้ `project_id varchar` (เก็บ project code เช่น `'juno168'`) → ไม่มี FK. เกิดจาก schema พัฒนา ad-hoc ยังไม่ได้ตามไปแก้.
+1. **`project_id` type ไม่ตรงกัน** (decided — refactor plan ดู [ADR 0013](docs/adr/0013-project-canonical-identifier.md))
+   - ปัจจุบัน: [[projects]].id = integer, แต่ [[project_accounts]] / [[manual_adjustments]] / [[report_summary_daily]] ใช้ `project_id varchar`. [[daily_balances]] ใช้ `project_name text`. report_deposits/withdrawals/manual_* ไม่มี project column.
+   - Plan: ทุก table ใช้ `project_id integer FK REFERENCES projects(id)`. Migration: lookup varchar/name → integer, alter type, add FK. [[daily_balances]] drop `project_name`, bot set `project_id` จาก channel lookup ตอน INSERT. report_* tables เพิ่ม `project_id integer NOT NULL DEFAULT 1` + backfill (scraper rewrite จะ populate ค่าจริง per-project ภายหลัง).
 2. **PK type ปนกัน** — uuid (users, project_accounts, manual_adjustments) vs integer + sequence (projects, raw_uploads, transactions, daily_balances, report_*).
 3. **`transactions` date field mess** (decided plan):
    - drop `record_date`, `transfer_date`, `transfer_time` ทั้งสาม

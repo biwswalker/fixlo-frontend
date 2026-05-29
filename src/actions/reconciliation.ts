@@ -143,8 +143,7 @@ export async function getReconciliationReport(
       return emptyReport(startDate, endDate);
     }
 
-    const projectName = project?.name ?? "";
-    const projectUuid = project?.id ?? null;
+    const projectIntId = project?.id ?? null;
 
     // ------------------------------------------------------------------
     // 1. Expected Inflow — canonical deposit KPI (ADR 0004):
@@ -185,7 +184,7 @@ export async function getReconciliationReport(
       : `
         SELECT COALESCE(balance, 0) AS total
         FROM report_summary_daily
-        WHERE project_id ILIKE '%' || $1 || '%'
+        WHERE project_id = $1
           AND report_date::date <= $2
         ORDER BY report_date DESC
         LIMIT 1
@@ -216,19 +215,18 @@ export async function getReconciliationReport(
     // ------------------------------------------------------------------
     const startBalSql = isAll
       ? `
-        SELECT COALESCE(SUM(balance_amount), 0) AS total 
+        SELECT COALESCE(SUM(balance_amount), 0) AS total
         FROM (
-          SELECT DISTINCT ON (project_name) balance_amount 
-          FROM daily_balances 
+          SELECT DISTINCT ON (project_id) balance_amount
+          FROM daily_balances
           WHERE date < $1
-          ORDER BY project_name, date DESC
+          ORDER BY project_id, date DESC
         ) as prev_balances
       `
       : `
-        SELECT COALESCE(db.balance_amount, 0) AS total 
+        SELECT COALESCE(db.balance_amount, 0) AS total
         FROM daily_balances db
-        JOIN projects p ON db.project_name = p.project_name
-        WHERE p.project_name ILIKE '%' || $1 || '%' AND db.date < $2
+        WHERE db.project_id = $1 AND db.date < $2
         ORDER BY db.date DESC LIMIT 1
       `;
 
@@ -276,12 +274,12 @@ export async function getReconciliationReport(
       manualTxRes,
     ] = await Promise.all([
       query(inflowSql, [startDate, endDate]),
-      query(outflowSql, [startDate, endDate, projectUuid, isAll]),
-      query(balanceSql, isAll ? [endDate] : [projectName, endDate]),
-      query(rawTxSql, [startDate, endDate, projectUuid, isAll]),
-      query(startBalSql, isAll ? [startDate] : [projectName, startDate]),
-      query(dualBalSql, [endDate, projectUuid, isAll]),
-      query(manualTxSql, [startDate, endDate, projectUuid, isAll]).catch(() => ({ rows: [] })),
+      query(outflowSql, [startDate, endDate, projectIntId, isAll]),
+      query(balanceSql, isAll ? [endDate] : [projectIntId, endDate]),
+      query(rawTxSql, [startDate, endDate, projectIntId, isAll]),
+      query(startBalSql, isAll ? [startDate] : [projectIntId, startDate]),
+      query(dualBalSql, [endDate, projectIntId, isAll]),
+      query(manualTxSql, [startDate, endDate, projectIntId, isAll]).catch(() => ({ rows: [] })),
     ]);
 
     // ------------------------------------------------------------------
@@ -419,11 +417,11 @@ export async function addManualAdjustment(data: CreateAdjustmentInput) {
 
   try {
     const isAll = data.projectId === "all";
-    const projectUuid = isAll
+    const projectIntId = isAll
       ? null
       : (await resolveProject(data.projectId))?.id;
 
-    if (!isAll && !projectUuid) {
+    if (!isAll && !projectIntId) {
       return { success: false, error: "Project not found" };
     }
 
@@ -433,7 +431,7 @@ export async function addManualAdjustment(data: CreateAdjustmentInput) {
       ) VALUES ($1, $2, $3, $4, $5, $6)
     `;
     const params = [
-      projectUuid || data.projectId,
+      projectIntId ?? null,
       data.masterAccount,
       data.amount,
       data.reason,

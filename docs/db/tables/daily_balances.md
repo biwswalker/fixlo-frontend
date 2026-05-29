@@ -17,7 +17,7 @@ aliases: [daily balance]
 | `id` | integer | NOT NULL | seq | PK |
 | `date` | date | NULL | `CURRENT_DATE` | วันที่ snapshot |
 | `image_path` | text | NULL | — | path ภาพ (nullable migration 025 — manual entry ไม่บังคับแนบรูป) |
-| `project_name` | text | NULL | — | ⚠️ ใช้ name ไม่ใช่ id |
+| `project_id` | integer | NOT NULL | — | FK → [[projects]].id (migration 042 — replaces `project_name`) |
 | `raw_ai_output` | jsonb | NULL | — | AI output |
 | `balance_amount` | numeric(15,2) | NULL | — | ยอดคงเหลือ. Worker maps: `BALANCE`→`aiOutput.amount`, `GATEWAY_BALANCE`→`aiOutput.balance_amount` |
 | `account_name` | text | NULL | — | ชื่อบัญชี |
@@ -42,6 +42,7 @@ aliases: [daily balance]
 ## Constraints
 
 - PK: `id`
+- FK: `project_id` → [[projects]].id (NOT NULL — migration 042)
 - FK: `project_account_id` → [[project_accounts]].id (nullable)
 - CHECK `daily_balances_source_check`: `source IN ('discord', 'manual', 'scraper')` (migration 021, extended migration 037)
 
