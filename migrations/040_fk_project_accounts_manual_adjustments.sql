@@ -9,14 +9,17 @@ BEGIN;
 -- project_accounts
 -- ============================================================
 
--- Pre-flight: orphan check
+-- Pre-flight: orphan check (accepts both code string e.g. 'juno168' AND integer string e.g. '1')
 DO $$
 BEGIN
   IF EXISTS (
     SELECT 1 FROM project_accounts pa
-    WHERE NOT EXISTS (SELECT 1 FROM projects p WHERE p.code = pa.project_id)
+    WHERE NOT EXISTS (
+      SELECT 1 FROM projects p
+      WHERE p.code = pa.project_id OR p.id::text = pa.project_id
+    )
   ) THEN
-    RAISE EXCEPTION 'project_accounts has rows with project_id not matching any projects.code — cannot migrate';
+    RAISE EXCEPTION 'project_accounts has rows with project_id not matching any projects.code or id — cannot migrate';
   END IF;
 END $$;
 
@@ -30,10 +33,12 @@ BEGIN
   ) THEN
     ALTER TABLE project_accounts ADD COLUMN project_id_new integer;
 
+    -- Resolve by code first, then by integer id string fallback
     UPDATE project_accounts pa
-    SET project_id_new = p.id
-    FROM projects p
-    WHERE p.code = pa.project_id;
+    SET project_id_new = COALESCE(
+      (SELECT p.id FROM projects p WHERE p.code = pa.project_id),
+      (SELECT p.id FROM projects p WHERE p.id::text = pa.project_id)
+    );
 
     ALTER TABLE project_accounts DROP COLUMN project_id;
     ALTER TABLE project_accounts RENAME COLUMN project_id_new TO project_id;
