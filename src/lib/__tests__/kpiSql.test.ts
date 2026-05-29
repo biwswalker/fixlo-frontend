@@ -129,6 +129,30 @@ describe("depositPerDaySql", () => {
   });
 });
 
+describe("depositTotalSql — project filter", () => {
+  it("includes project_id filter when projectParam provided", () => {
+    const sql = depositTotalSql(1, 2, 3);
+    expect(sql).toContain("project_id = $3");
+  });
+
+  it("omits project_id filter when projectParam not provided", () => {
+    const sql = depositTotalSql(1, 2);
+    expect(sql).not.toContain("project_id");
+  });
+});
+
+describe("withdrawTotalSql — project filter", () => {
+  it("includes project_id filter when projectParam provided", () => {
+    const sql = withdrawTotalSql(1, 2, 3);
+    expect(sql).toContain("project_id = $3");
+  });
+
+  it("omits project_id filter when projectParam not provided", () => {
+    const sql = withdrawTotalSql(1, 2);
+    expect(sql).not.toContain("project_id");
+  });
+});
+
 describe("withdrawPerDaySql", () => {
   it("references report_withdrawals only — excludes report_manual_credit_out (game-side adjustment, not cash)", () => {
     const sql = withdrawPerDaySql(1, 2);

@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { nameOrAll, nameOrAllParams } from "../projectFilter";
+import { nameOrAll, nameOrAllParams, idOrAll } from "../projectFilter";
 
 describe("nameOrAll", () => {
   it("produces correct SQL fragment with given param indices", () => {
@@ -26,5 +26,15 @@ describe("nameOrAllParams", () => {
 
   it("handles undefined project name", () => {
     expect(nameOrAllParams(undefined, false)).toEqual(["", false]);
+  });
+});
+
+describe("idOrAll", () => {
+  it("produces correct SQL fragment with integer project_id", () => {
+    expect(idOrAll(1, 2)).toBe("(project_id = $1 OR $2 = true)");
+  });
+
+  it("accepts arbitrary param indices", () => {
+    expect(idOrAll(3, 4)).toBe("(project_id = $3 OR $4 = true)");
   });
 });
