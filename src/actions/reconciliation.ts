@@ -150,7 +150,8 @@ export async function getReconciliationReport(
     //    report_deposits (สำเร็จ) + report_manual_credit_in.
     //    Bonus is excluded — see ADR 0004 for rationale.
     // ------------------------------------------------------------------
-    const inflowSql = depositTotalSql(1, 2);
+    const projParam = isAll ? undefined : 3;
+    const inflowSql = depositTotalSql(1, 2, projParam);
 
     // ------------------------------------------------------------------
     // 2. Expected Outflow — SUM of ai_amount from verified transactions
@@ -273,7 +274,7 @@ export async function getReconciliationReport(
       dualBalRes,
       manualTxRes,
     ] = await Promise.all([
-      query(inflowSql, [startDate, endDate]),
+      query(inflowSql, isAll ? [startDate, endDate] : [startDate, endDate, projectIntId]),
       query(outflowSql, [startDate, endDate, projectIntId, isAll]),
       query(balanceSql, isAll ? [endDate] : [projectIntId, endDate]),
       query(rawTxSql, [startDate, endDate, projectIntId, isAll]),

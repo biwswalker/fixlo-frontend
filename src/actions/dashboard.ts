@@ -310,13 +310,17 @@ export async function getDailyChartData(
 ) {
   try {
     const { startDate, endDate } = getDateRange(from, to);
-    const dateParams = [startDate, endDate];
+    const isAll = projectId === "all";
+    const project = isAll ? null : await resolveProject(projectId);
+    const projectIntId = project?.id ?? null;
+    const projParam = isAll ? undefined : 3;
+    const dateParams = isAll ? [startDate, endDate] : [startDate, endDate, projectIntId];
 
     logger.debug("getDailyChartData", "Fetching chart data from canonical KPI lib", { projectId, startDate, endDate });
 
     const [depositsRes, withdrawalsRes] = await Promise.all([
-      query(depositPerDaySql(1, 2), dateParams),
-      query(withdrawPerDaySql(1, 2), dateParams),
+      query(depositPerDaySql(1, 2, projParam), dateParams),
+      query(withdrawPerDaySql(1, 2, projParam), dateParams),
     ]);
 
     return mergeDailyChartRows(depositsRes.rows, withdrawalsRes.rows);
