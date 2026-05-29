@@ -1,3 +1,5 @@
+export const dynamic = "force-dynamic";
+
 import { getServerAuthSession } from "@/lib/auth";
 import { hasPermission } from "@/lib/rbac";
 import { redirect } from "next/navigation";
