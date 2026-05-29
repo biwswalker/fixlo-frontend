@@ -57,8 +57,8 @@ generated: 2026-05-09
 ## Schema observations (ต้อง grill)
 
 1. **PK ปนกัน**: บางตารางใช้ `integer` (legacy) บางตารางใช้ `uuid` (`gen_random_uuid()`). กลุ่ม uuid: users, project_accounts, manual_adjustments. กลุ่ม int: projects, raw_uploads, transactions, daily_balances, report_*.
-2. **`project_id` type ไม่ตรงกัน**: [[projects]].`id` = `integer` แต่ [[project_accounts]].`project_id`, [[manual_adjustments]].`project_id`, [[report_summary_daily]].`project_id` = `varchar` — **ไม่มี FK declared**. เป็น project_name หรือ project code?
-3. **report_summary_daily.project_id DEFAULT `'juno168'`** — เคย single-tenant?
+2. ~~**`project_id` type ไม่ตรงกัน**~~ — **Resolved** (migrations 040–042): [[project_accounts]], [[manual_adjustments]], [[report_summary_daily]] แปลงเป็น `integer FK REFERENCES projects(id)` แล้ว. report_* tables มี `project_id integer NOT NULL DEFAULT 1`.
+3. ~~**report_summary_daily.project_id DEFAULT `'juno168'`**~~ — resolved, default ลบออกหลัง migrate.
 4. **transactions.transfer_date + transfer_time** แยกเป็น date + varchar(20) แทน timestamp.
-5. **daily_balances** ใช้ `project_name text` ไม่ใช่ project_id.
+5. ~~**daily_balances ใช้ `project_name text`**~~ — **Resolved** (migration 042): drop `project_name`, add `project_id integer FK`.
 6. FK ส่วนใหญ่ `ON DELETE SET NULL` — ลบ project แล้วไม่ลบ history.

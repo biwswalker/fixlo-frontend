@@ -157,16 +157,14 @@ tags: [domain, glossary]
      | 4 | `yb168` | `yb168` | `['yb']` |
    - URL migration: `/dashboard/juno/...` → `/dashboard/juno168/...` (old URL จะ 404 — ต้องการ redirect?)
 
-1. **`project_id` type ไม่ตรงกัน** (decided — refactor plan ดู [ADR 0013](docs/adr/0013-project-canonical-identifier.md))
-   - ปัจจุบัน: [[projects]].id = integer, แต่ [[project_accounts]] / [[manual_adjustments]] / [[report_summary_daily]] ใช้ `project_id varchar`. [[daily_balances]] ใช้ `project_name text`. report_deposits/withdrawals/manual_* ไม่มี project column.
-   - Plan: ทุก table ใช้ `project_id integer FK REFERENCES projects(id)`. Migration: lookup varchar/name → integer, alter type, add FK. [[daily_balances]] drop `project_name`, bot set `project_id` จาก channel lookup ตอน INSERT. report_* tables เพิ่ม `project_id integer NOT NULL DEFAULT 1` + backfill (scraper rewrite จะ populate ค่าจริง per-project ภายหลัง).
+1. ~~**`project_id` type ไม่ตรงกัน**~~ — **Resolved** (migrations 039–042, [ADR 0013](docs/adr/0013-project-canonical-identifier.md)): ทุก table ใช้ `project_id integer FK REFERENCES projects(id)` แล้ว. `daily_balances.project_name` dropped. bot set `project_id` จาก channel lookup. report_* tables มี `project_id integer NOT NULL DEFAULT 1`.
 2. **PK type ปนกัน** — uuid (users, project_accounts, manual_adjustments) vs integer + sequence (projects, raw_uploads, transactions, daily_balances, report_*).
 3. **`transactions` date field mess** (decided plan):
    - drop `record_date`, `transfer_date`, `transfer_time` ทั้งสาม
    - add `transfer_at timestamp` ตัวเดียว
    - worker ใช้ `aiOutput.date + aiOutput.time` มา insert. manual UI ใช้ `transfer_at` field
    - migration: backfill `transfer_at` จาก existing rows — preference: `transfer_date+transfer_time` ถ้ามี > `record_date` ถ้าไม่มี
-4. **[[daily_balances]] ใช้ `project_name text`** — ไม่ใช่ FK.
+4. ~~**[[daily_balances]] ใช้ `project_name text`**~~ — Resolved (migration 042).
 8. **Canonical deposit/withdraw KPI** — ดู [ADR 0004](docs/adr/0004-deposit-withdraw-kpi-from-source-tables.md), [ADR 0006](docs/adr/0006-withdraw-kpi-excludes-manual-credit-out.md).
    - **ยอดฝากรวม** = `SUM(report_deposits.amount WHERE status='สำเร็จ')` + `SUM(report_manual_credit_in.amount)`
    - **ยอดถอนรวม** = `SUM(report_withdrawals.amount WHERE status='สำเร็จ')` เท่านั้น — ไม่รวม `report_manual_credit_out` (เพราะเป็น game-side credit adjustment ไม่ใช่ cash outflow จาก master account)
@@ -224,7 +222,7 @@ Migration SQL (ordered by dependency):
    - Backfill: `COALESCE(transfer_date + transfer_time, record_date)` per row
    - Drop `record_date`, `transfer_date`, `transfer_time`
 
-4. **Project rename**: `UPDATE projects SET project_name='juno168' WHERE id=1` (audit other projects ก่อน)
+4. ~~**Project rename**~~ — Done (migration 039): `project_name='juno168'` WHERE id=1.
 
 4.5. **Add match_breakdown column** (`transactions`):
    - `ALTER TABLE transactions ADD COLUMN IF NOT EXISTS match_breakdown jsonb`

@@ -29,7 +29,7 @@ generated: 2026-05-10
 
 `projectId` ใน URL = ชื่อ project (เช่น `juno168`) หรือ `all` (รวมทุก project).
 - ค่า `all` → query รวมทุก project (ไม่กรอง `project_id`)
-- ค่าอื่น → resolve ผ่าน [[../db/tables/projects|projects]] ตาราง `WHERE project_name ILIKE '%<projectId>%' AND status = 'ACTIVE'`
+- ค่าอื่น → resolve ผ่าน [[../db/tables/projects|projects]] ตาราง: exact `LOWER(code) = LOWER($slug)` → fallback `LOWER($slug) = ANY(aliases)` (ดู [ADR 0013](../adr/0013-project-canonical-identifier.md))
 - ไม่เจอ project → redirect `/dashboard/all`
 
 ## Date range

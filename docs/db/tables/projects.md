@@ -41,12 +41,12 @@ FK เข้า:
 - [[transactions]].`source_project_id` (ON DELETE SET NULL)
 - [[transactions]].`target_project_id` (ON DELETE SET NULL)
 
-⚠️ Migration plan ([ADR 0013](../../adr/0013-project-canonical-identifier.md)) — convert ทุก reference เป็น `project_id integer FK`:
-- [[project_accounts]].`project_id` varchar → integer FK
-- [[manual_adjustments]].`project_id` varchar → integer FK
-- [[report_summary_daily]].`project_id` varchar → integer FK
-- [[daily_balances]] drop `project_name`, add `project_id integer FK`
-- `report_deposits`, `report_withdrawals`, `report_manual_credit_*`, `report_manual_bonus_*` — ADD `project_id integer NOT NULL DEFAULT 1` + FK (scraper rewrite จะ populate per-project ภายหลัง)
+✅ **Resolved** (migrations 040–042, [ADR 0013](../../adr/0013-project-canonical-identifier.md)) — ทุก reference เป็น `project_id integer FK` แล้ว:
+- [[project_accounts]].`project_id` integer FK ✓
+- [[manual_adjustments]].`project_id` integer FK ✓
+- [[report_summary_daily]].`project_id` integer FK ✓
+- [[daily_balances]] `project_name` dropped, `project_id integer FK` ✓
+- `report_deposits`, `report_withdrawals`, `report_manual_credit_*`, `report_manual_bonus_*` — `project_id integer NOT NULL DEFAULT 1` + FK ✓ (scraper rewrite จะ populate per-project ภายหลัง)
 
 ## Indexes
 

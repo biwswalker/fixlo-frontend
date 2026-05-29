@@ -74,4 +74,4 @@ Set โดย Gemini AI ใน worker (จาก prompt — ดู [worker.js:15
 ## ต้อง grill
 
 - อยากบังคับ enum ของ `platform`? Worker.js prompt มี allow-list อยู่แล้ว — เพิ่ม CHECK constraint ใน DB ป้องกัน drift
-- ทำไมใช้ `project_name` text แทน FK? legacy data
+- ~~ทำไมใช้ `project_name` text แทน FK?~~ — Resolved: migration 042 drop `project_name`, add `project_id integer FK`.
