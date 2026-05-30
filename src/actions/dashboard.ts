@@ -1432,18 +1432,25 @@ export async function createManualBalance(
     return { success: false, error: "Unauthorized" };
   }
   try {
+    const accountRes = await query(
+      `SELECT project_id FROM project_accounts WHERE id = $1`,
+      [projectAccountId],
+    );
+    const projectId: number | null = accountRes.rows[0]?.project_id ?? null;
+    if (!projectId) return { success: false, error: "Project account not found" };
+
     await query(
       `INSERT INTO daily_balances
-         (project_account_id, date, balance_amount, source, matching_status, matched_by, image_path)
-       VALUES ($1, $2::date, $3, 'manual', 'MANUAL_MAPPED', $4, $5)
-       ON CONFLICT (date, discord_message_id)
+         (project_id, project_account_id, date, balance_amount, source, matching_status, matched_by, image_path)
+       VALUES ($1, $2, $3::date, $4, 'manual', 'MANUAL_MAPPED', $5, $6)
+       ON CONFLICT (date, project_account_id) WHERE project_account_id IS NOT NULL
          DO UPDATE SET
            balance_amount = EXCLUDED.balance_amount,
            source = 'manual',
            matching_status = 'MANUAL_MAPPED',
            matched_by = EXCLUDED.matched_by,
            image_path = EXCLUDED.image_path`,
-      [projectAccountId, date, balanceAmount, session.user.username, imagePath ?? null],
+      [projectId, projectAccountId, date, balanceAmount, session.user.username, imagePath ?? null],
     );
 
     revalidatePath("/dashboard/[projectId]/reconciliation", "page");
