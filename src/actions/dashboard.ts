@@ -1190,7 +1190,7 @@ export async function batchReRunBalanceMatch(projectId: string) {
     const accounts = await getProjectAccounts(projectId);
 
     const sql = `
-      SELECT db.id, db.account_name, db.platform
+      SELECT db.id, db.account_name, db.platform, db.account_number
       FROM daily_balances db
       WHERE ($2 = true OR db.project_id = $1)
         AND db.matching_status IN ('UNMATCHED', 'PENDING_REVIEW')
@@ -1208,8 +1208,7 @@ export async function batchReRunBalanceMatch(projectId: string) {
         {
           account_name: row.account_name,
           platform: row.platform,
-          // P0 graceful (ADR 0005): pass null until spectre #3 ships `acc_num`.
-          account_number: null,
+          account_number: row.account_number ?? null,
         },
         accounts,
       );

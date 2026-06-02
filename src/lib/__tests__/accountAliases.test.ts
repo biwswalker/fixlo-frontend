@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { proposeAliasAddition } from "../accountAliases";
+import { proposeAliasAddition, GENERIC_ALIAS_BLOCKLIST } from "../accountAliases";
 import type { ProjectAccount } from "@/types/dashboard";
 
 function acc(overrides: Partial<ProjectAccount> & { id: string; account_name: string }): ProjectAccount {
@@ -106,6 +106,42 @@ describe("proposeAliasAddition — rejected", () => {
     expect(result.ok).toBe(false);
     if (result.ok) return;
     expect(result.reason).toBe("cross_master_collision");
+  });
+
+  // M5: generic banking terms are account types, not owner identities.
+  // Storing them as aliases trains the matcher to mis-identify accounts.
+  it("M5: silently skips generic banking term 'บัญชีสะสมทรัพย์'", () => {
+    const target = acc({ id: "t", account_name: "ศุณิษา" });
+    const result = proposeAliasAddition(target, "บัญชีสะสมทรัพย์", [target], ACTOR, 1);
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.reason).toBe("generic_term");
+  });
+
+  it("M5: silently skips 'ออมทรัพย์'", () => {
+    const target = acc({ id: "t", account_name: "เกษม" });
+    const result = proposeAliasAddition(target, "ออมทรัพย์", [target], ACTOR, 1);
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.reason).toBe("generic_term");
+  });
+
+  it("M5 is normalized: '  บัญชีออมทรัพย์  ' also rejected", () => {
+    const target = acc({ id: "t", account_name: "เกษม" });
+    const result = proposeAliasAddition(target, "  บัญชีออมทรัพย์  ", [target], ACTOR, 1);
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.reason).toBe("generic_term");
+  });
+
+  it("M5 does not block legitimate owner names", () => {
+    const target = acc({ id: "t", account_name: "ศุณิษา" });
+    const result = proposeAliasAddition(target, "คุณ ศุญิษา", [target], ACTOR, 1);
+    expect(result.ok).toBe(true);
+  });
+
+  it("GENERIC_ALIAS_BLOCKLIST is exported and contains incident term", () => {
+    expect(GENERIC_ALIAS_BLOCKLIST).toContain("บัญชีสะสมทรัพย์");
   });
 
   it("does not flag collision against target itself", () => {

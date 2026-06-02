@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { runBalanceMatch } from "../balanceMatcher";
+import { runBalanceMatch, extractVisibleSuffix } from "../balanceMatcher";
 import type { ProjectAccount } from "@/types/dashboard";
 
 function makeAccount(overrides: Partial<ProjectAccount> & { id: string; account_name: string }): ProjectAccount {
@@ -251,6 +251,88 @@ describe("runBalanceMatch — P0 account_number exact match (Mode B graceful)", 
       masters,
     );
     expect(result.status).toBe("UNMATCHED");
+  });
+});
+
+describe("extractVisibleSuffix", () => {
+  it("BBL masked: 511-0-xxx378 → 378", () => expect(extractVisibleSuffix("511-0-xxx378")).toBe("378"));
+  it("BBL masked: 710-0-xxx417 → 417", () => expect(extractVisibleSuffix("710-0-xxx417")).toBe("417"));
+  it("short mask: xxx920 → 920",        () => expect(extractVisibleSuffix("xxx920")).toBe("920"));
+  it("star mask: 06*-***-7141 → 7141",  () => expect(extractVisibleSuffix("06*-***-7141")).toBe("7141"));
+  it("uppercase X: XXX-X-XX230-0 → 2300", () => expect(extractVisibleSuffix("XXX-X-XX230-0")).toBe("2300"));
+  it("full number: 5110651378 → 5110651378", () => expect(extractVisibleSuffix("5110651378")).toBe("5110651378"));
+  it("null → empty string",             () => expect(extractVisibleSuffix(null)).toBe(""));
+  it("whitespace-only → empty string",  () => expect(extractVisibleSuffix("   ")).toBe(""));
+});
+
+describe("runBalanceMatch — P0 suffix match (two-phase)", () => {
+  // Incident 2026-05-29: OCR masked number must beat alias exact match on wrong account.
+  it("incident: suffix 378 on full master beats alias exact on wrong account", () => {
+    const masters = [
+      makeAccount({ id: "acc-kasem",  account_name: "เกษม ต๊ะแสนเทพ", bank_code: "bbl", account_number: "5110651378" }),
+      makeAccount({ id: "acc-sunisa", account_name: "ศุณิษา", bank_code: "bbl", account_number: "710-0-xxx417", aliases: '["บัญชีสะสมทรัพย์"]' }),
+    ];
+    const result = runBalanceMatch(
+      { account_name: "บัญชีสะสมทรัพย์", platform: "BBL", account_number: "511-0-xxx378" },
+      masters,
+    );
+    expect(result.status).toBe("AUTO_MAPPED");
+    expect(result.matchedAccountId).toBe("acc-kasem");
+    expect(result.score).toBe(90);
+  });
+
+  it("masked-to-masked suffix: xxx920 scanned matches xxx920 master", () => {
+    const masters = [
+      makeAccount({ id: "acc-p", account_name: "ไพรวัลย์", bank_code: "bbl", account_number: "xxx920" }),
+      makeAccount({ id: "acc-q", account_name: "อื่น",     bank_code: "scb", account_number: "xxx111" }),
+    ];
+    const result = runBalanceMatch(
+      { account_name: null, platform: "BBL", account_number: "511-0-xxx920" },
+      masters,
+    );
+    expect(result.status).toBe("AUTO_MAPPED");
+    expect(result.matchedAccountId).toBe("acc-p");
+    expect(result.score).toBe(90);
+  });
+
+  it("ambiguous suffix: two masters same suffix → PENDING_REVIEW", () => {
+    const masters = [
+      makeAccount({ id: "acc-a1", account_name: "อังคณา",       bank_code: "truemoney", account_number: "08*-***-3197" }),
+      makeAccount({ id: "acc-a2", account_name: "อังคณา หิน****", bank_code: "truemoney", account_number: "08x-xxx-3197" }),
+    ];
+    const result = runBalanceMatch(
+      { account_name: null, platform: "TrueMoney", account_number: "08*-***-3197" },
+      masters,
+    );
+    expect(result.status).toBe("PENDING_REVIEW");
+    expect(result.matchedAccountId).toBeNull();
+  });
+
+  it("uppercase X in master normalizes correctly for exact match", () => {
+    const masters = [
+      makeAccount({ id: "acc-s", account_name: "สุภาภรณ์", bank_code: "ktb", account_number: "XXX-X-XX230-0" }),
+    ];
+    const result = runBalanceMatch(
+      { account_name: "สุภาภรณ์", platform: "KTB", account_number: "665-6-96230-0" },
+      masters,
+    );
+    // P0 exact: "6696230-0" vs "2300" — suffix: "9623" vs "2300" no suffix match,
+    // fall to P1 name exact → AUTO_MAPPED
+    expect(result.status).toBe("AUTO_MAPPED");
+    expect(result.matchedAccountId).toBe("acc-s");
+  });
+
+  it("no suffix match → falls through to P1 name matching", () => {
+    const masters = [
+      makeAccount({ id: "acc-s", account_name: "สมชาย ใจดี", bank_code: "scb", account_number: "111-111-1111" }),
+    ];
+    const result = runBalanceMatch(
+      { account_name: "สมชาย ใจดี", platform: "SCB", account_number: "999-999-9999" },
+      masters,
+    );
+    // No acc_num match → P1 name exact → AUTO_MAPPED
+    expect(result.status).toBe("AUTO_MAPPED");
+    expect(result.matchedAccountId).toBe("acc-s");
   });
 });
 
