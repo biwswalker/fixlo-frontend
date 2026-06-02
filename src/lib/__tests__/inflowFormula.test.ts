@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { computeInflow, computePerAccountInflow } from "../inflowFormula";
+import { computeInflow, computePerAccountInflow, resolveAccountInflow } from "../inflowFormula";
 
 interface BalanceRow {
   project_account_id: string;
@@ -140,5 +140,30 @@ describe("computePerAccountInflow — missing-data detection", () => {
   it("equal balances, zero outflow → value is 0, not negative", () => {
     const result = computePerAccountInflow(1000, 1000, 0);
     expect(result).toEqual({ value: 0, missingMessage: null });
+  });
+});
+
+describe("resolveAccountInflow (ADR 0016)", () => {
+  const base = {
+    reportSourced: false as boolean,
+    gatewayInflow: null as number | null,
+    selectedDayBalance: 1300,
+    prevDayBalance: 1000,
+    effectiveOutflow: 200,
+  };
+
+  it("non-report row falls back to the balance formula", () => {
+    expect(resolveAccountInflow(base)).toEqual({ value: 500, missingMessage: null });
+  });
+
+  it("report-sourced row uses gatewayInflow, ignoring the balance delta", () => {
+    const r = resolveAccountInflow({ ...base, reportSourced: true, gatewayInflow: 45000 });
+    expect(r).toEqual({ value: 45000, missingMessage: null });
+  });
+
+  it("report-sourced row with no report → ไม่มีรายงาน", () => {
+    const r = resolveAccountInflow({ ...base, reportSourced: true, gatewayInflow: null });
+    expect(r.value).toBeNull();
+    expect(r.missingMessage).toBe("ไม่มีรายงาน");
   });
 });

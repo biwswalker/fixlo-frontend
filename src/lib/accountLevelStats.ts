@@ -1,4 +1,5 @@
 import type { AccountLevelStat } from "@/actions/reconciliation";
+import type { ParsedApayAccountReport } from "@/lib/apayStats";
 
 export interface TxRow {
   account_name: string | null;
@@ -171,6 +172,78 @@ export function buildAccountLevelStats(
       prevDayBalanceId: prevIdMap.get(account) ?? null,
       selectedDaySource: selectedSourceMap.get(account) ?? null,
       prevDaySource: prevSourceMap.get(account) ?? null,
+      reportSourced: false,
+      reportSource: null,
+      gatewayInflow: null,
+      gatewayOutflow: null,
     }))
     .sort((a, b) => b.effectiveOutflow - a.effectiveOutflow);
+}
+
+/**
+ * Merges the Apay gateway report (ADR 0016) into the stats list in place.
+ *
+ * The Apay row's outflow/inflow become report-sourced (Replace semantics):
+ * effectiveOutflow = withdrawal, ยอดรับ = deposit. Slip/manual columns are
+ * zeroed (gateway is neither). Balance snapshots are preserved as display-only.
+ * When no report row exists that day, gatewayInflow/gatewayOutflow stay null so
+ * the row renders "—/ไม่มีรายงาน" without falling back to the balance formula.
+ *
+ * The Apay row is located by accountId (NOT account_name: gateways like
+ * Apay/Badoo/DPay can share a name such as "ACCTEAM", so a name match could
+ * clobber a different gateway's row). If absent it is injected so the gateway
+ * always shows for single-project views. Balance snapshots come from an existing
+ * row when present, else from `balance` (the Apay daily_balances rows) — needed
+ * because balance-only accounts never get a row from buildAccountLevelStats.
+ * Re-sorts by effectiveOutflow.
+ */
+export type ApayBalanceSnapshot = Pick<
+  AccountLevelStat,
+  | "selectedDayBalance" | "prevDayBalance"
+  | "selectedDayStatus" | "prevDayStatus"
+  | "selectedDayImagePath" | "prevDayImagePath"
+  | "selectedDayBalanceId" | "prevDayBalanceId"
+  | "selectedDaySource" | "prevDaySource"
+>;
+
+export function applyApayReportOverride(
+  stats: AccountLevelStat[],
+  report: ParsedApayAccountReport,
+  balance?: ApayBalanceSnapshot | null,
+): void {
+  const idx = stats.findIndex((s) => s.accountId === report.accountId);
+  const base = idx >= 0 ? stats[idx] : null;
+  const bal = base ?? balance ?? null;
+
+  const merged: AccountLevelStat = {
+    account: report.accountName,
+    accountId: report.accountId,
+    bankCode: report.bankCode,
+    accountNumber: base?.accountNumber ?? null,
+    systemOutflow: 0,
+    manualOutflow: 0,
+    adjustments: 0,
+    effectiveOutflow: report.gatewayOutflow ?? 0,
+    count: 0,
+    closingBalance: base?.closingBalance ?? null,
+    selectedDayBalance: bal?.selectedDayBalance ?? null,
+    prevDayBalance: bal?.prevDayBalance ?? null,
+    selectedDayStatus: bal?.selectedDayStatus ?? null,
+    prevDayStatus: bal?.prevDayStatus ?? null,
+    selectedDayImagePath: bal?.selectedDayImagePath ?? null,
+    prevDayImagePath: bal?.prevDayImagePath ?? null,
+    selectedDayBalanceId: bal?.selectedDayBalanceId ?? null,
+    prevDayBalanceId: bal?.prevDayBalanceId ?? null,
+    selectedDaySource: bal?.selectedDaySource ?? null,
+    prevDaySource: bal?.prevDaySource ?? null,
+    reportSourced: true,
+    reportSource: report.reportSource,
+    gatewayInflow: report.gatewayInflow,
+    gatewayOutflow: report.gatewayOutflow,
+  };
+
+  if (idx >= 0) stats[idx] = merged;
+  else stats.push(merged);
+
+  stats.sort((a, b) => b.effectiveOutflow - a.effectiveOutflow);
 }

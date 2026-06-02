@@ -8,10 +8,10 @@ import { hasPermission } from "@/lib/rbac";
 import { revalidatePath } from "next/cache";
 import { resolveProject } from "@/lib/projects";
 import { resolvePeriodToDateRange } from "@/lib/periodUtils";
-import { buildAccountLevelStats } from "@/lib/accountLevelStats";
-import { computePerAccountInflow } from "@/lib/inflowFormula";
+import { buildAccountLevelStats, applyApayReportOverride } from "@/lib/accountLevelStats";
+import { resolveAccountInflow } from "@/lib/inflowFormula";
 import { depositTotalSql } from "@/lib/kpiSql";
-import { parseApayStatsRow, buildApayStatsQuery } from "@/lib/apayStats";
+import { buildApayAccountReportQuery, parseApayAccountReportRow } from "@/lib/apayStats";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -58,12 +58,19 @@ export interface AccountLevelStat {
   selectedDaySource: string | null;
   /** Source of daily_balance for previous day; null if none */
   prevDaySource: string | null;
+  /** True when outflow/inflow come from report_apay_daily instead of slips/balance (ADR 0016) */
+  reportSourced: boolean;
+  /** Gateway report source; null when reportSourced=false or no report row that day */
+  reportSource: "scraper" | "discord" | null;
+  /** Gateway deposit → ยอดรับ for reportSourced rows; null = no report row */
+  gatewayInflow: number | null;
+  /** Gateway withdrawal → effectiveOutflow for reportSourced rows; null = no report row */
+  gatewayOutflow: number | null;
 }
 
 export interface ReconciliationReport {
   startingBalance: number;
   expectedInflow: number;
-  expectedOutflow: number;
   adjustmentsTotal: number;
   effectiveOutflowTotal: number;
   actualBalance: number;
@@ -92,7 +99,6 @@ function emptyReport(startDate: string, endDate: string): ReconciliationReport {
   return {
     startingBalance: 0,
     expectedInflow: 0,
-    expectedOutflow: 0,
     adjustmentsTotal: 0,
     effectiveOutflowTotal: 0,
     actualBalance: 0,
@@ -154,22 +160,7 @@ export async function getReconciliationReport(
     const inflowSql = depositTotalSql(1, 2, projParam);
 
     // ------------------------------------------------------------------
-    // 2. Expected Outflow — SUM of ai_amount from verified transactions
-    // ------------------------------------------------------------------
-    const outflowSql = `
-      SELECT COALESCE(SUM(t.ai_amount), 0) AS total
-      FROM transactions t
-      WHERE (t.transfer_at AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Bangkok')::date BETWEEN $1 AND $2
-        AND (
-          t.source_project_id = $3
-          OR t.target_project_id = $3
-          OR $4 = true
-        )
-        AND t.matching_status IN ('AUTO_MAPPED', 'MANUAL_MAPPED')
-    `;
-
-    // ------------------------------------------------------------------
-    // 3. Actual Bank Balance — latest balance from report_summary_daily
+    // 2. Actual Bank Balance — latest balance from report_summary_daily
     //    at or before the period end date
     // ------------------------------------------------------------------
     const balanceSql = isAll
@@ -239,6 +230,7 @@ export async function getReconciliationReport(
     const dualBalSql = `
       SELECT
         pa.account_name,
+        db.project_account_id::text AS project_account_id,
         db.id,
         db.source,
         db.balance_amount,
@@ -267,20 +259,23 @@ export async function getReconciliationReport(
 
     const [
       inflowRes,
-      outflowRes,
       balanceRes,
       rawTxRes,
       startBalRes,
       dualBalRes,
       manualTxRes,
+      apayReportRes,
     ] = await Promise.all([
       query(inflowSql, isAll ? [startDate, endDate] : [startDate, endDate, projectIntId]),
-      query(outflowSql, [startDate, endDate, projectIntId, isAll]),
       query(balanceSql, isAll ? [endDate] : [projectIntId, endDate]),
       query(rawTxSql, [startDate, endDate, projectIntId, isAll]),
       query(startBalSql, isAll ? [startDate] : [projectIntId, startDate]),
       query(dualBalSql, [endDate, projectIntId, isAll]),
       query(manualTxSql, [startDate, endDate, projectIntId, isAll]).catch(() => ({ rows: [] })),
+      // ADR 0016: Apay gateway report merged into the breakdown table — single-project only
+      isAll
+        ? Promise.resolve({ rows: [] })
+        : query(buildApayAccountReportQuery(), [endDate, projectIntId]).catch(() => ({ rows: [] })),
     ]);
 
     // ------------------------------------------------------------------
@@ -297,6 +292,35 @@ export async function getReconciliationReport(
       prevBalRows,
     );
 
+    // ADR 0016: replace the Apay row's outflow/inflow with gateway report figures.
+    // Balance snapshots come straight from the dual-balance rows (balance-only
+    // accounts never get a row from buildAccountLevelStats, so we feed them in).
+    if (apayReportRes.rows.length) {
+      const apayReport = parseApayAccountReportRow(apayReportRes.rows[0]);
+      // Match by project_account_id, NOT account_name: multiple gateway accounts
+      // (Apay/Badoo/DPay) can share a name (e.g. "ACCTEAM"), so a name match would
+      // grab the wrong account's balance.
+      const sel = selectedBalRows.find(
+        (r: { project_account_id: string }) => r.project_account_id === apayReport.accountId,
+      );
+      const prev = prevBalRows.find(
+        (r: { project_account_id: string }) => r.project_account_id === apayReport.accountId,
+      );
+      const num = (v: unknown) => (v != null ? Number(v) : null);
+      applyApayReportOverride(accountLevelStats, apayReport, {
+        selectedDayBalance: num(sel?.balance_amount),
+        prevDayBalance: num(prev?.balance_amount),
+        selectedDayStatus: sel?.matching_status ?? null,
+        prevDayStatus: prev?.matching_status ?? null,
+        selectedDayImagePath: sel?.image_path ?? null,
+        prevDayImagePath: prev?.image_path ?? null,
+        selectedDayBalanceId: num(sel?.id),
+        prevDayBalanceId: num(prev?.id),
+        selectedDaySource: sel?.source ?? null,
+        prevDaySource: prev?.source ?? null,
+      });
+    }
+
     // ------------------------------------------------------------------
     // 8. Compute variance
     //    Total Expected Balance = Starting Balance + Inflow - Effective Outflow
@@ -304,22 +328,28 @@ export async function getReconciliationReport(
     // ------------------------------------------------------------------
     const startingBalance = Number(startBalRes.rows[0]?.total ?? 0);
     const expectedInflow = Number(inflowRes.rows[0]?.total ?? 0);
-    const expectedOutflow = Number(outflowRes.rows[0]?.total ?? 0);
     const actualBalance = Number(balanceRes.rows[0]?.total ?? 0);
 
     const adjustmentsTotal = 0;
+    // Includes the Apay gateway withdrawal (ADR 0016) — drives card 3 + the table total.
     const effectiveOutflowTotal = accountLevelStats.reduce(
       (sum, s) => sum + s.effectiveOutflow,
       0,
     );
+    // Bank-side cash outflow only — excludes gateway report rows, which are not
+    // real cash movements out of the tracked bank balance (feeds variance).
+    const cashOutflowTotal = accountLevelStats.reduce(
+      (sum, s) => (s.reportSourced ? sum : sum + s.effectiveOutflow),
+      0,
+    );
 
     const slipInflow = accountLevelStats.reduce((sum, s) => {
-      const r = computePerAccountInflow(s.selectedDayBalance, s.prevDayBalance, s.effectiveOutflow);
+      const r = resolveAccountInflow(s);
       return r.value !== null ? sum + r.value : sum;
     }, 0);
 
     const expectedBalance =
-      startingBalance + expectedInflow - effectiveOutflowTotal;
+      startingBalance + expectedInflow - cashOutflowTotal;
     const variance = expectedBalance - actualBalance;
 
     logger.info("getReconciliationReport", "Report generated successfully", {
@@ -334,7 +364,6 @@ export async function getReconciliationReport(
     return {
       startingBalance,
       expectedInflow,
-      expectedOutflow,
       adjustmentsTotal,
       effectiveOutflowTotal,
       actualBalance,
@@ -354,37 +383,6 @@ export async function getReconciliationReport(
       { projectId, period, startDate, endDate, error },
     );
     return emptyReport(startDate, endDate);
-  }
-}
-
-// ---------------------------------------------------------------------------
-// Apay Gateway Cross-Check
-// ---------------------------------------------------------------------------
-
-export interface ApayDailyStats {
-  depositAmount: number;
-  withdrawalAmount: number;
-  feeAmount: number | null;
-  scrapedAt: string | null;
-  source: "scraper" | "discord";
-}
-
-export async function getApayDailyStats(
-  projectId: string,
-  targetDate: string,
-): Promise<ApayDailyStats | null> {
-  if (projectId === "all") return null;
-  try {
-    const project = await resolveProject(projectId);
-    if (!project) return null;
-    const result = await query(
-      buildApayStatsQuery(),
-      [targetDate, String(project.id)],
-    );
-    if (!result.rows.length) return null;
-    return parseApayStatsRow(result.rows[0]);
-  } catch {
-    return null;
   }
 }
 

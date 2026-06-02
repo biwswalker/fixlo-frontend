@@ -1,7 +1,7 @@
 import { Suspense } from "react";
 import { format } from "date-fns";
 import { th } from "date-fns/locale";
-import { getReconciliationReport, getApayDailyStats } from "@/actions/reconciliation";
+import { getReconciliationReport } from "@/actions/reconciliation";
 import { getProjectByName } from "@/actions/dashboard";
 import { getServerAuthSession } from "@/lib/auth";
 import { redirect } from "next/navigation";
@@ -10,7 +10,6 @@ import { formatBaht, cn } from "@/lib/utils";
 import { AddAdjustmentDialog } from "@/components/dashboard/AddAdjustmentDialog";
 import { GlobalDateBar } from "@/components/dashboard/GlobalDateBar";
 import { AccountBreakdownTable } from "@/components/dashboard/AccountBreakdownTable";
-import { ApayGatewayCrossCheck } from "@/components/dashboard/ApayGatewayCrossCheck";
 import {
   ArrowDownToLine,
   ArrowUpFromLine,
@@ -115,10 +114,9 @@ async function ReconciliationContent({
   pendingCount: number;
   pendingBalanceCount: number;
 }) {
-  const [report, session, apayStats] = await Promise.all([
+  const [report, session] = await Promise.all([
     getReconciliationReport(projectId, "day", targetDate),
     getServerAuthSession(),
-    getApayDailyStats(projectId, targetDateIso),
   ]);
 
   // Formatting helpers
@@ -180,12 +178,12 @@ async function ReconciliationContent({
           </CardContent>
         </Card>
 
-        {/* Card 3: ยอดจ่ายจากสลิป */}
+        {/* Card 3: ยอดจ่ายสุทธิ (สลิป + manual + gateway) */}
         <Card className="border-none shadow-sm rounded-2xl bg-white overflow-hidden relative group">
           <div className="absolute top-0 left-0 w-1 h-full bg-rose-500" />
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium text-muted-foreground">
-              ยอดจ่ายจากสลิป
+              ยอดจ่ายสุทธิ
             </CardTitle>
             <div className="bg-rose-50 text-rose-600 p-2 rounded-xl group-hover:scale-110 transition-transform">
               <ArrowUpFromLine className="h-4 w-4" strokeWidth={2.5} />
@@ -193,10 +191,10 @@ async function ReconciliationContent({
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold text-rose-600 tabular-nums">
-              {formatBaht(report.expectedOutflow)}
+              {formatBaht(report.effectiveOutflowTotal)}
             </div>
             <p className="text-xs mt-1 text-muted-foreground font-medium">
-              สลิปยืนยันจ่ายเงินคืน
+              รวมสลิป + manual + gateway
             </p>
           </CardContent>
         </Card>
@@ -284,9 +282,6 @@ async function ReconciliationContent({
           </div>
         </Link>
       )}
-
-      {/* Apay Gateway Cross-Check Panel */}
-      {apayStats && <ApayGatewayCrossCheck stats={apayStats} />}
 
       {/* Account Breakdown Table */}
       <h2 className="text-xl font-semibold tracking-tight text-gray-900 mt-8 mb-4 flex items-center gap-2">

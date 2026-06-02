@@ -25,6 +25,26 @@ export function computePerAccountInflow(
   return { value: (selectedDayBalance - prevDayBalance) + effectiveOutflow, missingMessage: null };
 }
 
+/**
+ * Resolves ยอดรับ for an account row, honouring the Apay gateway override (ADR 0016).
+ * Report-sourced rows use gatewayInflow directly (no balance formula); a null
+ * gatewayInflow means no report row that day → "ไม่มีรายงาน".
+ */
+export function resolveAccountInflow(stat: {
+  reportSourced: boolean;
+  gatewayInflow: number | null;
+  selectedDayBalance: number | null;
+  prevDayBalance: number | null;
+  effectiveOutflow: number;
+}): PerAccountInflowResult {
+  if (stat.reportSourced) {
+    return stat.gatewayInflow !== null
+      ? { value: stat.gatewayInflow, missingMessage: null }
+      : { value: null, missingMessage: "ไม่มีรายงาน" };
+  }
+  return computePerAccountInflow(stat.selectedDayBalance, stat.prevDayBalance, stat.effectiveOutflow);
+}
+
 export interface BalanceRow {
   project_account_id: string;
   date: string;

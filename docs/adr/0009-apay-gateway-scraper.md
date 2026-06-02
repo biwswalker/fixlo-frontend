@@ -1,7 +1,8 @@
 ---
 id: "0009"
 title: Apay Gateway Scraper — data model and integration
-status: accepted
+status: partially-superseded
+superseded_by: ["0016 (cross-check-only decision — §1 ตาราง row, §Alternatives)"]
 date: 2026-05-24
 tags: [scraper, apay, daily-balances, reconciliation]
 ---

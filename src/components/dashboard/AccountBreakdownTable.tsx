@@ -19,7 +19,7 @@ import {
   Popover, PopoverContent, PopoverTrigger,
 } from "@/components/ui/popover";
 import { formatBaht } from "@/lib/utils";
-import { computePerAccountInflow } from "@/lib/inflowFormula";
+import { resolveAccountInflow } from "@/lib/inflowFormula";
 import {
   getAccountSlips, adjustTransactionAmount, rejectTransaction, batchRejectTransactions,
   updateSlipType, listTransactionTypes, listSlipSubtypes,
@@ -1088,6 +1088,25 @@ export function AccountBreakdownTable({ stats, targetDate, showManualColumn, use
                         </div>
                         <div>
                           <span className="font-medium text-gray-900">{item.account}</span>
+                          {item.reportSourced && (
+                            <span
+                              className={`ml-2 inline-flex items-center gap-1 text-[10px] font-medium px-1.5 py-0.5 rounded-full align-middle ${
+                                item.reportSource === "discord"
+                                  ? "bg-amber-100 text-amber-700"
+                                  : "bg-purple-100 text-purple-700"
+                              }`}
+                              title={
+                                item.reportSource === "discord"
+                                  ? "ดึงจากภาพ Apay portal ผ่าน Discord"
+                                  : item.reportSource === "scraper"
+                                    ? "ดึงอัตโนมัติจาก Apay portal"
+                                    : "ไม่มีข้อมูลรายงานในวันนี้"
+                              }
+                            >
+                              📊 จากรายงาน
+                              {item.reportSource === "discord" && " · Discord"}
+                            </span>
+                          )}
                           {item.bankCode && (
                             <div className="flex items-center gap-1.5 mt-0.5">
                               <Badge variant="outline" className="text-[10px] rounded-full px-1.5 py-0 font-mono uppercase">
@@ -1107,15 +1126,17 @@ export function AccountBreakdownTable({ stats, targetDate, showManualColumn, use
                       {item.count} รายการ
                     </TableCell>
                     <TableCell className="text-right font-medium text-gray-700 tabular-nums">
-                      {formatBaht(item.systemOutflow)}
+                      {item.reportSourced ? <span className="text-gray-300">—</span> : formatBaht(item.systemOutflow)}
                     </TableCell>
                     {showManualColumn && (
                       <TableCell className="text-right font-medium text-blue-600 tabular-nums">
-                        {formatBaht(item.manualOutflow)}
+                        {item.reportSourced ? <span className="text-gray-300">—</span> : formatBaht(item.manualOutflow)}
                       </TableCell>
                     )}
                     <TableCell className="text-right font-bold text-gray-900 tabular-nums">
-                      {formatBaht(item.effectiveOutflow)}
+                      {item.reportSourced && item.gatewayOutflow === null
+                        ? <span className="text-xs font-normal text-amber-600">ไม่มีรายงาน</span>
+                        : formatBaht(item.effectiveOutflow)}
                     </TableCell>
                     <TableCell className="text-right">
                       <div className="flex flex-col items-end gap-0.5">
@@ -1199,7 +1220,7 @@ export function AccountBreakdownTable({ stats, targetDate, showManualColumn, use
                     </TableCell>
                     <TableCell className="text-right">
                       {(() => {
-                        const r = computePerAccountInflow(item.selectedDayBalance, item.prevDayBalance, item.effectiveOutflow);
+                        const r = resolveAccountInflow(item);
                         if (r.missingMessage) {
                           return <span className="text-xs text-amber-600">{r.missingMessage}</span>;
                         }
@@ -1242,7 +1263,7 @@ export function AccountBreakdownTable({ stats, targetDate, showManualColumn, use
                   <TableCell />
                   <TableCell className="text-right font-bold text-emerald-600 text-lg tabular-nums">
                     {formatBaht(stats.reduce((acc, curr) => {
-                      const r = computePerAccountInflow(curr.selectedDayBalance, curr.prevDayBalance, curr.effectiveOutflow);
+                      const r = resolveAccountInflow(curr);
                       return r.value !== null ? acc + r.value : acc;
                     }, 0))}
                   </TableCell>
