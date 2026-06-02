@@ -144,6 +144,24 @@ describe("validateEdit — daily_balances source=scraper", () => {
   });
 });
 
+describe("validateEdit — daily_balances unknown/future source (whitelist guarantee)", () => {
+  // Only source=manual may edit balance_amount. Any other source — including a
+  // future one not yet known to the UI — must be locked to re-match only. This
+  // pins the rule the UI relies on so UI and backend cannot drift.
+  const row = { table: "daily_balances" as const, source: "api" };
+
+  it("locks balance_amount for an unrecognised source", () => {
+    const result = validateEdit(row, ["balance_amount"]);
+    expect(result.allowed).toBe(false);
+    expect(result.mutableFields).toEqual(DAILY_BALANCE_AUTO_MUTABLE_FIELDS);
+  });
+
+  it("still allows re-match for an unrecognised source", () => {
+    const result = validateEdit(row, ["project_account_id"]);
+    expect(result.allowed).toBe(true);
+  });
+});
+
 describe("validateDelete — daily_balances", () => {
   it("allows hard delete for manual source", () => {
     const row = { table: "daily_balances" as const, source: "manual" };

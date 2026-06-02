@@ -19,6 +19,7 @@ import {
   editDailyBalance, deleteDailyBalance, rematchDailyBalance, getProjectAccounts,
 } from "@/actions/dashboard";
 import type { ProjectAccount } from "@/types/dashboard";
+import { validateEdit } from "@/lib/editValidation";
 import { AlertTriangle, Loader2, Trash2, RefreshCw, Pencil } from "lucide-react";
 import { toast } from "sonner";
 import { format } from "date-fns";
@@ -42,7 +43,7 @@ interface DailyBalanceDrawerProps {
   canManage: boolean;
   projectId: string;
   onChanged?: () => void;
-  /** When true: show edit for all sources, hide re-match and delete. Used from reconciliation page. */
+  /** When true: hide re-match and delete. Balance-amount edit visibility follows the shared validateEdit source rule (manual-only) regardless of this flag. Used from reconciliation page. */
   restrictedEdit?: boolean;
 }
 
@@ -108,7 +109,13 @@ export function DailyBalanceDrawer({
 
   if (!balance) return null;
 
-  const isAutoSource = balance.source === "discord" || balance.source === "scraper";
+  // Single source of truth: share the edit rule with the backend so UI and
+  // server cannot drift. Only manual-source balances may edit balance_amount;
+  // auto-source (discord/scraper or any future source) is locked to re-match.
+  const canEditAmount = validateEdit(
+    { table: "daily_balances", source: balance.source },
+    ["balance_amount"],
+  ).allowed;
 
   const handleSaveBalance = () => {
     const parsed = parseFloat(balanceAmount);
@@ -244,8 +251,8 @@ export function DailyBalanceDrawer({
                   </SectionCard>
                 )}
 
-                {/* Edit balance_amount: all sources in restrictedEdit mode, manual-only otherwise */}
-                {(restrictedEdit || !isAutoSource) && (
+                {/* Edit balance_amount: manual-source only (decided by the shared validateEdit rule). Auto-source amounts are AI/scrape source-of-truth — locked everywhere, correctable only via re-match. */}
+                {canEditAmount && (
                   <SectionCard title="แก้ไขยอดคงเหลือ" icon={<Pencil className="h-3.5 w-3.5 text-amber-500" />}>
                     <div className="space-y-2.5">
                       <div>
