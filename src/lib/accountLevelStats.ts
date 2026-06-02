@@ -189,11 +189,13 @@ export function buildAccountLevelStats(
  * When no report row exists that day, gatewayInflow/gatewayOutflow stay null so
  * the row renders "—/ไม่มีรายงาน" without falling back to the balance formula.
  *
- * The Apay row is located by account_name (authoritative from project_accounts);
- * if absent it is injected so the gateway always shows for single-project views.
- * Balance snapshots come from an existing row when present, else from `balance`
- * (the Apay daily_balances rows) — needed because balance-only accounts never get
- * a row from buildAccountLevelStats. Re-sorts by effectiveOutflow.
+ * The Apay row is located by accountId (NOT account_name: gateways like
+ * Apay/Badoo/DPay can share a name such as "ACCTEAM", so a name match could
+ * clobber a different gateway's row). If absent it is injected so the gateway
+ * always shows for single-project views. Balance snapshots come from an existing
+ * row when present, else from `balance` (the Apay daily_balances rows) — needed
+ * because balance-only accounts never get a row from buildAccountLevelStats.
+ * Re-sorts by effectiveOutflow.
  */
 export type ApayBalanceSnapshot = Pick<
   AccountLevelStat,
@@ -209,7 +211,7 @@ export function applyApayReportOverride(
   report: ParsedApayAccountReport,
   balance?: ApayBalanceSnapshot | null,
 ): void {
-  const idx = stats.findIndex((s) => s.account === report.accountName);
+  const idx = stats.findIndex((s) => s.accountId === report.accountId);
   const base = idx >= 0 ? stats[idx] : null;
   const bal = base ?? balance ?? null;
 

@@ -325,7 +325,7 @@ describe("applyApayReportOverride (ADR 0016)", () => {
 
   it("replaces an existing Apay row's outflow with gateway withdrawal and zeroes slip/manual", () => {
     const stats = buildAccountLevelStats(
-      [{ account_name: "ACCTEAM", ai_amount: 999, account_id: "old", bank_code: "Apay" }],
+      [{ account_name: "ACCTEAM", ai_amount: 999, account_id: "apay-1", bank_code: "Apay" }],
       [],
     );
     applyApayReportOverride(stats, report());
@@ -370,7 +370,7 @@ describe("applyApayReportOverride (ADR 0016)", () => {
 
   it("existing row's enriched balance takes precedence over the balance param", () => {
     const stats = buildAccountLevelStats(
-      [{ account_name: "ACCTEAM", ai_amount: 10, account_id: "old", bank_code: "Apay" }],
+      [{ account_name: "ACCTEAM", ai_amount: 10, account_id: "apay-1", bank_code: "Apay" }],
       [],
       [],
       [{ account_name: "ACCTEAM", balance_amount: 80000 }],
@@ -387,6 +387,21 @@ describe("applyApayReportOverride (ADR 0016)", () => {
     const apay = stats.find((s) => s.account === "ACCTEAM")!;
     expect(apay.selectedDayBalance).toBe(80000);
     expect(apay.prevDayBalance).toBe(50000);
+  });
+
+  it("name collision: does not clobber another gateway's row sharing the name", () => {
+    // Badoo also named "ACCTEAM" with its own slips — must stay intact.
+    const stats = buildAccountLevelStats(
+      [{ account_name: "ACCTEAM", ai_amount: 777, account_id: "badoo-9", bank_code: "Badoo" }],
+      [],
+    );
+    applyApayReportOverride(stats, report()); // accountId "apay-1"
+    const badoo = stats.find((s) => s.accountId === "badoo-9")!;
+    const apay = stats.find((s) => s.accountId === "apay-1")!;
+    expect(badoo.systemOutflow).toBe(777);
+    expect(badoo.reportSourced).toBe(false);
+    expect(apay.reportSourced).toBe(true);
+    expect(apay.effectiveOutflow).toBe(12000);
   });
 
   it("no report row → gateway values null (renders ไม่มีรายงาน), effectiveOutflow 0", () => {

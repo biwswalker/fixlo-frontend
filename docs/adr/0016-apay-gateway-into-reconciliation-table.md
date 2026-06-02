@@ -60,6 +60,11 @@ card 1 "ยอดเข้าระบบ(เว็บ)" = `expectedInflow` (rep
 ยังพฤติกรรมเดิม. เฉพาะ **single-project** — `projectId='all'` ข้าม merge (ชื่อ account
 ACCTEAM ชนข้ามโปรเจกต์ + source priority ต่อโปรเจกต์).
 
+**ACCTEAM name-collision (intra-project)**: ใน 1 project มี gateway หลายเจ้าใช้ชื่อ
+เดียวกัน (Apay/Badoo/DPay = "ACCTEAM"). ดังนั้น merge + balance lookup ต้อง match ด้วย
+`project_account_id` (`accountId`) **ไม่ใช่ account_name** — name match จะหยิบ balance/row
+ของ gateway ผิดเจ้า. balance snapshot ดึงจาก dual-balance rows ตาม `project_account_id`.
+
 ### 5. Panel เดิม
 
 ลบ `ApayGatewayCrossCheck` + การเรียก `getApayDailyStats` ใน page (ย้าย logic เข้า
