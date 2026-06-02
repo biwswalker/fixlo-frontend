@@ -70,7 +70,20 @@ function isGatewayAccount(account: ProjectAccount): boolean {
 
 function normalizeAccountNumber(raw: string | null | undefined): string {
   if (!raw) return "";
-  return raw.toLowerCase().replace(/[-*x\s]/g, "");
+  return raw.toLowerCase().replace(/[-*xX\s]/g, "");
+}
+
+// Extracts the trailing visible-digit run that follows the last mask block
+// (x/X/*). Banks show only these digits on screenshots; masking hides the
+// middle. Full unmasked numbers have no mask block → the whole normalized
+// string is returned so full-vs-masked suffix comparison still works.
+// "511-0-xxx378" → "378",  "5110651378" → "5110651378",  null → ""
+export function extractVisibleSuffix(raw: string | null | undefined): string {
+  if (!raw || !raw.trim()) return "";
+  const stripped = raw.replace(/[-\s]/g, "");
+  const m = stripped.match(/[xX*]+(\d+)$/);
+  if (m) return m[1];
+  return stripped.replace(/[xX*]/g, "");
 }
 
 interface ScoreDetail {
@@ -136,11 +149,15 @@ function scoreAccount(scanned: ScannedBalance, master: ProjectAccount): ScoreDet
 }
 
 /**
- * Daily-balance-to-project_account matcher.
- * P1: fuzzy account_name against master account_name + aliases.
- * P2: platform (bank code from AI OCR) as tiebreaker bonus.
- * ≥85 → AUTO_MAPPED, ≥50 → PENDING_REVIEW, else UNMATCHED.
- * Mirrors runSmartMatch in smartMatcher.ts (ADR 0001 / ADR 0002).
+ * Daily-balance-to-project_account matcher. Two-phase (ADR 0005 v2 + #106 fix):
+ *
+ * Phase 1 — P0 account_number (absolute priority, evaluated across ALL masters):
+ *   exact match (100) → 1 hit → AUTO_MAPPED.
+ *   suffix match (90) → 1 hit → AUTO_MAPPED; >1 hit → PENDING_REVIEW (ambiguous).
+ *   0 hits → fall to Phase 2.
+ *
+ * Phase 2 — P1 name+alias fuzzy + P2 platform bonus (existing logic):
+ *   ≥85 → AUTO_MAPPED, ≥50 → PENDING_REVIEW, else UNMATCHED.
  */
 export function runBalanceMatch(
   scanned: ScannedBalance,
@@ -155,6 +172,64 @@ export function runBalanceMatch(
     };
   }
 
+  // ── Phase 1: P0 account_number ────────────────────────────────────────────
+  const sNorm = normalizeAccountNumber(scanned.account_number);
+  const sSuffix = extractVisibleSuffix(scanned.account_number);
+
+  if (sNorm || sSuffix) {
+    // P0a: exact match
+    const exactHits = sNorm
+      ? masterAccounts.filter((m) => {
+          const mNorm = normalizeAccountNumber(m.account_number);
+          return mNorm && mNorm === sNorm;
+        })
+      : [];
+
+    if (exactHits.length === 1) {
+      const hit = exactHits[0];
+      return {
+        matchedAccountId: hit.id,
+        status: "AUTO_MAPPED",
+        score: 100,
+        breakdown: { topScore: 100, candidates: [{ accountId: hit.id, score: 100, nameMatched: "none", bankMatched: false }] },
+      };
+    }
+
+    if (exactHits.length > 1) {
+      const candidates = exactHits.slice(0, 3).map((m) => ({
+        accountId: m.id, score: 100, nameMatched: "none" as const, bankMatched: false,
+      }));
+      return { matchedAccountId: null, status: "PENDING_REVIEW", score: 100, breakdown: { topScore: 100, candidates } };
+    }
+
+    // P0b: suffix match (only when no exact hit to avoid double-counting)
+    if (sSuffix && exactHits.length === 0) {
+      const suffixHits = masterAccounts.filter((m) => {
+        const mSuffix = extractVisibleSuffix(m.account_number);
+        if (!mSuffix) return false;
+        return mSuffix.endsWith(sSuffix) || sSuffix.endsWith(mSuffix);
+      });
+
+      if (suffixHits.length === 1) {
+        const hit = suffixHits[0];
+        return {
+          matchedAccountId: hit.id,
+          status: "AUTO_MAPPED",
+          score: 90,
+          breakdown: { topScore: 90, candidates: [{ accountId: hit.id, score: 90, nameMatched: "none", bankMatched: false }] },
+        };
+      }
+
+      if (suffixHits.length > 1) {
+        const candidates = suffixHits.slice(0, 3).map((m) => ({
+          accountId: m.id, score: 90, nameMatched: "none" as const, bankMatched: false,
+        }));
+        return { matchedAccountId: null, status: "PENDING_REVIEW", score: 90, breakdown: { topScore: 90, candidates } };
+      }
+    }
+  }
+
+  // ── Phase 2: P1 name+alias + P2 platform bonus ────────────────────────────
   const scored = masterAccounts.map((account) => {
     const detail = scoreAccount(scanned, account);
     return { account, ...detail };

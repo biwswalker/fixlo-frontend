@@ -23,9 +23,25 @@ export type AliasProposalResult =
     }
   | {
       ok: false;
-      reason: "empty" | "duplicate" | "cross_master_collision";
+      reason: "empty" | "duplicate" | "cross_master_collision" | "generic_term";
       collidingAccountId?: string;
     };
+
+// M5 (ADR 0014): account-type labels that describe the account class, not the
+// owner. Storing these as aliases trains the matcher to mis-route slips from
+// any account that uses the same generic label (e.g. any BBL savings account
+// prints "บัญชีสะสมทรัพย์"). Silently skipped — not surfaced as a warning.
+export const GENERIC_ALIAS_BLOCKLIST: readonly string[] = [
+  "บัญชีสะสมทรัพย์",
+  "บัญชีออมทรัพย์",
+  "ออมทรัพย์",
+  "สะสมทรัพย์",
+  "กระแสรายวัน",
+  "บัญชีกระแสรายวัน",
+  "savings account",
+  "current account",
+  "บัญชีเงินฝาก",
+];
 
 interface AccountWithMeta extends ProjectAccount {
   aliases_meta?: AliasMetaEntry[] | string | null;
@@ -68,6 +84,11 @@ export function proposeAliasAddition(
   if (!trimmed) return { ok: false, reason: "empty" };
 
   const normScanned = normalizeForCompare(trimmed);
+
+  // M5 (ADR 0014): skip generic account-type labels — they describe account class, not owner.
+  if (GENERIC_ALIAS_BLOCKLIST.some((t) => normalizeForCompare(t) === normScanned)) {
+    return { ok: false, reason: "generic_term" };
+  }
   const targetAliases = parseAliasArray(target.aliases);
   const targetAliasesNorm = new Set(targetAliases.map(normalizeForCompare));
   // Account name itself counts as an existing label — re-adding it is a no-op duplicate.
