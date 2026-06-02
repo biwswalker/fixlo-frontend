@@ -8,10 +8,10 @@ import { hasPermission } from "@/lib/rbac";
 import { revalidatePath } from "next/cache";
 import { resolveProject } from "@/lib/projects";
 import { resolvePeriodToDateRange } from "@/lib/periodUtils";
-import { buildAccountLevelStats } from "@/lib/accountLevelStats";
-import { computePerAccountInflow } from "@/lib/inflowFormula";
+import { buildAccountLevelStats, applyApayReportOverride } from "@/lib/accountLevelStats";
+import { resolveAccountInflow } from "@/lib/inflowFormula";
 import { depositTotalSql } from "@/lib/kpiSql";
-import { parseApayStatsRow, buildApayStatsQuery } from "@/lib/apayStats";
+import { buildApayAccountReportQuery, parseApayAccountReportRow } from "@/lib/apayStats";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -58,6 +58,14 @@ export interface AccountLevelStat {
   selectedDaySource: string | null;
   /** Source of daily_balance for previous day; null if none */
   prevDaySource: string | null;
+  /** True when outflow/inflow come from report_apay_daily instead of slips/balance (ADR 0016) */
+  reportSourced: boolean;
+  /** Gateway report source; null when reportSourced=false or no report row that day */
+  reportSource: "scraper" | "discord" | null;
+  /** Gateway deposit → ยอดรับ for reportSourced rows; null = no report row */
+  gatewayInflow: number | null;
+  /** Gateway withdrawal → effectiveOutflow for reportSourced rows; null = no report row */
+  gatewayOutflow: number | null;
 }
 
 export interface ReconciliationReport {
@@ -273,6 +281,7 @@ export async function getReconciliationReport(
       startBalRes,
       dualBalRes,
       manualTxRes,
+      apayReportRes,
     ] = await Promise.all([
       query(inflowSql, isAll ? [startDate, endDate] : [startDate, endDate, projectIntId]),
       query(outflowSql, [startDate, endDate, projectIntId, isAll]),
@@ -281,6 +290,10 @@ export async function getReconciliationReport(
       query(startBalSql, isAll ? [startDate] : [projectIntId, startDate]),
       query(dualBalSql, [endDate, projectIntId, isAll]),
       query(manualTxSql, [startDate, endDate, projectIntId, isAll]).catch(() => ({ rows: [] })),
+      // ADR 0016: Apay gateway report merged into the breakdown table — single-project only
+      isAll
+        ? Promise.resolve({ rows: [] })
+        : query(buildApayAccountReportQuery(), [endDate, projectIntId]).catch(() => ({ rows: [] })),
     ]);
 
     // ------------------------------------------------------------------
@@ -296,6 +309,32 @@ export async function getReconciliationReport(
       selectedBalRows,
       prevBalRows,
     );
+
+    // ADR 0016: replace the Apay row's outflow/inflow with gateway report figures.
+    // Balance snapshots come straight from the dual-balance rows (balance-only
+    // accounts never get a row from buildAccountLevelStats, so we feed them in).
+    if (apayReportRes.rows.length) {
+      const apayReport = parseApayAccountReportRow(apayReportRes.rows[0]);
+      const sel = selectedBalRows.find(
+        (r: { account_name: string }) => r.account_name === apayReport.accountName,
+      );
+      const prev = prevBalRows.find(
+        (r: { account_name: string }) => r.account_name === apayReport.accountName,
+      );
+      const num = (v: unknown) => (v != null ? Number(v) : null);
+      applyApayReportOverride(accountLevelStats, apayReport, {
+        selectedDayBalance: num(sel?.balance_amount),
+        prevDayBalance: num(prev?.balance_amount),
+        selectedDayStatus: sel?.matching_status ?? null,
+        prevDayStatus: prev?.matching_status ?? null,
+        selectedDayImagePath: sel?.image_path ?? null,
+        prevDayImagePath: prev?.image_path ?? null,
+        selectedDayBalanceId: num(sel?.id),
+        prevDayBalanceId: num(prev?.id),
+        selectedDaySource: sel?.source ?? null,
+        prevDaySource: prev?.source ?? null,
+      });
+    }
 
     // ------------------------------------------------------------------
     // 8. Compute variance
@@ -314,7 +353,7 @@ export async function getReconciliationReport(
     );
 
     const slipInflow = accountLevelStats.reduce((sum, s) => {
-      const r = computePerAccountInflow(s.selectedDayBalance, s.prevDayBalance, s.effectiveOutflow);
+      const r = resolveAccountInflow(s);
       return r.value !== null ? sum + r.value : sum;
     }, 0);
 
@@ -354,37 +393,6 @@ export async function getReconciliationReport(
       { projectId, period, startDate, endDate, error },
     );
     return emptyReport(startDate, endDate);
-  }
-}
-
-// ---------------------------------------------------------------------------
-// Apay Gateway Cross-Check
-// ---------------------------------------------------------------------------
-
-export interface ApayDailyStats {
-  depositAmount: number;
-  withdrawalAmount: number;
-  feeAmount: number | null;
-  scrapedAt: string | null;
-  source: "scraper" | "discord";
-}
-
-export async function getApayDailyStats(
-  projectId: string,
-  targetDate: string,
-): Promise<ApayDailyStats | null> {
-  if (projectId === "all") return null;
-  try {
-    const project = await resolveProject(projectId);
-    if (!project) return null;
-    const result = await query(
-      buildApayStatsQuery(),
-      [targetDate, String(project.id)],
-    );
-    if (!result.rows.length) return null;
-    return parseApayStatsRow(result.rows[0]);
-  } catch {
-    return null;
   }
 }
 

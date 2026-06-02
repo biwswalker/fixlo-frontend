@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
-import { buildAccountLevelStats } from "../accountLevelStats";
+import { buildAccountLevelStats, applyApayReportOverride } from "../accountLevelStats";
+import type { ParsedApayAccountReport } from "../apayStats";
 
 describe("buildAccountLevelStats — transactions only", () => {
   it("single account sums systemOutflow and count", () => {
@@ -308,5 +309,96 @@ describe("buildAccountLevelStats — slip adjustment (#55)", () => {
       [],
     );
     expect(stats[0].systemOutflow).toBe(500); // 300 + 200
+  });
+});
+
+describe("applyApayReportOverride (ADR 0016)", () => {
+  const report = (over: Partial<ParsedApayAccountReport> = {}): ParsedApayAccountReport => ({
+    accountId: "apay-1",
+    accountName: "ACCTEAM",
+    bankCode: "Apay",
+    gatewayInflow: 45000,
+    gatewayOutflow: 12000,
+    reportSource: "scraper",
+    ...over,
+  });
+
+  it("replaces an existing Apay row's outflow with gateway withdrawal and zeroes slip/manual", () => {
+    const stats = buildAccountLevelStats(
+      [{ account_name: "ACCTEAM", ai_amount: 999, account_id: "old", bank_code: "Apay" }],
+      [],
+    );
+    applyApayReportOverride(stats, report());
+    const apay = stats.find((s) => s.account === "ACCTEAM")!;
+    expect(apay.reportSourced).toBe(true);
+    expect(apay.effectiveOutflow).toBe(12000);
+    expect(apay.gatewayInflow).toBe(45000);
+    expect(apay.systemOutflow).toBe(0);
+    expect(apay.manualOutflow).toBe(0);
+    expect(apay.count).toBe(0);
+  });
+
+  it("injects an Apay row when none exists yet", () => {
+    const stats = buildAccountLevelStats([{ account_name: "SCB สมชาย", ai_amount: 500 }], []);
+    applyApayReportOverride(stats, report());
+    expect(stats).toHaveLength(2);
+    expect(stats.find((s) => s.account === "ACCTEAM")?.reportSourced).toBe(true);
+  });
+
+  it("balance-only account: snapshots fed via the balance param (display-only)", () => {
+    // buildAccountLevelStats never creates a row for a balance-only account,
+    // so the Apay daily_balances must be passed into the override directly.
+    const stats = buildAccountLevelStats([], []);
+    applyApayReportOverride(stats, report(), {
+      selectedDayBalance: 80000,
+      prevDayBalance: 50000,
+      selectedDayStatus: "AUTO_MAPPED",
+      prevDayStatus: "AUTO_MAPPED",
+      selectedDayImagePath: null,
+      prevDayImagePath: null,
+      selectedDayBalanceId: 7,
+      prevDayBalanceId: 6,
+      selectedDaySource: "scraper",
+      prevDaySource: "scraper",
+    });
+    const apay = stats.find((s) => s.account === "ACCTEAM")!;
+    expect(apay.selectedDayBalance).toBe(80000);
+    expect(apay.prevDayBalance).toBe(50000);
+    // ยอดรับ comes from gateway deposit, NOT balance delta (80000-50000=30000)
+    expect(apay.gatewayInflow).toBe(45000);
+  });
+
+  it("existing row's enriched balance takes precedence over the balance param", () => {
+    const stats = buildAccountLevelStats(
+      [{ account_name: "ACCTEAM", ai_amount: 10, account_id: "old", bank_code: "Apay" }],
+      [],
+      [],
+      [{ account_name: "ACCTEAM", balance_amount: 80000 }],
+      [{ account_name: "ACCTEAM", balance_amount: 50000 }],
+    );
+    applyApayReportOverride(stats, report(), {
+      selectedDayBalance: 1,
+      prevDayBalance: 2,
+      selectedDayStatus: null, prevDayStatus: null,
+      selectedDayImagePath: null, prevDayImagePath: null,
+      selectedDayBalanceId: null, prevDayBalanceId: null,
+      selectedDaySource: null, prevDaySource: null,
+    });
+    const apay = stats.find((s) => s.account === "ACCTEAM")!;
+    expect(apay.selectedDayBalance).toBe(80000);
+    expect(apay.prevDayBalance).toBe(50000);
+  });
+
+  it("no report row → gateway values null (renders ไม่มีรายงาน), effectiveOutflow 0", () => {
+    const stats = buildAccountLevelStats([], []);
+    applyApayReportOverride(
+      stats,
+      report({ gatewayInflow: null, gatewayOutflow: null, reportSource: null }),
+    );
+    const apay = stats.find((s) => s.account === "ACCTEAM")!;
+    expect(apay.reportSourced).toBe(true);
+    expect(apay.gatewayInflow).toBeNull();
+    expect(apay.gatewayOutflow).toBeNull();
+    expect(apay.effectiveOutflow).toBe(0);
   });
 });
