@@ -316,8 +316,8 @@ describe("runBalanceMatch — P0 suffix match (two-phase)", () => {
       { account_name: "สุภาภรณ์", platform: "KTB", account_number: "665-6-96230-0" },
       masters,
     );
-    // P0 exact: "6696230-0" vs "2300" — suffix: "9623" vs "2300" no suffix match,
-    // fall to P1 name exact → AUTO_MAPPED
+    // P0 suffix: sSuffix("665-6-96230-0")="6656962300", mSuffix("XXX-X-XX230-0")="2300"
+    // "6656962300".endsWith("2300") → P0 suffix fires → score 90, acc-s
     expect(result.status).toBe("AUTO_MAPPED");
     expect(result.matchedAccountId).toBe("acc-s");
   });
