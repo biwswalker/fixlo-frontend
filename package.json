@@ -10,7 +10,9 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "migrate:dry": "tsx scripts/migrate.ts --dry-run",
-    "migrate:apply": "tsx scripts/migrate.ts --apply"
+    "migrate:apply": "tsx scripts/migrate.ts --apply",
+    "recovery:processed-missing:dry": "node scripts/recoverProcessedUploads.js --dry-run",
+    "recovery:processed-missing:apply": "node scripts/recoverProcessedUploads.js --apply"
   },
   "dependencies": {
     "@base-ui/react": "^1.4.0",

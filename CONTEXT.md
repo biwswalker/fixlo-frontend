@@ -50,6 +50,9 @@ tags: [domain, glossary]
 - **Rejected slip** — transaction ที่ admin ตัดสินใจ reject อย่างมีเหตุผล `matching_status = 'REJECTED'`. ไม่นับใน reconciliation outflow. ยังคงอยู่ใน DB เพื่อ audit trail. ต้องระบุเหตุผล (preset 5 ตัว + free text). Reject ได้จาก 2 จุด: (1) match page (PENDING_REVIEW/UNMAPPED → REJECTED) (2) SlipDrawer ใน reconciliation page (AUTO_MAPPED/MANUAL_MAPPED → REJECTED — slip ที่ confirm แล้วแต่พบภายหลังว่าผิด). ดู [ADR 0007](docs/adr/0007-reject-confirmed-slips.md).
 - **Rejected daily balance** — `daily_balances` row ที่ admin ตัดสินใจ reject `matching_status = 'REJECTED'`. ยังคงอยู่ใน DB เพื่อ audit trail. ไม่นับใน reconciliation formula. Reject ได้จาก match page tab "ยอดบัญชีรายวัน" (UNMATCHED/PENDING_REVIEW เท่านั้น). Preset: "ยอดซ้ำ", "บัญชีผิด", "วันที่ผิด", "ยอดผิดพลาด", "อื่นๆ" (free text).
 - **Failed upload** — [[raw_uploads]] ที่ worker ประมวลผลไม่สำเร็จ (`ai_status = 'ERROR'`). Admin จัดการได้ 2 ทาง: (1) **กรอกข้อมูลเอง** — เลือกว่าเป็น slip (→ INSERT [[transactions]]) หรือ balance (→ INSERT [[daily_balances]]) แล้ว mark `ai_status = 'PROCESSED'` (2) **Reject** — mark `ai_status = 'REJECTED'` ตัดออกจากคิวไม่ประมวลผล ไม่ได้ระบุเหตุผล. แสดงใน match page tab "ประมวลผลล้มเหลว".
+- **Processed upload missing business record** — [[raw_uploads]] ที่ถูกระบุว่า AI ประมวลผลสำเร็จแล้ว (`ai_status = 'PROCESSED'`) แต่ยังไม่มี business record จากภาพเดียวกันใน [[transactions]] หรือ [[daily_balances]].
+- **Processed upload recovery batch** — งานซ่อมข้อมูลที่เลือกเฉพาะ **Processed upload missing business record** ภายใน recovery window ที่ระบุ แล้วเปลี่ยนกลับเป็นคิวรอประมวลผลเพื่อให้ slip pipeline สร้าง business record ใหม่.
+- **Recovery window** — ช่วงเวลาที่คาดว่าเกิด outage หรือ processing gap และใช้จำกัดขอบเขตของ recovery batch.
 - **Match breakdown** ([[transactions]].`match_breakdown` jsonb) — top-3 candidate accounts พร้อม component score (nameMatched, accountMatched, bankMatched) ที่ smartMatcher เก็บตอน matching รัน ใช้โชว์ admin ใน Pending Account Matches table ว่าทำไมสลิปไม่ AUTO_MAPPED
 - **Daily balance** — ยอดคงเหลือ end-of-day ของ master account แต่ละบัญชี เก็บใน [[daily_balances]]. staff ส่งภาพ (BALANCE type) → worker INSERT. ต้อง match กับ [[project_accounts]] (มี matching_status: UNMATCHED/PENDING_REVIEW/AUTO_MAPPED/MANUAL_MAPPED + project_account_id FK). Matcher logic ดู [ADR 0002](docs/adr/0002-daily-balance-account-matching.md) (พื้นฐาน) + [ADR 0005](docs/adr/0005-balance-matcher-v2.md) (v2 — alias substring, token-fuzzy, acc_num P0, auto-alias).
 - **Daily balance inflow formula** — `inflow_D = balance_D - balance_(D-1) + withdrawals_D` โดย `withdrawals_D` = SUM ของ transactions.ai_amount (AUTO_MAPPED/MANUAL_MAPPED) ใน วัน D. `report_summary_daily` ใช้แสดง game-side เปรียบเทียบเท่านั้น ไม่เข้า formula.
@@ -100,7 +103,7 @@ tags: [domain, glossary]
    - **Staff ส่งภาพ slip การโอนออก (withdrawal)** ใน Discord channel ของ project ตัวเอง
      - **เก็บเฉพาะ withdrawal slip** (master → player) — deposit ไม่ผ่าน slip pipeline (มาจาก scrape เว็บแทน)
      - ถ้าระบุ project ปลายทางในข้อความ (cross-project lending) bot ใช้ Fuse.js fuzzy search หา target_project_id
-   - Discord bot (`bot.js`) ดักภาพ → save disk → INSERT raw_uploads (status `PENDING`)
+   - Discord bot (`bot.js`) ดักภาพ → save disk → INSERT raw_uploads (status `PENDING`). NOTE: For manual recovery of PENDING uploads, use `enqueue-pending.js` in fixlo-spectre repo.
    - Bot sync with Discord state:
      - **messageDelete** — ลบ Discord message → DELETE raw_uploads (cleanup orphaned records)
      - **messageUpdate** — edit message (attachment removed) → DELETE raw_uploads (PENDING only, preserve history)
