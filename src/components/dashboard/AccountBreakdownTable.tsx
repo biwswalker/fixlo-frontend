@@ -1005,9 +1005,11 @@ interface AccountBreakdownTableProps {
   showManualColumn: boolean;
   userRole?: string | null;
   projectId: string;
+  /** ADR 0018: Approved parking that landed in an unregistered account (FK null); 0 hides the banner */
+  unregisteredParkingTotal?: number;
 }
 
-export function AccountBreakdownTable({ stats, targetDate, showManualColumn, userRole, projectId }: AccountBreakdownTableProps) {
+export function AccountBreakdownTable({ stats, targetDate, showManualColumn, userRole, projectId, unregisteredParkingTotal = 0 }: AccountBreakdownTableProps) {
   const [selectedStat, setSelectedStat] = useState<AccountLevelStat | null>(null);
   const [balancePreviewUrl, setBalancePreviewUrl] = useState<string | null>(null);
   const [balanceDetail, setBalanceDetail] = useState<DailyBalanceInfo | null>(null);
@@ -1038,6 +1040,11 @@ export function AccountBreakdownTable({ stats, targetDate, showManualColumn, use
         </DialogContent>
       </Dialog>
       <Card className="border-none shadow-sm rounded-2xl overflow-hidden">
+        {unregisteredParkingTotal > 0 && (
+          <div className="m-4 mb-0 rounded-lg bg-amber-50 border border-amber-200 px-4 py-2.5 text-sm text-amber-800">
+            มี parking {formatBaht(unregisteredParkingTotal)} เข้า account ที่ยังไม่ลงทะเบียน — เพิ่มบัญชีในหน้า บัญชี เพื่อให้เข้า reconciliation
+          </div>
+        )}
         {stats.length === 0 ? (
           <div className="p-12 text-center text-muted-foreground flex flex-col items-center">
             <ArrowUpFromLine className="h-10 w-10 text-muted/30 mb-3" />
@@ -1224,7 +1231,21 @@ export function AccountBreakdownTable({ stats, targetDate, showManualColumn, use
                         if (r.missingMessage) {
                           return <span className="text-xs text-amber-600">{r.missingMessage}</span>;
                         }
-                        return <span className="font-bold text-emerald-600 tabular-nums">{formatBaht(r.value!)}</span>;
+                        // ADR 0018: ยอดรับ is player-only (parking carved out). Negative
+                        // = recorded parking exceeds the observed balance delta → flag red.
+                        const negative = r.value! < 0;
+                        return (
+                          <div className="flex flex-col items-end">
+                            <span className={`font-bold tabular-nums ${negative ? "text-red-600" : "text-emerald-600"}`}>
+                              {formatBaht(r.value!)}
+                            </span>
+                            {item.parkingIn > 0 && (
+                              <span className="text-[10px] text-muted-foreground tabular-nums">
+                                (− {formatBaht(item.parkingIn)} โยกเข้า)
+                              </span>
+                            )}
+                          </div>
+                        );
                       })()}
                     </TableCell>
                     <TableCell className="text-right pr-6">

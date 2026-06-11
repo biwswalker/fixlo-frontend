@@ -10,6 +10,7 @@ import { resolveProject } from "@/lib/projects";
 import { resolvePeriodToDateRange } from "@/lib/periodUtils";
 import { buildAccountLevelStats, applyApayReportOverride } from "@/lib/accountLevelStats";
 import { resolveAccountInflow } from "@/lib/inflowFormula";
+import { aggregateParkingByAccountDay } from "@/lib/parkingStats";
 import { depositTotalSql } from "@/lib/kpiSql";
 import { buildApayAccountReportQuery, parseApayAccountReportRow } from "@/lib/apayStats";
 
@@ -66,6 +67,8 @@ export interface AccountLevelStat {
   gatewayInflow: number | null;
   /** Gateway withdrawal → effectiveOutflow for reportSourced rows; null = no report row */
   gatewayOutflow: number | null;
+  /** Approved parking swept into this account on the selected day (ADR 0018), carved out of ยอดรับ; 0 when none */
+  parkingIn: number;
 }
 
 export interface ReconciliationReport {
@@ -85,6 +88,8 @@ export interface ReconciliationReport {
   yesterdayBalance: number;
   /** Sum of ยอดรับ per account (accounts missing balance data are excluded) */
   slipInflow: number;
+  /** Approved parking (ADR 0018) for the day that landed in an unregistered account (FK null); display-only */
+  unregisteredParkingTotal: number;
 }
 
 // ---------------------------------------------------------------------------
@@ -110,6 +115,7 @@ function emptyReport(startDate: string, endDate: string): ReconciliationReport {
     todayBalance: 0,
     yesterdayBalance: 0,
     slipInflow: 0,
+    unregisteredParkingTotal: 0,
   };
 }
 
@@ -255,6 +261,23 @@ export async function getReconciliationReport(
         AND (mt.project_id = $3 OR $4 = true)
     `;
 
+    // ------------------------------------------------------------------
+    // 7b. Gateway parking withdrawals for the selected day (ADR 0018).
+    //     Approved-only is enforced in aggregation; we fetch raw rows keyed by
+    //     Bangkok date + project_account_id and carve them out of ยอดรับ.
+    //     .catch degrades gracefully if migration 046 has not been applied yet.
+    // ------------------------------------------------------------------
+    const parkingSql = `
+      SELECT
+        gpw.project_account_id::text AS project_account_id,
+        (gpw.transfer_at AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Bangkok')::date::text AS date,
+        gpw.amount,
+        gpw.status
+      FROM gateway_parking_withdrawals gpw
+      WHERE (gpw.transfer_at AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Bangkok')::date = $1
+        AND (gpw.project_id = $2 OR $3 = true)
+    `;
+
     logger.debug("getReconciliationReport", "Executing parallel DB queries");
 
     const [
@@ -265,6 +288,7 @@ export async function getReconciliationReport(
       dualBalRes,
       manualTxRes,
       apayReportRes,
+      parkingRes,
     ] = await Promise.all([
       query(inflowSql, isAll ? [startDate, endDate] : [startDate, endDate, projectIntId]),
       query(balanceSql, isAll ? [endDate] : [projectIntId, endDate]),
@@ -276,6 +300,7 @@ export async function getReconciliationReport(
       isAll
         ? Promise.resolve({ rows: [] })
         : query(buildApayAccountReportQuery(), [endDate, projectIntId]).catch(() => ({ rows: [] })),
+      query(parkingSql, [endDate, projectIntId, isAll]).catch(() => ({ rows: [] })),
     ]);
 
     // ------------------------------------------------------------------
@@ -320,6 +345,20 @@ export async function getReconciliationReport(
         prevDaySource: prev?.source ?? null,
       });
     }
+
+    // ADR 0018: carve gateway parking out of each account's ยอดรับ. Attribute by
+    // project_account_id for the selected day; reportSourced (Apay) rows ignore it.
+    const parkingByAccount = aggregateParkingByAccountDay(parkingRes.rows);
+    for (const s of accountLevelStats) {
+      s.parkingIn = (s.accountId && parkingByAccount.get(s.accountId)?.get(endDate)) || 0;
+    }
+    // FK-null Approved parking (ADR 0018 §4) — landed in an unregistered account,
+    // harmless to the formula, surfaced so an admin can register the destination.
+    const unregisteredParkingTotal = parkingRes.rows.reduce(
+      (sum: number, r: { status: string | null; project_account_id: string | null; amount: number | string | null }) =>
+        r.status === "Approved" && r.project_account_id == null ? sum + Number(r.amount ?? 0) : sum,
+      0,
+    );
 
     // ------------------------------------------------------------------
     // 8. Compute variance
@@ -370,6 +409,7 @@ export async function getReconciliationReport(
       expectedBalance,
       variance,
       slipInflow,
+      unregisteredParkingTotal,
       accountLevelStats,
       periodStart: startDate,
       periodEnd: endDate,
