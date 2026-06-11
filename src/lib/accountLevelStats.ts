@@ -176,6 +176,7 @@ export function buildAccountLevelStats(
       reportSource: null,
       gatewayInflow: null,
       gatewayOutflow: null,
+      parkingIn: 0,
     }))
     .sort((a, b) => b.effectiveOutflow - a.effectiveOutflow);
 }
@@ -240,6 +241,7 @@ export function applyApayReportOverride(
     reportSource: report.reportSource,
     gatewayInflow: report.gatewayInflow,
     gatewayOutflow: report.gatewayOutflow,
+    parkingIn: 0, // gateway rows are never carved (reportSourced ignores parkingIn)
   };
 
   if (idx >= 0) stats[idx] = merged;

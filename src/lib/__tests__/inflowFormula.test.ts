@@ -143,6 +143,31 @@ describe("computePerAccountInflow — missing-data detection", () => {
   });
 });
 
+describe("computePerAccountInflow — parking carve-out (ADR 0018)", () => {
+  it("subtracts parkingIn from the balance-formula inflow", () => {
+    // (1300 - 1000) + 200 - 150 = 350
+    const result = computePerAccountInflow(1300, 1000, 200, 150);
+    expect(result).toEqual({ value: 350, missingMessage: null });
+  });
+
+  it("parkingIn defaulting to 0 reproduces the pre-carve result", () => {
+    expect(computePerAccountInflow(1300, 1000, 200)).toEqual({ value: 500, missingMessage: null });
+  });
+
+  it("parking exceeding the balance delta yields a negative value (not floored)", () => {
+    // (30000 - 0) + 0 - 44188 = -14188 → surfaced as-is
+    const result = computePerAccountInflow(30000, 0, 0, 44188);
+    expect(result).toEqual({ value: -14188, missingMessage: null });
+  });
+
+  it("missing balance ignores parkingIn (still a missing-data message)", () => {
+    expect(computePerAccountInflow(null, 1000, 200, 999)).toEqual({
+      value: null,
+      missingMessage: "ไม่มียอดคงเหลือวันที่เลือก",
+    });
+  });
+});
+
 describe("resolveAccountInflow (ADR 0016)", () => {
   const base = {
     reportSourced: false as boolean,
@@ -165,5 +190,16 @@ describe("resolveAccountInflow (ADR 0016)", () => {
     const r = resolveAccountInflow({ ...base, reportSourced: true, gatewayInflow: null });
     expect(r.value).toBeNull();
     expect(r.missingMessage).toBe("ไม่มีรายงาน");
+  });
+
+  it("carves parkingIn for balance-formula rows", () => {
+    // (1300 - 1000) + 200 - 100 = 400
+    const r = resolveAccountInflow({ ...base, parkingIn: 100 });
+    expect(r).toEqual({ value: 400, missingMessage: null });
+  });
+
+  it("ignores parkingIn for report-sourced (Apay) rows", () => {
+    const r = resolveAccountInflow({ ...base, reportSourced: true, gatewayInflow: 45000, parkingIn: 9999 });
+    expect(r).toEqual({ value: 45000, missingMessage: null });
   });
 });
