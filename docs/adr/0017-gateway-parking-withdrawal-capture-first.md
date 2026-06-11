@@ -98,10 +98,11 @@ CAPTCHA/ban risk — ADR 0009 §7). ตรงกับเหตุผล single-
 หลังเที่ยงคืน — ไม่งั้น `today()` กลายเป็นคนละวัน. fetch หลัง 00:01 เพราะวันเพิ่งปิด
 list ครบ (ถ้าดึง 23:59 ยังมี pending ค้าง).
 
-## Open questions — reconciliation phase 2 (deferred)
+## Open questions — reconciliation phase 2 (RESOLVED by ADR 0018)
 
-จด mental model ที่ grill ไว้แล้ว เพื่อไม่ต้อง re-derive ตอนทำจริง — **ยังไม่ commit**,
-รอเห็น data จริงก่อน:
+> Phase 2 ออกแบบเสร็จแล้วใน [ADR 0018](0018-parking-carve-out-reconciliation.md)
+> (carve-out formula). implementation ยัง gate ที่ data จริงไหลก่อน. ส่วนล่างคือ
+> mental model เดิมที่ grill ไว้ — เก็บไว้เป็น context:
 
 - **parking = decomposition ไม่ใช่ addition.** master bank account รับเงิน 2 ทาง:
   (1) ตรงจาก player, (2) parking sweep. `balance_delta` = total รวม 2 ทาง. parking capture
