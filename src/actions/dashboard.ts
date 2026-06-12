@@ -1256,7 +1256,10 @@ export interface AccountSlip {
   adjust_note: string | null;
   ref_id: string | null;
   image_path: string | null;
+  /** manual_transactions.note (admin remark). For discord slips use slip_note instead. */
   note: string | null;
+  /** Bank memo OCR'd from the slip image — discord slips only (ADR 0019). */
+  slip_note: string | null;
   transaction_type_id: number | null;
   transaction_subtype: string | null;
   project_account_id: string | null;
@@ -1289,6 +1292,7 @@ export async function getAccountSlips(
         ref_id,
         image_path,
         NULL AS note,
+        slip_note,
         transaction_type_id,
         transaction_subtype
       FROM transactions
@@ -1315,6 +1319,7 @@ export async function getAccountSlips(
         NULL AS ref_id,
         image_path,
         note,
+        NULL AS slip_note,
         transaction_type_id,
         transaction_subtype
       FROM manual_transactions
@@ -1348,6 +1353,7 @@ export async function getAccountSlips(
       ref_id: r.ref_id ?? null,
       image_path: r.image_path ?? null,
       note: r.note ?? null,
+      slip_note: r.slip_note ?? null,
       transaction_type_id: r.transaction_type_id != null ? Number(r.transaction_type_id) : null,
       transaction_subtype: r.transaction_subtype ?? null,
       project_account_id: r.project_account_id ?? null,

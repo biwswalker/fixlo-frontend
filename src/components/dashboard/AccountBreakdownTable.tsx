@@ -843,9 +843,14 @@ function SlipDrawer({ stat, date, open, onClose, canAdjust, projectId }: SlipDra
                         {slip.source === "manual" ? "Manual" : "Discord"}
                       </Badge>
                     </TableCell>
-                    <TableCell className="max-w-[160px] truncate text-muted-foreground" title={slip.note ?? ""}>
-                      {slip.note || "-"}
-                    </TableCell>
+                    {(() => {
+                      const displayNote = slip.source === "discord" ? slip.slip_note : slip.note;
+                      return (
+                        <TableCell className="max-w-[160px] truncate text-muted-foreground" title={displayNote ?? ""}>
+                          {displayNote || "-"}
+                        </TableCell>
+                      );
+                    })()}
                     <TableCell className="min-w-[120px]">
                       {canAdjust ? (
                         <Select
