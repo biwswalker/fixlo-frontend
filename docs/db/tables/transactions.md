@@ -51,6 +51,8 @@ aliases: [transaction, slip]
 | `rejected_at` | timestamp | NULL | — | เวลา reject (UTC) |
 | `adjusted_amount` | numeric(15,2) | NULL | — | ยอดที่ admin ปรับ (override `ai_amount` ใน outflow calc) |
 | `transaction_subtype` | varchar | NULL | — | label ย่อย freetext, autocomplete จาก DISTINCT values. ดู [[transaction_types]] |
+| `transaction_type_id` | integer | NULL | — | FK → [[transaction_types]].id ON DELETE SET NULL (migration 027). type tier-1 managed. AI classify จาก [[Slip note]] (ADR 0019) |
+| `slip_note` | text | NULL | — | ⏳ **planned (ADR 0019, ยังไม่ใน dump)** — memo ที่ staff พิมพ์ในแอปธนาคาร ติดมาในสลิป, OCR โดย worker. signal หลักของ classification (type/subtype/target) |
 
 ## CHECK: `chk_matching_status`
 

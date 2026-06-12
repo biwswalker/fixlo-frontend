@@ -37,7 +37,7 @@ generated: 2026-05-09
 ## Cluster: Manual entries (new)
 
 - [[manual_transactions]] — slip ที่ไม่ผ่าน Discord bot, admin กรอกเอง
-- [[transaction_types]] — lookup table label หมวดหมู่ slip (admin-managed) — ดู [ADR 0008](../adr/0008-transaction-type-managed-table.md)
+- [[transaction_types]] — lookup table label หมวดหมู่ slip (admin-managed); AI classify จาก slip note — ดู [ADR 0008](../adr/0008-transaction-type-managed-table.md) + [ADR 0019](../adr/0019-slip-note-classification.md)
 
 ## Cluster: External reports (CSV import?)
 
