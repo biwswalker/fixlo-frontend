@@ -23,7 +23,7 @@ import { resolveAccountInflow } from "@/lib/inflowFormula";
 import type { UnregisteredParking } from "@/lib/parkingStats";
 import {
   getAccountSlips, adjustTransactionAmount, rejectTransaction, batchRejectTransactions,
-  updateSlipType, listTransactionTypes, listSlipSubtypes,
+  updateSlipType, updateSlipTargetProject, listTransactionTypes, listSlipSubtypes,
   editManualTransaction, deleteManualTransaction, editTransaction,
 } from "@/actions/dashboard";
 import type { AccountLevelStat } from "@/actions/reconciliation";
@@ -755,7 +755,44 @@ function SlipDrawer({ stat, date, open, onClose, canAdjust, projectId }: SlipDra
             ไม่พบสลิปในวันนี้
           </div>
         ) : (
-          <>{canAdjust && selectedIds.size > 0 && (
+          <>{/* Target-conflict banners */}
+          {slips.filter((s) => s.target_conflict).map((slip, i) => (
+            <div key={`conflict-${i}`} className="mx-4 mb-2 rounded-lg border border-orange-200 bg-orange-50 px-3 py-2 text-xs">
+              <div className="flex items-center gap-1.5 font-medium text-orange-700 mb-1">
+                <AlertTriangle className="h-3.5 w-3.5" />
+                ข้อมูล target project ขัดแย้ง — กรุณาเลือก
+              </div>
+              <div className="flex flex-wrap gap-2 mt-1">
+                <button
+                  className={`px-2 py-0.5 rounded-full border text-[11px] font-medium transition-colors ${slip.target_project_id != null ? "bg-orange-100 border-orange-400 text-orange-800" : "border-gray-300 text-gray-500"}`}
+                  onClick={() => {
+                    if (!canAdjust || slip.id == null || slip.target_project_id == null) return;
+                    start(async () => {
+                      await updateSlipTargetProject(slip.id!, slip.target_project_id!);
+                      setSlips((prev) => prev ? prev.map((s) => s.id === slip.id ? { ...s, target_conflict: false } : s) : prev);
+                      toast.success("เลือก caption target เรียบร้อย");
+                    });
+                  }}
+                >
+                  Caption: {slip.target_project_name ?? slip.target_project_id ?? "-"}
+                </button>
+                <button
+                  className="px-2 py-0.5 rounded-full border border-gray-300 text-[11px] font-medium text-gray-700 hover:border-orange-400 hover:text-orange-800 transition-colors"
+                  onClick={() => {
+                    if (!canAdjust || slip.id == null || slip.note_target_project_id == null) return;
+                    start(async () => {
+                      await updateSlipTargetProject(slip.id!, slip.note_target_project_id!);
+                      setSlips((prev) => prev ? prev.map((s) => s.id === slip.id ? { ...s, target_project_id: s.note_target_project_id, target_project_name: s.note_target_project_name, target_conflict: false } : s) : prev);
+                      toast.success("เลือก note target เรียบร้อย");
+                    });
+                  }}
+                >
+                  Note: {slip.note_target_project_name ?? slip.note_target_project_id ?? "-"}
+                </button>
+              </div>
+            </div>
+          ))}
+          {canAdjust && selectedIds.size > 0 && (
             <div className="sticky bottom-4 mx-4 mb-4 flex items-center justify-between rounded-xl bg-gray-900 px-4 py-2.5 shadow-lg text-white">
               <span className="text-sm font-medium">เลือก {selectedIds.size} รายการ</span>
               <div className="flex gap-2">

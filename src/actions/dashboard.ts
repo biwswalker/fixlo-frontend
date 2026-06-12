@@ -1263,6 +1263,14 @@ export interface AccountSlip {
   transaction_type_id: number | null;
   transaction_subtype: string | null;
   project_account_id: string | null;
+  /** Caption-derived target project id (from Discord message prefix). */
+  target_project_id: number | null;
+  target_project_name: string | null;
+  /** Note-derived target project id (from slip_note suffix matching). */
+  note_target_project_id: number | null;
+  note_target_project_name: string | null;
+  /** True when caption target ≠ note target — needs admin review. */
+  target_conflict: boolean;
 }
 
 /**
@@ -1276,29 +1284,36 @@ export async function getAccountSlips(
   try {
     const discordSql = `
       SELECT
-        id,
+        t.id,
         NULL AS uuid_id,
-        project_account_id,
+        t.project_account_id,
         'discord' AS source,
-        transfer_at,
-        sender_name,
-        sender_bank,
-        sender_acc_num AS sender_account,
-        ai_amount,
-        adjusted_amount,
-        adjusted_by,
-        adjusted_at,
-        adjust_note,
-        ref_id,
-        image_path,
+        t.transfer_at,
+        t.sender_name,
+        t.sender_bank,
+        t.sender_acc_num AS sender_account,
+        t.ai_amount,
+        t.adjusted_amount,
+        t.adjusted_by,
+        t.adjusted_at,
+        t.adjust_note,
+        t.ref_id,
+        t.image_path,
         NULL AS note,
-        slip_note,
-        transaction_type_id,
-        transaction_subtype
-      FROM transactions
-      WHERE project_account_id = $1
-        AND (transfer_at AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Bangkok')::date = $2::date
-        AND matching_status IN ('AUTO_MAPPED', 'MANUAL_MAPPED')
+        t.slip_note,
+        t.transaction_type_id,
+        t.transaction_subtype,
+        t.target_project_id,
+        cp.project_name AS target_project_name,
+        t.note_target_project_id,
+        np.project_name AS note_target_project_name,
+        t.target_conflict
+      FROM transactions t
+      LEFT JOIN projects cp ON t.target_project_id = cp.id
+      LEFT JOIN projects np ON t.note_target_project_id = np.id
+      WHERE t.project_account_id = $1
+        AND (t.transfer_at AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Bangkok')::date = $2::date
+        AND t.matching_status IN ('AUTO_MAPPED', 'MANUAL_MAPPED')
     `;
 
     const manualSql = `
@@ -1321,7 +1336,12 @@ export async function getAccountSlips(
         note,
         NULL AS slip_note,
         transaction_type_id,
-        transaction_subtype
+        transaction_subtype,
+        NULL AS target_project_id,
+        NULL AS target_project_name,
+        NULL AS note_target_project_id,
+        NULL AS note_target_project_name,
+        false AS target_conflict
       FROM manual_transactions
       WHERE project_account_id = $1
         AND (transfer_at AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Bangkok')::date = $2::date
@@ -1357,6 +1377,11 @@ export async function getAccountSlips(
       transaction_type_id: r.transaction_type_id != null ? Number(r.transaction_type_id) : null,
       transaction_subtype: r.transaction_subtype ?? null,
       project_account_id: r.project_account_id ?? null,
+      target_project_id: r.target_project_id != null ? Number(r.target_project_id) : null,
+      target_project_name: r.target_project_name ?? null,
+      note_target_project_id: r.note_target_project_id != null ? Number(r.note_target_project_id) : null,
+      note_target_project_name: r.note_target_project_name ?? null,
+      target_conflict: Boolean(r.target_conflict),
     }));
   } catch (error) {
     logger.error("getAccountSlips", "Failed to fetch account slips", error);
@@ -1962,6 +1987,31 @@ export async function updateSlipType(
   } catch (error) {
     logger.error("updateSlipType", "Failed to update slip type", error);
     return { success: false, error: "Failed to update slip type" };
+  }
+}
+
+/**
+ * Resolves a cross-project target conflict by setting the admin-chosen target
+ * and clearing the conflict flag. Discord slips only.
+ */
+export async function updateSlipTargetProject(
+  slipId: number,
+  targetProjectId: number,
+): Promise<{ success: boolean; error?: string }> {
+  const session = await getServerAuthSession();
+  if (!session || !hasPermission(session.user.role, "manage_projects")) {
+    return { success: false, error: "Unauthorized" };
+  }
+  try {
+    await query(
+      `UPDATE transactions SET target_project_id = $1, target_conflict = false WHERE id = $2`,
+      [targetProjectId, slipId],
+    );
+    revalidatePath("/dashboard/[projectId]/reconciliation", "page");
+    return { success: true };
+  } catch (error) {
+    logger.error("updateSlipTargetProject", "Failed to update target project", error);
+    return { success: false, error: "Failed to update target project" };
   }
 }
 
