@@ -11,7 +11,7 @@ import { resolvePeriodToDateRange } from "@/lib/periodUtils";
 import { buildAccountLevelStats, applyApayReportOverride } from "@/lib/accountLevelStats";
 import { resolveAccountInflow } from "@/lib/inflowFormula";
 import { aggregateParkingByAccountDay, aggregateUnregisteredParking, type UnregisteredParking } from "@/lib/parkingStats";
-import { aggregateOutflowByType, type OutflowByTypeSummary } from "@/lib/outflowByType";
+import { aggregateOutflowByType, groupOutflowByAccount, type OutflowByTypeSummary } from "@/lib/outflowByType";
 import { depositTotalSql } from "@/lib/kpiSql";
 import { buildApayAccountReportQuery, parseApayAccountReportRow } from "@/lib/apayStats";
 
@@ -70,6 +70,8 @@ export interface AccountLevelStat {
   gatewayOutflow: number | null;
   /** Approved parking swept into this account on the selected day (ADR 0018), carved out of ยอดรับ; 0 when none */
   parkingIn: number;
+  /** Per-type outflow breakdown for this account (ADR 0019 phase 1, display-only) */
+  typeBreakdown: OutflowByTypeSummary[];
 }
 
 export interface ReconciliationReport {
@@ -269,10 +271,12 @@ export async function getReconciliationReport(
     // 7c. Per-type outflow rows for the selected period (ADR 0019 §131).
     //     One row per transaction with its effective amount + type name.
     //     Aggregation done in JS by aggregateOutflowByType.
+    //     Also includes project_account_id for per-account breakdown (#132).
     // ------------------------------------------------------------------
     const outflowTypeSql = `
       SELECT
         tt.name AS type_name,
+        t.project_account_id::text AS account_id,
         COALESCE(t.adjusted_amount, t.ai_amount) AS effective_amount
       FROM transactions t
       LEFT JOIN transaction_types tt ON t.transaction_type_id = tt.id
@@ -383,6 +387,12 @@ export async function getReconciliationReport(
     // FK-null Approved parking (ADR 0018 §4) — landed in unregistered accounts,
     // harmless to the formula, surfaced per account so an admin can register them.
     const unregisteredParking = aggregateUnregisteredParking(parkingRes.rows);
+
+    // ADR 0019 phase 1: per-account type breakdown (display-only).
+    const typeByAccount = groupOutflowByAccount(outflowTypeRes.rows);
+    for (const s of accountLevelStats) {
+      s.typeBreakdown = (s.accountId && typeByAccount.get(s.accountId)) || [];
+    }
 
     // ------------------------------------------------------------------
     // 8. Compute variance
