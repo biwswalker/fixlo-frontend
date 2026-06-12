@@ -16,6 +16,7 @@ import {
   Scale,
   CalendarCheck,
   GitMerge,
+  Tags,
 } from "lucide-react";
 import { ReconciliationSkeleton } from "@/components/dashboard/DashboardSkeletons";
 import { getPendingMatchCount, getPendingBalanceMatchCount } from "@/actions/dashboard";
@@ -281,6 +282,36 @@ async function ReconciliationContent({
             ไปจัดการ →
           </div>
         </Link>
+      )}
+
+      {/* Outflow by Type Section (ADR 0019 phase 1 — display only) */}
+      {report.outflowByType.length > 0 && (
+        <div className="mt-6">
+          <h2 className="text-xl font-semibold tracking-tight text-gray-900 mb-3 flex items-center gap-2">
+            <Tags className="h-5 w-5 text-gray-400" />
+            รายจ่ายแยกตามประเภท
+          </h2>
+          <div className="rounded-2xl border border-gray-100 bg-white shadow-sm overflow-hidden">
+            <table className="w-full text-sm">
+              <thead className="bg-gray-50/70">
+                <tr>
+                  <th className="text-left px-4 py-2.5 text-xs font-medium text-muted-foreground">ประเภท</th>
+                  <th className="text-right px-4 py-2.5 text-xs font-medium text-muted-foreground">ยอดรวม</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-50">
+                {report.outflowByType.map((row) => (
+                  <tr key={row.typeName} className="hover:bg-gray-50/50">
+                    <td className="px-4 py-2.5 font-medium text-gray-700">{row.typeName}</td>
+                    <td className="px-4 py-2.5 text-right tabular-nums text-rose-600 font-semibold">
+                      {formatBaht(row.total)}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
       )}
 
       {/* Account Breakdown Table */}

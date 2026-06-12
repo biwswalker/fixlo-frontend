@@ -11,6 +11,7 @@ import { resolvePeriodToDateRange } from "@/lib/periodUtils";
 import { buildAccountLevelStats, applyApayReportOverride } from "@/lib/accountLevelStats";
 import { resolveAccountInflow } from "@/lib/inflowFormula";
 import { aggregateParkingByAccountDay, aggregateUnregisteredParking, type UnregisteredParking } from "@/lib/parkingStats";
+import { aggregateOutflowByType, type OutflowByTypeSummary } from "@/lib/outflowByType";
 import { depositTotalSql } from "@/lib/kpiSql";
 import { buildApayAccountReportQuery, parseApayAccountReportRow } from "@/lib/apayStats";
 
@@ -90,6 +91,8 @@ export interface ReconciliationReport {
   slipInflow: number;
   /** Approved parking (ADR 0018) for the day that landed in unregistered accounts (FK null), per account; display-only */
   unregisteredParking: UnregisteredParking[];
+  /** Per-type outflow totals for the selected day (ADR 0019 phase 1, display-only) */
+  outflowByType: OutflowByTypeSummary[];
 }
 
 // ---------------------------------------------------------------------------
@@ -116,6 +119,7 @@ function emptyReport(startDate: string, endDate: string): ReconciliationReport {
     yesterdayBalance: 0,
     slipInflow: 0,
     unregisteredParking: [],
+    outflowByType: [],
   };
 }
 
@@ -262,6 +266,26 @@ export async function getReconciliationReport(
     `;
 
     // ------------------------------------------------------------------
+    // 7c. Per-type outflow rows for the selected period (ADR 0019 §131).
+    //     One row per transaction with its effective amount + type name.
+    //     Aggregation done in JS by aggregateOutflowByType.
+    // ------------------------------------------------------------------
+    const outflowTypeSql = `
+      SELECT
+        tt.name AS type_name,
+        COALESCE(t.adjusted_amount, t.ai_amount) AS effective_amount
+      FROM transactions t
+      LEFT JOIN transaction_types tt ON t.transaction_type_id = tt.id
+      WHERE (t.transfer_at AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Bangkok')::date BETWEEN $1 AND $2
+        AND (
+          t.source_project_id = $3
+          OR t.target_project_id = $3
+          OR $4 = true
+        )
+        AND t.matching_status IN ('AUTO_MAPPED', 'MANUAL_MAPPED')
+    `;
+
+    // ------------------------------------------------------------------
     // 7b. Gateway parking withdrawals for the selected day (ADR 0018).
     //     Approved-only is enforced in aggregation; we fetch raw rows keyed by
     //     Bangkok date + project_account_id and carve them out of ยอดรับ.
@@ -291,6 +315,7 @@ export async function getReconciliationReport(
       manualTxRes,
       apayReportRes,
       parkingRes,
+      outflowTypeRes,
     ] = await Promise.all([
       query(inflowSql, isAll ? [startDate, endDate] : [startDate, endDate, projectIntId]),
       query(balanceSql, isAll ? [endDate] : [projectIntId, endDate]),
@@ -303,6 +328,7 @@ export async function getReconciliationReport(
         ? Promise.resolve({ rows: [] })
         : query(buildApayAccountReportQuery(), [endDate, projectIntId]).catch(() => ({ rows: [] })),
       query(parkingSql, [endDate, projectIntId, isAll]).catch(() => ({ rows: [] })),
+      query(outflowTypeSql, [startDate, endDate, projectIntId, isAll]).catch(() => ({ rows: [] })),
     ]);
 
     // ------------------------------------------------------------------
@@ -398,6 +424,8 @@ export async function getReconciliationReport(
       accountsMatched: accountLevelStats.length,
     });
 
+    const outflowByType = aggregateOutflowByType(outflowTypeRes.rows);
+
     return {
       startingBalance,
       expectedInflow,
@@ -408,6 +436,7 @@ export async function getReconciliationReport(
       variance,
       slipInflow,
       unregisteredParking,
+      outflowByType,
       accountLevelStats,
       periodStart: startDate,
       periodEnd: endDate,
