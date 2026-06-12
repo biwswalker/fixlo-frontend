@@ -25,6 +25,7 @@ import {
   getAccountSlips, adjustTransactionAmount, rejectTransaction, batchRejectTransactions,
   updateSlipType, updateSlipTargetProject, listTransactionTypes, listSlipSubtypes,
   editManualTransaction, deleteManualTransaction, editTransaction,
+  rematchParkingWithdrawals,
 } from "@/actions/dashboard";
 import type { AccountLevelStat } from "@/actions/reconciliation";
 import type { AccountSlip, RejectPreset, TransactionType } from "@/actions/dashboard";
@@ -1056,6 +1057,7 @@ export function AccountBreakdownTable({ stats, targetDate, showManualColumn, use
   const [selectedStat, setSelectedStat] = useState<AccountLevelStat | null>(null);
   const [balancePreviewUrl, setBalancePreviewUrl] = useState<string | null>(null);
   const [balanceDetail, setBalanceDetail] = useState<DailyBalanceInfo | null>(null);
+  const [isRematching, startRematch] = useTransition();
   const canAdjust = ["owner", "admin"].includes(userRole ?? "");
   const imageServerUrl = process.env.NEXT_PUBLIC_IMAGE_SERVER_URL ?? "";
 
@@ -1085,8 +1087,30 @@ export function AccountBreakdownTable({ stats, targetDate, showManualColumn, use
       <Card className="border-none shadow-sm rounded-2xl overflow-hidden">
         {unregisteredParking.length > 0 && (
           <div className="m-4 mb-0 rounded-lg bg-amber-50 border border-amber-200 px-4 py-2.5 text-sm text-amber-800">
-            <div className="font-medium">
-              มี parking {formatBaht(unregisteredParking.reduce((s, u) => s + u.amount, 0))} เข้า account ที่ยังไม่ลงทะเบียน — เพิ่มบัญชีในหน้า บัญชี เพื่อให้เข้า reconciliation
+            <div className="flex items-start justify-between gap-3">
+              <div className="font-medium">
+                มี parking {formatBaht(unregisteredParking.reduce((s, u) => s + u.amount, 0))} เข้า account ที่ยังไม่ลงทะเบียน — เพิ่มบัญชีในหน้า บัญชี เพื่อให้เข้า reconciliation
+              </div>
+              {canAdjust && (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="shrink-0 border-amber-300 text-amber-800 hover:bg-amber-100 text-xs h-7 px-2"
+                  disabled={isRematching}
+                  onClick={() => {
+                    startRematch(async () => {
+                      const result = await rematchParkingWithdrawals(projectId);
+                      if (result.matched > 0) {
+                        toast.success(`จับคู่ parking ได้ ${result.matched} รายการ`);
+                      } else {
+                        toast.info("ไม่พบรายการที่จับคู่ได้เพิ่ม");
+                      }
+                    });
+                  }}
+                >
+                  {isRematching ? <Loader2 className="h-3 w-3 animate-spin" /> : "Rematch"}
+                </Button>
+              )}
             </div>
             <ul className="mt-1.5 space-y-0.5">
               {unregisteredParking.map((u, i) => (

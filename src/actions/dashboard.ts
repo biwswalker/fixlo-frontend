@@ -2135,3 +2135,34 @@ export async function listSlipSubtypes(): Promise<string[]> {
     return [];
   }
 }
+
+export async function rematchParkingWithdrawals(projectId: string): Promise<{ matched: number }> {
+  const session = await getServerAuthSession();
+  if (!session?.user) throw new Error("Unauthorized");
+  if (!hasPermission(session.user.role, "admin")) throw new Error("Forbidden");
+
+  const res = await query(
+    `UPDATE gateway_parking_withdrawals gpw
+     SET project_account_id = pa.id
+     FROM project_accounts pa
+     WHERE gpw.project_account_id IS NULL
+       AND gpw.project_id = $1
+       AND pa.project_id = $1
+       AND pa.deleted_at IS NULL
+       AND (
+         (
+           regexp_replace(COALESCE(pa.account_number, ''), '[^0-9]', '', 'g')
+             = regexp_replace(COALESCE(gpw.account_number, ''), '[^0-9]', '', 'g')
+           AND regexp_replace(COALESCE(gpw.account_number, ''), '[^0-9]', '', 'g') <> ''
+         )
+         OR (
+           gpw.account_name IS NOT NULL AND gpw.account_name <> ''
+           AND gpw.account_name = pa.account_name
+         )
+       )`,
+    [projectId],
+  );
+
+  revalidatePath(`/dashboard/${projectId}`);
+  return { matched: res.rowCount ?? 0 };
+}
