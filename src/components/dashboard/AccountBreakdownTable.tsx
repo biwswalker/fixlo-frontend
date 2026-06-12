@@ -1197,6 +1197,15 @@ export function AccountBreakdownTable({ stats, targetDate, showManualColumn, use
                       {item.reportSourced && item.gatewayOutflow === null
                         ? <span className="text-xs font-normal text-amber-600">ไม่มีรายงาน</span>
                         : formatBaht(item.effectiveOutflow)}
+                      {!item.reportSourced && item.typeBreakdown.length > 0 && (
+                        <div className="flex flex-col items-end gap-0.5 mt-1">
+                          {item.typeBreakdown.map((td) => (
+                            <span key={td.typeName} className="text-[10px] text-muted-foreground tabular-nums">
+                              {td.typeName}: {formatBaht(td.total)}
+                            </span>
+                          ))}
+                        </div>
+                      )}
                     </TableCell>
                     <TableCell className="text-right">
                       <div className="flex flex-col items-end gap-0.5">
