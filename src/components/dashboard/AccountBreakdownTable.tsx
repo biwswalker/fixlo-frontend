@@ -1089,7 +1089,7 @@ export function AccountBreakdownTable({ stats, targetDate, showManualColumn, use
           <div className="m-4 mb-0 rounded-lg bg-amber-50 border border-amber-200 px-4 py-2.5 text-sm text-amber-800">
             <div className="flex items-start justify-between gap-3">
               <div className="font-medium">
-                มี parking {formatBaht(unregisteredParking.reduce((s, u) => s + u.amount, 0))} เข้า account ที่ยังไม่ลงทะเบียน — เพิ่มบัญชีในหน้า บัญชี เพื่อให้เข้า reconciliation
+                มียอดโยก {formatBaht(unregisteredParking.reduce((s, u) => s + u.amount, 0))} เข้า account ที่ยังไม่ลงทะเบียน — เพิ่มบัญชีในหน้า บัญชี เพื่อให้เข้า reconciliation
               </div>
               {canAdjust && (
                 <Button
@@ -1101,7 +1101,7 @@ export function AccountBreakdownTable({ stats, targetDate, showManualColumn, use
                     startRematch(async () => {
                       const result = await rematchParkingWithdrawals(projectId);
                       if (result.matched > 0) {
-                        toast.success(`จับคู่ parking ได้ ${result.matched} รายการ`);
+                        toast.success(`จับคู่ยอดโยกได้ ${result.matched} รายการ`);
                       } else {
                         toast.info("ไม่พบรายการที่จับคู่ได้เพิ่ม");
                       }
