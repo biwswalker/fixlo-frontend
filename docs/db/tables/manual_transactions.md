@@ -41,7 +41,8 @@ effectiveOutflow = Σ COALESCE(adjusted_amount, ai_amount) [transactions]
 
 ไม่มี Smart Matching step — admin เลือก account ตอนสร้าง.
 
+- `transaction_type_id` integer FK → [[transaction_types]] ON DELETE SET NULL + `transaction_subtype` text (migration 027). type/subtype = metadata (ADR 0008). NB: classification จาก [[Slip note]] (ADR 0019) = **Discord slip เท่านั้น**, ไม่ครอบ manual slip.
+
 ## ต้อง grill
 
 - `id` เป็น uuid จริงไหม หรือ integer? (ต้อง confirm จาก migration)
-- มี `transaction_type_id` FK → [[transaction_types]] ไหม?

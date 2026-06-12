@@ -1,7 +1,7 @@
 # ADR 0008 — Transaction type as admin-managed table, sub-type as freetext
 
 ## Status
-Proposed
+Accepted — implemented (migrations 026 `transaction_types`, 027 `transaction_type_id` + `transaction_subtype`). Phase 1 (metadata) live. The type/subtype infra is reused by [ADR 0019](0019-slip-note-classification.md) for AI slip-note classification.
 
 ## Context
 
