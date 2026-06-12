@@ -869,7 +869,7 @@ function SlipDrawer({ stat, date, open, onClose, canAdjust, projectId }: SlipDra
                         </Select>
                       ) : (
                         <span className="text-xs text-muted-foreground">
-                          {txTypes.find((t) => t.id === slip.transaction_type_id)?.name ?? "-"}
+                          {txTypes.find((t) => t.id === slip.transaction_type_id)?.name ?? "ไม่ระบุประเภท"}
                         </span>
                       )}
                     </TableCell>
