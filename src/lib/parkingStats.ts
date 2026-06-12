@@ -1,8 +1,16 @@
 export interface ParkingRow {
   project_account_id: string | null;
+  account_name?: string | null;
+  account_number?: string | null;
   date: string;
   amount: number | string | null;
   status: string | null;
+}
+
+export interface UnregisteredParking {
+  accountName: string;
+  accountNumber: string;
+  amount: number;
 }
 
 /**
@@ -32,4 +40,26 @@ export function aggregateParkingByAccountDay(
     result.set(row.project_account_id, dayMap);
   }
   return result;
+}
+
+/**
+ * Groups Approved parking that landed in an UNregistered account (FK null) by
+ * account, summing the amount (ADR 0018 §4). Used for the reconciliation banner
+ * that lists each unregistered destination + how much arrived, so an admin can
+ * register it. Insertion order is preserved (first-seen account first).
+ */
+export function aggregateUnregisteredParking(rows: ParkingRow[]): UnregisteredParking[] {
+  const byAccount = new Map<string, UnregisteredParking>();
+  for (const row of rows) {
+    if (row.status !== "Approved") continue;
+    if (row.project_account_id != null) continue;
+    const accountName = row.account_name ?? "";
+    const accountNumber = row.account_number ?? "";
+    const key = `${accountName}::${accountNumber}`;
+    const amount = Number(row.amount ?? 0);
+    const existing = byAccount.get(key);
+    if (existing) existing.amount += amount;
+    else byAccount.set(key, { accountName, accountNumber, amount });
+  }
+  return Array.from(byAccount.values());
 }

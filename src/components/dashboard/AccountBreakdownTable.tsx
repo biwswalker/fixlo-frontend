@@ -20,6 +20,7 @@ import {
 } from "@/components/ui/popover";
 import { formatBaht } from "@/lib/utils";
 import { resolveAccountInflow } from "@/lib/inflowFormula";
+import type { UnregisteredParking } from "@/lib/parkingStats";
 import {
   getAccountSlips, adjustTransactionAmount, rejectTransaction, batchRejectTransactions,
   updateSlipType, listTransactionTypes, listSlipSubtypes,
@@ -1005,11 +1006,11 @@ interface AccountBreakdownTableProps {
   showManualColumn: boolean;
   userRole?: string | null;
   projectId: string;
-  /** ADR 0018: Approved parking that landed in an unregistered account (FK null); 0 hides the banner */
-  unregisteredParkingTotal?: number;
+  /** ADR 0018: Approved parking that landed in unregistered accounts (FK null), per account; empty hides the banner */
+  unregisteredParking?: UnregisteredParking[];
 }
 
-export function AccountBreakdownTable({ stats, targetDate, showManualColumn, userRole, projectId, unregisteredParkingTotal = 0 }: AccountBreakdownTableProps) {
+export function AccountBreakdownTable({ stats, targetDate, showManualColumn, userRole, projectId, unregisteredParking = [] }: AccountBreakdownTableProps) {
   const [selectedStat, setSelectedStat] = useState<AccountLevelStat | null>(null);
   const [balancePreviewUrl, setBalancePreviewUrl] = useState<string | null>(null);
   const [balanceDetail, setBalanceDetail] = useState<DailyBalanceInfo | null>(null);
@@ -1040,9 +1041,19 @@ export function AccountBreakdownTable({ stats, targetDate, showManualColumn, use
         </DialogContent>
       </Dialog>
       <Card className="border-none shadow-sm rounded-2xl overflow-hidden">
-        {unregisteredParkingTotal > 0 && (
+        {unregisteredParking.length > 0 && (
           <div className="m-4 mb-0 rounded-lg bg-amber-50 border border-amber-200 px-4 py-2.5 text-sm text-amber-800">
-            มี parking {formatBaht(unregisteredParkingTotal)} เข้า account ที่ยังไม่ลงทะเบียน — เพิ่มบัญชีในหน้า บัญชี เพื่อให้เข้า reconciliation
+            <div className="font-medium">
+              มี parking {formatBaht(unregisteredParking.reduce((s, u) => s + u.amount, 0))} เข้า account ที่ยังไม่ลงทะเบียน — เพิ่มบัญชีในหน้า บัญชี เพื่อให้เข้า reconciliation
+            </div>
+            <ul className="mt-1.5 space-y-0.5">
+              {unregisteredParking.map((u, i) => (
+                <li key={`${u.accountNumber}-${i}`} className="flex justify-between gap-4 text-xs tabular-nums">
+                  <span className="truncate">{u.accountName || "(ไม่มีชื่อ)"}{u.accountNumber ? ` · ${u.accountNumber}` : ""}</span>
+                  <span className="shrink-0 font-medium">{formatBaht(u.amount)}</span>
+                </li>
+              ))}
+            </ul>
           </div>
         )}
         {stats.length === 0 ? (

@@ -295,7 +295,7 @@ async function ReconciliationContent({
         showManualColumn={true}
         userRole={session?.user.role}
         projectId={projectId}
-        unregisteredParkingTotal={report.unregisteredParkingTotal}
+        unregisteredParking={report.unregisteredParking}
       />
     </div>
   );

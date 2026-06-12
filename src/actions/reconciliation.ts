@@ -10,7 +10,7 @@ import { resolveProject } from "@/lib/projects";
 import { resolvePeriodToDateRange } from "@/lib/periodUtils";
 import { buildAccountLevelStats, applyApayReportOverride } from "@/lib/accountLevelStats";
 import { resolveAccountInflow } from "@/lib/inflowFormula";
-import { aggregateParkingByAccountDay } from "@/lib/parkingStats";
+import { aggregateParkingByAccountDay, aggregateUnregisteredParking, type UnregisteredParking } from "@/lib/parkingStats";
 import { depositTotalSql } from "@/lib/kpiSql";
 import { buildApayAccountReportQuery, parseApayAccountReportRow } from "@/lib/apayStats";
 
@@ -88,8 +88,8 @@ export interface ReconciliationReport {
   yesterdayBalance: number;
   /** Sum of ยอดรับ per account (accounts missing balance data are excluded) */
   slipInflow: number;
-  /** Approved parking (ADR 0018) for the day that landed in an unregistered account (FK null); display-only */
-  unregisteredParkingTotal: number;
+  /** Approved parking (ADR 0018) for the day that landed in unregistered accounts (FK null), per account; display-only */
+  unregisteredParking: UnregisteredParking[];
 }
 
 // ---------------------------------------------------------------------------
@@ -115,7 +115,7 @@ function emptyReport(startDate: string, endDate: string): ReconciliationReport {
     todayBalance: 0,
     yesterdayBalance: 0,
     slipInflow: 0,
-    unregisteredParkingTotal: 0,
+    unregisteredParking: [],
   };
 }
 
@@ -270,6 +270,8 @@ export async function getReconciliationReport(
     const parkingSql = `
       SELECT
         gpw.project_account_id::text AS project_account_id,
+        gpw.account_name,
+        gpw.account_number,
         (gpw.transfer_at AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Bangkok')::date::text AS date,
         gpw.amount,
         gpw.status
@@ -352,13 +354,9 @@ export async function getReconciliationReport(
     for (const s of accountLevelStats) {
       s.parkingIn = (s.accountId && parkingByAccount.get(s.accountId)?.get(endDate)) || 0;
     }
-    // FK-null Approved parking (ADR 0018 §4) — landed in an unregistered account,
-    // harmless to the formula, surfaced so an admin can register the destination.
-    const unregisteredParkingTotal = parkingRes.rows.reduce(
-      (sum: number, r: { status: string | null; project_account_id: string | null; amount: number | string | null }) =>
-        r.status === "Approved" && r.project_account_id == null ? sum + Number(r.amount ?? 0) : sum,
-      0,
-    );
+    // FK-null Approved parking (ADR 0018 §4) — landed in unregistered accounts,
+    // harmless to the formula, surfaced per account so an admin can register them.
+    const unregisteredParking = aggregateUnregisteredParking(parkingRes.rows);
 
     // ------------------------------------------------------------------
     // 8. Compute variance
@@ -409,7 +407,7 @@ export async function getReconciliationReport(
       expectedBalance,
       variance,
       slipInflow,
-      unregisteredParkingTotal,
+      unregisteredParking,
       accountLevelStats,
       periodStart: startDate,
       periodEnd: endDate,
