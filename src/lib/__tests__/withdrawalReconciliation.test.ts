@@ -154,3 +154,60 @@ describe("computeWithdrawalReconciliation — empty inputs", () => {
     expect(results).toHaveLength(0);
   });
 });
+
+describe("computeWithdrawalReconciliation — target attribution (#143)", () => {
+  it("ถอนให้ลูกค้า with target ≠ source attributes to target", () => {
+    const results = computeWithdrawalReconciliation(
+      [slip("ถอนให้ลูกค้า", 1000, "juno168", "uno")],
+      [game("uno", 1000)],
+    );
+    const uno = results.find((r) => r.projectId === "uno");
+    const juno = results.find((r) => r.projectId === "juno168");
+    expect(uno?.slipWithdraw).toBe(1000);
+    expect(juno).toBeUndefined();
+  });
+
+  it("no target (null) attributes to source", () => {
+    const [row] = computeWithdrawalReconciliation(
+      [slip("ถอนให้ลูกค้า", 500, "juno168", null)],
+      [game("juno168", 0)],
+    );
+    expect(row.projectId).toBe("juno168");
+    expect(row.slipWithdraw).toBe(500);
+  });
+
+  it("target = source still attributes to source (no double-count)", () => {
+    const results = computeWithdrawalReconciliation(
+      [slip("ถอนให้ลูกค้า", 300, "juno168", "juno168")],
+      [game("juno168", 0)],
+    );
+    const rows = results.filter((r) => r.projectId === "juno168");
+    expect(rows).toHaveLength(1);
+    expect(rows[0].slipWithdraw).toBe(300);
+  });
+
+  it("null type with cross-project target attributes to target", () => {
+    const results = computeWithdrawalReconciliation(
+      [slip(null, 200, "juno168", "uno")],
+      [game("uno", 0)],
+    );
+    const uno = results.find((r) => r.projectId === "uno");
+    expect(uno?.slipWithdraw).toBe(200);
+  });
+
+  it("all-projects net: cross-project slip reduces source slip-total and adds to target", () => {
+    const results = computeWithdrawalReconciliation(
+      [
+        slip("ถอนให้ลูกค้า", 1000, "juno168"),
+        slip("ถอนให้ลูกค้า", 500, "juno168", "uno"),
+      ],
+      [game("juno168", 1000), game("uno", 500)],
+    );
+    const juno = results.find((r) => r.projectId === "juno168");
+    const uno = results.find((r) => r.projectId === "uno");
+    expect(juno?.slipWithdraw).toBe(1000);
+    expect(uno?.slipWithdraw).toBe(500);
+    const totalSlip = (juno?.slipWithdraw ?? 0) + (uno?.slipWithdraw ?? 0);
+    expect(totalSlip).toBe(1500);
+  });
+});
