@@ -30,8 +30,9 @@ function isPlayerPayout(typeName: string | null): boolean {
 /**
  * Produces per-project withdrawal reconciliation: game-side vs slip-side.
  *
- * Attribution: `source_project_id` (ADR 0020 §2, phase — #142).
- * Target attribution (cross-project) is added in #143.
+ * Attribution (ADR 0020 §2 + §3 #143): if a slip has `target_project_id` set and
+ * it differs from `source_project_id`, the slip counts toward the target project's
+ * slip-side withdrawal. Otherwise it counts toward the source project.
  *
  * Type filter: null + ถอนให้ลูกค้า count; all other explicit types are excluded.
  * diff = gameWithdraw - slipWithdraw.
@@ -43,7 +44,10 @@ export function computeWithdrawalReconciliation(
   const slipByProject = new Map<string, number>();
   for (const row of slipRows) {
     if (!isPlayerPayout(row.type_name)) continue;
-    const projectId = row.source_project_id;
+    const projectId =
+      row.target_project_id != null && row.target_project_id !== row.source_project_id
+        ? row.target_project_id
+        : row.source_project_id;
     slipByProject.set(projectId, (slipByProject.get(projectId) ?? 0) + Number(row.effective_amount));
   }
 
