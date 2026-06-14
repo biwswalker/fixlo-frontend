@@ -1330,6 +1330,11 @@ export function AccountBreakdownTable({ stats, targetDate, showManualColumn, use
                                 (− {formatBaht(item.parkingIn)} โยกเข้า)
                               </span>
                             )}
+                            {item.internalIn > 0 && (
+                              <span className="text-[10px] text-muted-foreground tabular-nums">
+                                (− {formatBaht(item.internalIn)} โอนระหว่างบัญชี)
+                              </span>
+                            )}
                           </div>
                         );
                       })()}

@@ -13,6 +13,7 @@ import { resolveAccountInflow } from "@/lib/inflowFormula";
 import { aggregateParkingByAccountDay, aggregateUnregisteredParking, type UnregisteredParking } from "@/lib/parkingStats";
 import { aggregateOutflowByType, groupOutflowByAccount, type OutflowByTypeSummary } from "@/lib/outflowByType";
 import { computeWithdrawalReconciliation, type WithdrawalReconciliationResult } from "@/lib/withdrawalReconciliation";
+import { aggregateInternalTransferByAccountDay } from "@/lib/internalTransfer";
 import { depositTotalSql } from "@/lib/kpiSql";
 import { buildApayAccountReportQuery, parseApayAccountReportRow } from "@/lib/apayStats";
 
@@ -71,6 +72,8 @@ export interface AccountLevelStat {
   gatewayOutflow: number | null;
   /** Approved parking swept into this account on the selected day (ADR 0018), carved out of ยอดรับ; 0 when none */
   parkingIn: number;
+  /** Internal-transfer inflow into this account on the selected day (ADR 0020 §1), carved out of ยอดรับ; 0 when none */
+  internalIn: number;
   /** Per-type outflow breakdown for this account (ADR 0019 phase 1, display-only) */
   typeBreakdown: OutflowByTypeSummary[];
 }
@@ -313,6 +316,43 @@ export async function getReconciliationReport(
     `;
 
     // ------------------------------------------------------------------
+    // 7f. Internal transfer detection (ADR 0020 §1): outgoing slips whose
+    //     receiver 2-tier-matches a master account → inflow to that account.
+    //     Uses a window-function COUNT to detect and skip ambiguous matches
+    //     (receiver collides with >1 master). Scoped to receiving project_accounts.
+    // ------------------------------------------------------------------
+    const internalTransferSql = `
+      WITH receiver_matches AS (
+        SELECT
+          pa.id::text AS receiving_account_id,
+          (t.transfer_at AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Bangkok')::date::text AS date,
+          COALESCE(t.adjusted_amount, t.ai_amount) AS amount,
+          COUNT(*) OVER (PARTITION BY t.id) AS match_count
+        FROM transactions t
+        JOIN project_accounts pa ON (
+          pa.deleted_at IS NULL
+          AND (pa.project_id = $2 OR $3 = true)
+          AND (
+            (
+              regexp_replace(COALESCE(pa.account_number, ''), '[^0-9]', '', 'g')
+                = regexp_replace(COALESCE(t.receiver_acc_num, ''), '[^0-9]', '', 'g')
+              AND regexp_replace(COALESCE(t.receiver_acc_num, ''), '[^0-9]', '', 'g') <> ''
+            )
+            OR (
+              t.receiver_name IS NOT NULL AND t.receiver_name <> ''
+              AND t.receiver_name = pa.account_name
+            )
+          )
+        )
+        WHERE (t.transfer_at AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Bangkok')::date = $1
+          AND t.matching_status IN ('AUTO_MAPPED', 'MANUAL_MAPPED')
+      )
+      SELECT receiving_account_id, date, amount
+      FROM receiver_matches
+      WHERE match_count = 1
+    `;
+
+    // ------------------------------------------------------------------
     // 7d. Game-side withdrawal per project for the selected day (ADR 0020 §2).
     //     report_withdrawals.trans_date is already Bangkok-scoped (scraped per
     //     platform). Groups by project_name so the result matches the slip-side
@@ -331,7 +371,9 @@ export async function getReconciliationReport(
     // ------------------------------------------------------------------
     // 7e. Slip-side withdrawal rows for the selected day (ADR 0020 §2).
     //     Includes type_name + source/target project names for attribution.
-    //     Scoped to source_project_id for #142; target attribution added in #143.
+    //     Excludes internal transfers (ADR 0020 §1+§2): receiver 2-tier-matches
+    //     exactly 1 master account across all projects → not a player payout.
+    //     Ambiguous match (>1) = keep (conservative, per ADR 0020 §1).
     // ------------------------------------------------------------------
     const withdrawalSlipSql = `
       SELECT
@@ -346,6 +388,22 @@ export async function getReconciliationReport(
       WHERE (t.transfer_at AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Bangkok')::date = $1
         AND (t.source_project_id = $2 OR $3 = true)
         AND t.matching_status IN ('AUTO_MAPPED', 'MANUAL_MAPPED')
+        AND (
+          SELECT COUNT(*)
+          FROM project_accounts pa_recv
+          WHERE pa_recv.deleted_at IS NULL
+            AND (
+              (
+                regexp_replace(COALESCE(pa_recv.account_number, ''), '[^0-9]', '', 'g')
+                  = regexp_replace(COALESCE(t.receiver_acc_num, ''), '[^0-9]', '', 'g')
+                AND regexp_replace(COALESCE(t.receiver_acc_num, ''), '[^0-9]', '', 'g') <> ''
+              )
+              OR (
+                t.receiver_name IS NOT NULL AND t.receiver_name <> ''
+                AND t.receiver_name = pa_recv.account_name
+              )
+            )
+        ) != 1
     `;
 
     logger.debug("getReconciliationReport", "Executing parallel DB queries");
@@ -362,6 +420,7 @@ export async function getReconciliationReport(
       outflowTypeRes,
       gameWithdrawalRes,
       withdrawalSlipRes,
+      internalTransferRes,
     ] = await Promise.all([
       query(inflowSql, isAll ? [startDate, endDate] : [startDate, endDate, projectIntId]),
       query(balanceSql, isAll ? [endDate] : [projectIntId, endDate]),
@@ -377,6 +436,7 @@ export async function getReconciliationReport(
       query(outflowTypeSql, [startDate, endDate, projectIntId, isAll]).catch(() => ({ rows: [] })),
       query(gameWithdrawalSql, [endDate, projectIntId, isAll]).catch(() => ({ rows: [] })),
       query(withdrawalSlipSql, [endDate, projectIntId, isAll]).catch(() => ({ rows: [] })),
+      query(internalTransferSql, [endDate, projectIntId, isAll]).catch(() => ({ rows: [] })),
     ]);
 
     // ------------------------------------------------------------------
@@ -431,6 +491,12 @@ export async function getReconciliationReport(
     // FK-null Approved parking (ADR 0018 §4) — landed in unregistered accounts,
     // harmless to the formula, surfaced per account so an admin can register them.
     const unregisteredParking = aggregateUnregisteredParking(parkingRes.rows);
+
+    // ADR 0020 §1: carve internal-transfer inflows out of each receiving account's ยอดรับ.
+    const internalByAccount = aggregateInternalTransferByAccountDay(internalTransferRes.rows);
+    for (const s of accountLevelStats) {
+      s.internalIn = (s.accountId && internalByAccount.get(s.accountId)?.get(endDate)) || 0;
+    }
 
     // ADR 0019 phase 1: per-account type breakdown (display-only).
     const typeByAccount = groupOutflowByAccount(outflowTypeRes.rows);

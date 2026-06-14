@@ -203,3 +203,57 @@ describe("resolveAccountInflow (ADR 0016)", () => {
     expect(r).toEqual({ value: 45000, missingMessage: null });
   });
 });
+
+describe("computePerAccountInflow — internalIn carve (ADR 0020 §1)", () => {
+  it("subtracts internalIn from the balance-formula inflow", () => {
+    // (1300 - 1000) + 200 - 0 - 80 = 420
+    const result = computePerAccountInflow(1300, 1000, 200, 0, 80);
+    expect(result).toEqual({ value: 420, missingMessage: null });
+  });
+
+  it("internalIn defaults to 0 (existing results unchanged)", () => {
+    expect(computePerAccountInflow(1300, 1000, 200)).toEqual({ value: 500, missingMessage: null });
+  });
+
+  it("internalIn composes with parkingIn", () => {
+    // (1300 - 1000) + 200 - 50 - 80 = 370
+    const result = computePerAccountInflow(1300, 1000, 200, 50, 80);
+    expect(result).toEqual({ value: 370, missingMessage: null });
+  });
+
+  it("negative result when internalIn exceeds balance delta (not floored)", () => {
+    const result = computePerAccountInflow(1000, 1000, 0, 0, 5000);
+    expect(result).toEqual({ value: -5000, missingMessage: null });
+  });
+
+  it("missing balance still returns missingMessage ignoring internalIn", () => {
+    const result = computePerAccountInflow(null, 1000, 200, 0, 999);
+    expect(result.value).toBeNull();
+    expect(result.missingMessage).toBe("ไม่มียอดคงเหลือวันที่เลือก");
+  });
+});
+
+describe("resolveAccountInflow — internalIn carve (ADR 0020 §1)", () => {
+  const base = {
+    reportSourced: false as boolean,
+    gatewayInflow: null as number | null,
+    selectedDayBalance: 1300,
+    prevDayBalance: 1000,
+    effectiveOutflow: 200,
+  };
+
+  it("carves internalIn for balance-formula rows", () => {
+    // (1300 - 1000) + 200 - 80 = 420
+    const r = resolveAccountInflow({ ...base, internalIn: 80 });
+    expect(r).toEqual({ value: 420, missingMessage: null });
+  });
+
+  it("internalIn defaults to 0 (unchanged behavior)", () => {
+    expect(resolveAccountInflow(base)).toEqual({ value: 500, missingMessage: null });
+  });
+
+  it("ignores internalIn for report-sourced rows", () => {
+    const r = resolveAccountInflow({ ...base, reportSourced: true, gatewayInflow: 45000, internalIn: 9999 });
+    expect(r).toEqual({ value: 45000, missingMessage: null });
+  });
+});

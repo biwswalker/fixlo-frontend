@@ -177,6 +177,7 @@ export function buildAccountLevelStats(
       gatewayInflow: null,
       gatewayOutflow: null,
       parkingIn: 0,
+      internalIn: 0,
       typeBreakdown: [],
     }))
     .sort((a, b) => b.effectiveOutflow - a.effectiveOutflow);
@@ -242,7 +243,8 @@ export function applyApayReportOverride(
     reportSource: report.reportSource,
     gatewayInflow: report.gatewayInflow,
     gatewayOutflow: report.gatewayOutflow,
-    parkingIn: 0, // gateway rows are never carved (reportSourced ignores parkingIn)
+    parkingIn: 0,
+    internalIn: 0, // gateway rows are never carved (reportSourced ignores carve-outs)
     typeBreakdown: [],
   };
 

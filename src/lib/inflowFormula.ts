@@ -5,19 +5,20 @@ export interface PerAccountInflowResult {
 
 /**
  * Computes ยอดรับ (player-only) for a single master account on a given day.
- * Formula: (balance_D − balance_(D-1)) + effectiveOutflow_D − parkingIn_D
+ * Formula: (balance_D − balance_(D-1)) + effectiveOutflow_D − parkingIn_D − internalIn_D
  * Returns a missing-data message when either balance snapshot is absent.
  *
- * parkingIn carves out gateway "parking" sweeps (ADR 0018) that already counted
- * once as an Apay deposit and would otherwise double-count via the balance delta.
- * The result is not floored: a negative value (parking exceeds the observed
- * balance delta) is surfaced as a data/timing discrepancy.
+ * parkingIn carves out gateway "parking" sweeps (ADR 0018).
+ * internalIn carves out internal transfers — outgoing slips from other accounts
+ * whose receiver matched this account (ADR 0020 §1). Both carve-outs are not
+ * floored: a negative value is surfaced as a data/timing discrepancy.
  */
 export function computePerAccountInflow(
   selectedDayBalance: number | null,
   prevDayBalance: number | null,
   effectiveOutflow: number,
   parkingIn: number = 0,
+  internalIn: number = 0,
 ): PerAccountInflowResult {
   if (selectedDayBalance === null && prevDayBalance === null) {
     return { value: null, missingMessage: "ไม่มียอดคงเหลือทั้งสองวัน" };
@@ -29,7 +30,7 @@ export function computePerAccountInflow(
     return { value: null, missingMessage: "ไม่มียอดคงเหลือวันก่อนหน้า" };
   }
   return {
-    value: (selectedDayBalance - prevDayBalance) + effectiveOutflow - parkingIn,
+    value: (selectedDayBalance - prevDayBalance) + effectiveOutflow - parkingIn - internalIn,
     missingMessage: null,
   };
 }
@@ -46,10 +47,11 @@ export function resolveAccountInflow(stat: {
   prevDayBalance: number | null;
   effectiveOutflow: number;
   parkingIn?: number;
+  internalIn?: number;
 }): PerAccountInflowResult {
   if (stat.reportSourced) {
     // Apay rows use the gateway report directly — never the balance formula, so
-    // parkingIn does not apply (parked money is counted once at the Apay deposit).
+    // carve-outs (parkingIn, internalIn) do not apply.
     return stat.gatewayInflow !== null
       ? { value: stat.gatewayInflow, missingMessage: null }
       : { value: null, missingMessage: "ไม่มีรายงาน" };
@@ -59,6 +61,7 @@ export function resolveAccountInflow(stat: {
     stat.prevDayBalance,
     stat.effectiveOutflow,
     stat.parkingIn ?? 0,
+    stat.internalIn ?? 0,
   );
 }
 
