@@ -17,6 +17,7 @@ import {
   CalendarCheck,
   GitMerge,
   Tags,
+  Wallet,
 } from "lucide-react";
 import { ReconciliationSkeleton } from "@/components/dashboard/DashboardSkeletons";
 import { getPendingMatchCount, getPendingBalanceMatchCount } from "@/actions/dashboard";
@@ -305,6 +306,54 @@ async function ReconciliationContent({
                     <td className="px-4 py-2.5 font-medium text-gray-700">{row.typeName}</td>
                     <td className="px-4 py-2.5 text-right tabular-nums text-rose-600 font-semibold">
                       {formatBaht(row.total)}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* Withdrawal Reconciliation Section (ADR 0020 §2) */}
+      {report.withdrawalReconciliation.length > 0 && (
+        <div className="mt-6">
+          <h2 className="text-xl font-semibold tracking-tight text-gray-900 mb-3 flex items-center gap-2">
+            <Wallet className="h-5 w-5 text-gray-400" />
+            กระทบยอดถอน (เว็บ vs สลิป)
+          </h2>
+          <div className="rounded-2xl border border-gray-100 bg-white shadow-sm overflow-hidden">
+            <table className="w-full text-sm">
+              <thead className="bg-gray-50/70">
+                <tr>
+                  <th className="text-left px-4 py-2.5 text-xs font-medium text-muted-foreground">โปรเจกต์</th>
+                  <th className="text-right px-4 py-2.5 text-xs font-medium text-muted-foreground">ยอดถอน(เว็บ)</th>
+                  <th className="text-right px-4 py-2.5 text-xs font-medium text-muted-foreground">ยอดถอน(สลิป)</th>
+                  <th className="text-right px-4 py-2.5 text-xs font-medium text-muted-foreground">ส่วนต่าง</th>
+                  <th className="text-center px-4 py-2.5 text-xs font-medium text-muted-foreground">สถานะ</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-50">
+                {report.withdrawalReconciliation.map((row) => (
+                  <tr key={row.projectId} className="hover:bg-gray-50/50">
+                    <td className="px-4 py-2.5 font-medium text-gray-700">{row.projectId}</td>
+                    <td className="px-4 py-2.5 text-right tabular-nums text-gray-700">{formatBaht(row.gameWithdraw)}</td>
+                    <td className="px-4 py-2.5 text-right tabular-nums text-gray-700">{formatBaht(row.slipWithdraw)}</td>
+                    <td className={cn(
+                      "px-4 py-2.5 text-right tabular-nums font-semibold",
+                      row.matched ? "text-emerald-600" : "text-rose-600",
+                    )}>
+                      {formatBaht(row.diff)}
+                    </td>
+                    <td className="px-4 py-2.5 text-center">
+                      <span className={cn(
+                        "inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium",
+                        row.matched
+                          ? "bg-emerald-50 text-emerald-700"
+                          : "bg-rose-50 text-rose-700",
+                      )}>
+                        {row.matched ? "ตรงกัน" : "ไม่ตรงกัน"}
+                      </span>
                     </td>
                   </tr>
                 ))}
