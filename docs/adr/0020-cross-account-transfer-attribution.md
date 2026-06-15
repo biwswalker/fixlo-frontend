@@ -24,6 +24,17 @@ tags: [reconciliation, cross-project, withdrawal, slip-pipeline, classification]
 > detection (2-tier receiver match) is **reused** by §5 to label the
 > *capital-lending* kind of outflow.
 
+> **Amendment (2026-06-15).** §5's **"ไม่ระบุโปรเจกต์" bucket is removed.** A null
+> `target_project_id` means neither the Discord caption nor the slip note resolved a
+> project (ADR 0019 §4) — i.e. a normal **same-project** withdrawal, not cross-project.
+> The original bucket keyed on *any non-empty slip note*, which wrongly swept in
+> same-project "ถอนให้ลูกค้า" payouts. The "names a project but unresolved" worklist
+> the bucket aimed at is not detectable from `target_project_id` alone and already
+> lives in `SlipReviewDialog` (ADR 0019 §4–5). The section now lists **only resolved
+> cross-project rows** (`target_project_id` set and ≠ source). The project column(s)
+> are **vertically merged (rowspan)**, grouped contiguously by target (in `all` mode,
+> nested under source), ordered by descending group sum.
+
 ## Context
 
 A withdrawal slip (master → out) can move money in ways that distort the per-project
@@ -130,10 +141,9 @@ that left **this project's accounts** toward **another project**, for the select
 - **Two kinds, shown via a type column** (reusing §1/§3's receiver distinction):
   *capital lending* (receiver = a master account) and *paying the target's player*
   (receiver = a player, type `ถอนให้ลูกค้า`).
-- **Unresolved destinations are still shown** (the operator must see *all* money that
-  left): a slip with no matched source account falls into a **"ยังไม่จับคู่บัญชี"**
-  bucket; a slip whose `target_project_id` is null but whose slip note names a project
-  falls into a **"ไม่ระบุโปรเจกต์"** bucket that surfaces the raw note.
+- **Unmatched source accounts are still shown** (the money did leave, the account
+  just isn't mapped yet): a slip with no matched source account falls into a
+  **"ยังไม่จับคู่บัญชี"** bucket.
 - **Day-scoped** to the page's global date filter.
 - **`projectId='all'` mode** shows every cross-project pair (`source ≠ target`) with an
   added **source project** column — a system-wide lending map.
