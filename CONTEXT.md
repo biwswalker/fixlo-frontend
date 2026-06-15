@@ -26,6 +26,9 @@ tags: [domain, glossary]
   - `source_project_id` = เจ้าของบัญชี (ได้รับ/มีสลิป)
   - `target_project_id` = ผู้ยืมเงิน (เอาเงินไปใช้)
   - `source == target` = รายการ internal (ฝาก/ถอนของ project ตัวเอง)
+  - **2 ความหมายแยกตาม receiver** (ดู [ADR 0020](docs/adr/0020-cross-account-transfer-attribution.md)): receiver = master ของ target → [[Internal transfer]] (โยกทุน, carve ยอดรับ ปลายทาง); receiver = player + note `ถอนให้ลูกค้า` → จ่าย player ของ target. ทั้งคู่โผล่ใน [[Cross-project outflow]] เป็นคนละ type
+- **Cross-project outflow** (ยอดโอนออกข้ามโปรเจกต์) — view บนหน้า reconciliation: เงินที่ออกจากบัญชีของ project ปัจจุบันไปยัง project อื่น (source = ปัจจุบัน, target ≠ source). Group ตาม **(target project × บัญชีต้นทาง × [[Transaction type]])**, day-scoped (global date filter). ครอบคลุมทั้ง 2 ความหมาย: **โยกทุน** ([[Internal transfer]], receiver = master ของ target) + **จ่ายลูกค้าข้ามโปรเจกต์** (receiver = player ของ target). รวมใบที่ยัง match บัญชีไม่ได้ → bucket "ยังไม่จับคู่บัญชี"; ใบที่ `target_project_id` null แต่ slip_note ระบุปลายทาง → bucket "ไม่ระบุโปรเจกต์" โชว์ note ดิบ. โหมด `projectId='all'` → โชว์ทุกคู่ cross-project + column source project. Source = `transactions` (Discord slip) เท่านั้น — `manual_transactions` ไม่มี target. เป็น display/attribution ไม่แตะสูตร [[ยอดรับ]]. (replace section "Withdrawal reconciliation" game-vs-slip ที่เคย ship แล้วถอด — ADR 0020 §5)
+- **Internal transfer** (โอนระหว่างบัญชี) — slip ขาออกที่ **receiver ตรงกับ master account** ใดบัญชีหนึ่ง = ย้ายเงินทุน ไม่ใช่จ่าย player. detect ด้วย 2-tier receiver match (digits-only `receiver_acc_num` → exact `receiver_name` vs `project_accounts`) ที่ query-time — receiver fields มีอยู่ 99.9% แล้ว, ไม่ต้อง migration/worker. ผลต่อสูตร: ฝั่งส่ง (A) ไม่แตะ (slip คงอยู่ใน effectiveOutflow, ยอดรับ_A net 0 เอง); ฝั่งรับ (B) **carve `internal_in_(B,D)` ออกจาก [[ยอดรับ]]** เหมือน [[Gateway parking withdrawal]] carve-out. ambiguous match (>1 master) → skip. ใช้ทั้งใน carve (ADR 0020 §1) + เป็น type label "โยกทุน" ใน [[Cross-project outflow]] (§5). ดู [ADR 0020](docs/adr/0020-cross-account-transfer-attribution.md)
 - **Active date** ([[projects]].`active_date`) — anchor สำหรับ scraping job (ดึงข้อมูล external API ตั้งแต่วันนั้น) ไม่ใช่วันสร้าง project
 - **Master account** — บัญชีหลักของโปรเจกต์ (= [[project_accounts]]). ใช้รับ deposit/จ่าย withdraw.
 - **Member user** (`member_user`) — ผู้เล่น (player) ในเว็บเกม
@@ -198,7 +201,7 @@ tags: [domain, glossary]
    - `report_manual_credit_out` ยังแสดงแยกใน "รายละเอียดรายรับ-รายจ่าย" เป็น line item "ถอนมือ (Manual Out)"
    - Defined in `src/lib/kpiSql.ts` — consumers: dashboard summary KPI card, cashflow chart. Reconciliation ใช้แค่ deposit side.
    - `latestBalance` ยังคงอ่านจาก `report_summary_daily.balance` (actual bank balance จาก scraper — ไม่ใช่ KPI computation).
-   - Cross-project withdrawal นับฝั่ง `source_project_id` (เจ้าของบัญชี) — confirmed correct. Lending counterparty (target) ไม่นับยอด
+   - Cross-project withdrawal นับฝั่ง `source_project_id` (เจ้าของบัญชี) — confirmed correct สำหรับ game-side `report_withdrawals` KPI (scrape ต่อ platform แล้ว) + balance/ยอดรับ math. Lending counterparty (target) ไม่นับยอดในสูตร. การ "เห็น" เงินที่โอนไป target = [[Cross-project outflow]] view (display only, ADR 0020 §5) ไม่ใช่การ re-attribute ยอด
 
 9. **Misc dead/incomplete code**:
    - [src/lib/api-client.ts](src/lib/api-client.ts) — ลบทิ้ง (axios + interceptor + signOut on 401, ไม่มี caller)
