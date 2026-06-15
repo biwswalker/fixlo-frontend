@@ -355,8 +355,9 @@ export async function getReconciliationReport(
     // ------------------------------------------------------------------
     // 7g. Cross-project outflow rows for the selected day (ADR 0020 §5).
     //     Scope: Discord transactions whose money left the current project's
-    //     accounts toward another project (target ≠ source or unresolved
-    //     target with a slip_note destination).
+    //     accounts toward another project (target_project_id resolved and
+    //     ≠ source). A null target is a same-project withdrawal (ADR 0019 §4)
+    //     and is excluded.
     //     is_internal_transfer reuses the 2-tier receiver match from §1.
     // ------------------------------------------------------------------
     const crossProjectOutflowSql = `
@@ -366,7 +367,6 @@ export async function getReconciliationReport(
         t.project_account_id::text AS account_id,
         pa.account_name,
         tt.name AS type_name,
-        t.slip_note,
         COALESCE(t.adjusted_amount, t.ai_amount) AS effective_amount,
         (
           SELECT COUNT(*) = 1
@@ -394,10 +394,8 @@ export async function getReconciliationReport(
         AND t.matching_status IN ('AUTO_MAPPED', 'MANUAL_MAPPED')
         AND COALESCE(t.adjusted_amount, t.ai_amount) IS NOT NULL
         AND (t.source_project_id = $2 OR $3 = true)
-        AND (
-          (t.target_project_id IS NOT NULL AND t.target_project_id != t.source_project_id)
-          OR (t.target_project_id IS NULL AND t.slip_note IS NOT NULL AND t.slip_note <> '')
-        )
+        AND t.target_project_id IS NOT NULL
+        AND t.target_project_id != t.source_project_id
     `;
 
     logger.debug("getReconciliationReport", "Executing parallel DB queries");

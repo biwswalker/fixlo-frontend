@@ -5,7 +5,6 @@ export interface CrossProjectOutflowRow {
   account_name: string | null;
   type_name: string | null;
   is_internal_transfer: boolean;
-  slip_note: string | null;
   effective_amount: number | string;
 }
 
@@ -16,12 +15,11 @@ export interface CrossProjectOutflowGroup {
   total: number;
   count: number;
   sourceProject?: string;
-  rawNote?: string;
 }
 
 const UNMATCHED_ACCOUNT = "ยังไม่จับคู่บัญชี";
-const UNRESOLVED_PROJECT = "ไม่ระบุโปรเจกต์";
 const UNCLASSIFIED_KIND = "ไม่ระบุประเภท";
+const SEP = "\x00";
 
 function resolveKind(row: CrossProjectOutflowRow): string {
   if (row.is_internal_transfer) return "โยกทุน";
@@ -31,14 +29,18 @@ function resolveKind(row: CrossProjectOutflowRow): string {
 
 /**
  * Groups cross-project outflow slip rows by (target × source account × kind),
- * producing the display breakdown for ADR 0020 §5.
+ * producing the display breakdown for ADR 0020 §5 (amended 2026-06-15).
  *
- * Two buckets surface incomplete data:
- * - unmatched source account (account_id null) → "ยังไม่จับคู่บัญชี"
- * - unresolved target with a slip_note → "ไม่ระบุโปรเจกต์" carrying rawNote
+ * Only rows with a resolved target project are cross-project: a null
+ * target_project_id is a normal same-project withdrawal (ADR 0019 §4) and is
+ * skipped. An unmatched source account (account_id null) still surfaces under a
+ * "ยังไม่จับคู่บัญชี" bucket because the money did leave a (yet-unmapped) account.
  *
- * Rows with null target AND no slip_note are skipped (no destination to surface).
  * isAllMode adds source_project_name to the group key and sourceProject to each row.
+ *
+ * Rows are returned in display order for the vertical-merge (rowspan) table:
+ * groups are contiguous by target (in all-mode, nested under source), ordered by
+ * descending group sum, and within a group by descending row total.
  */
 export function computeCrossProjectOutflow(
   rows: CrossProjectOutflowRow[],
@@ -47,26 +49,17 @@ export function computeCrossProjectOutflow(
   const groups = new Map<string, CrossProjectOutflowGroup>();
 
   for (const row of rows) {
-    let targetProject: string;
-    let rawNote: string | undefined;
+    // null target = same-project withdrawal → not a cross-project outflow.
+    if (row.target_project_name == null) continue;
 
-    if (row.target_project_name != null) {
-      targetProject = row.target_project_name;
-    } else if (row.slip_note != null && row.slip_note !== "") {
-      targetProject = UNRESOLVED_PROJECT;
-      rawNote = row.slip_note;
-    } else {
-      continue;
-    }
-
+    const targetProject = row.target_project_name;
     const sourceAccount = row.account_name ?? UNMATCHED_ACCOUNT;
     const kind = resolveKind(row);
     const amount = Number(row.effective_amount ?? 0);
 
     const keyParts = [targetProject, sourceAccount, kind];
     if (isAllMode) keyParts.push(row.source_project_name);
-    if (rawNote != null) keyParts.push(rawNote);
-    const key = keyParts.join("\x00");
+    const key = keyParts.join(SEP);
 
     const existing = groups.get(key);
     if (existing) {
@@ -81,10 +74,48 @@ export function computeCrossProjectOutflow(
         count: 1,
       };
       if (isAllMode) g.sourceProject = row.source_project_name;
-      if (rawNote != null) g.rawNote = rawNote;
       groups.set(key, g);
     }
   }
 
-  return [...groups.values()].sort((a, b) => b.total - a.total);
+  return orderForDisplay([...groups.values()], isAllMode);
+}
+
+/**
+ * Orders groups so the table can vertical-merge (rowspan) the project column(s):
+ * rows sharing an outer key are contiguous, outer keys ordered by descending
+ * total. Non-all mode: outer key = target. All mode: outer = source, inner = target.
+ */
+function orderForDisplay(
+  groups: CrossProjectOutflowGroup[],
+  isAllMode: boolean,
+): CrossProjectOutflowGroup[] {
+  const sumBy = (keyOf: (g: CrossProjectOutflowGroup) => string) => {
+    const m = new Map<string, number>();
+    for (const g of groups) m.set(keyOf(g), (m.get(keyOf(g)) ?? 0) + g.total);
+    return m;
+  };
+
+  if (isAllMode) {
+    const sourceKey = (g: CrossProjectOutflowGroup) => g.sourceProject ?? "";
+    const targetKey = (g: CrossProjectOutflowGroup) => `${g.sourceProject ?? ""}${SEP}${g.targetProject}`;
+    const sourceSum = sumBy(sourceKey);
+    const targetSum = sumBy(targetKey);
+    return groups.sort(
+      (a, b) =>
+        (sourceSum.get(sourceKey(b))! - sourceSum.get(sourceKey(a))!) ||
+        sourceKey(a).localeCompare(sourceKey(b)) ||
+        (targetSum.get(targetKey(b))! - targetSum.get(targetKey(a))!) ||
+        a.targetProject.localeCompare(b.targetProject) ||
+        b.total - a.total,
+    );
+  }
+
+  const targetSum = sumBy((g) => g.targetProject);
+  return groups.sort(
+    (a, b) =>
+      (targetSum.get(b.targetProject)! - targetSum.get(a.targetProject)!) ||
+      a.targetProject.localeCompare(b.targetProject) ||
+      b.total - a.total,
+  );
 }

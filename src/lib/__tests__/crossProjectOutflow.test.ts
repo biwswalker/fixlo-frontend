@@ -9,7 +9,6 @@ function row(overrides: Partial<CrossProjectOutflowRow> & { effective_amount: nu
     account_name: "SCB Master",
     type_name: "ถอนให้ลูกค้า",
     is_internal_transfer: false,
-    slip_note: null,
     ...overrides,
   };
 }
@@ -121,46 +120,22 @@ describe("computeCrossProjectOutflow — unmatched account bucket", () => {
   });
 });
 
-describe("computeCrossProjectOutflow — unresolved project bucket", () => {
-  it("null target with slip_note → targetProject='ไม่ระบุโปรเจกต์' with rawNote", () => {
-    const [g] = computeCrossProjectOutflow([
-      row({ effective_amount: 500, target_project_name: null, slip_note: "ถอนให้ลูกค้า uno" }),
-    ]);
-    expect(g.targetProject).toBe("ไม่ระบุโปรเจกต์");
-    expect(g.rawNote).toBe("ถอนให้ลูกค้า uno");
-  });
-
-  it("null target without slip_note → row skipped", () => {
+describe("computeCrossProjectOutflow — null target is same-project, skipped (ADR 0020 §5 amended)", () => {
+  it("null target → row skipped (no 'ไม่ระบุโปรเจกต์' bucket)", () => {
     const result = computeCrossProjectOutflow([
-      row({ effective_amount: 500, target_project_name: null, slip_note: null }),
+      row({ effective_amount: 500, target_project_name: null }),
     ]);
     expect(result).toHaveLength(0);
   });
 
-  it("null target with empty slip_note → row skipped", () => {
-    const result = computeCrossProjectOutflow([
-      row({ effective_amount: 500, target_project_name: null, slip_note: "" }),
-    ]);
-    expect(result).toHaveLength(0);
-  });
-
-  it("different notes → separate groups", () => {
+  it("mix of resolved and null targets → only resolved survive", () => {
     const rows = [
-      row({ effective_amount: 500, target_project_name: null, slip_note: "ถอนให้ลูกค้า uno" }),
-      row({ effective_amount: 300, target_project_name: null, slip_note: "ถอนให้ลูกค้า gaza" }),
-    ];
-    const result = computeCrossProjectOutflow(rows);
-    expect(result).toHaveLength(2);
-  });
-
-  it("same note → merged", () => {
-    const rows = [
-      row({ effective_amount: 500, target_project_name: null, slip_note: "ถอนให้ลูกค้า uno" }),
-      row({ effective_amount: 300, target_project_name: null, slip_note: "ถอนให้ลูกค้า uno" }),
+      row({ effective_amount: 500, target_project_name: "uno" }),
+      row({ effective_amount: 300, target_project_name: null }),
     ];
     const result = computeCrossProjectOutflow(rows);
     expect(result).toHaveLength(1);
-    expect(result[0].total).toBe(800);
+    expect(result[0].targetProject).toBe("uno");
   });
 });
 
@@ -204,14 +179,62 @@ describe("computeCrossProjectOutflow — amount", () => {
     ]);
     expect(g.total).toBeCloseTo(1234.56);
   });
+});
 
-  it("sorted by total descending", () => {
+describe("computeCrossProjectOutflow — display ordering (contiguous groups for rowspan)", () => {
+  it("target groups ordered by descending group sum, rows contiguous", () => {
     const rows = [
-      row({ effective_amount: 100, target_project_name: "uno" }),
-      row({ effective_amount: 900, target_project_name: "gaza" }),
+      row({ effective_amount: 100, target_project_name: "uno", account_id: "a", account_name: "A" }),
+      row({ effective_amount: 900, target_project_name: "gaza", account_id: "b", account_name: "B" }),
+      row({ effective_amount: 50, target_project_name: "uno", account_id: "c", account_name: "C" }),
     ];
     const result = computeCrossProjectOutflow(rows);
-    expect(result[0].total).toBe(900);
-    expect(result[1].total).toBe(100);
+    // uno sum=150, gaza sum=900 → gaza group first, then both uno rows contiguous
+    expect(result.map((g) => g.targetProject)).toEqual(["gaza", "uno", "uno"]);
+  });
+
+  it("within a target group, rows ordered by descending total", () => {
+    const rows = [
+      row({ effective_amount: 50, target_project_name: "uno", account_id: "a", account_name: "A" }),
+      row({ effective_amount: 100, target_project_name: "uno", account_id: "c", account_name: "C" }),
+    ];
+    const result = computeCrossProjectOutflow(rows);
+    expect(result.map((g) => g.total)).toEqual([100, 50]);
+  });
+
+  it("group sum (not single row total) decides group order", () => {
+    const rows = [
+      // gaza: one 500 row
+      row({ effective_amount: 500, target_project_name: "gaza", account_id: "g", account_name: "G" }),
+      // uno: two rows summing 550, each below 500
+      row({ effective_amount: 300, target_project_name: "uno", account_id: "a", account_name: "A" }),
+      row({ effective_amount: 250, target_project_name: "uno", account_id: "c", account_name: "C" }),
+    ];
+    const result = computeCrossProjectOutflow(rows);
+    // uno sum 550 > gaza 500 → uno group first despite gaza having the biggest single row
+    expect(result.map((g) => g.targetProject)).toEqual(["uno", "uno", "gaza"]);
+  });
+
+  it("rows of the same target stay contiguous even when another group interleaves by total", () => {
+    const rows = [
+      row({ effective_amount: 300, target_project_name: "uno", account_id: "a", account_name: "A" }),
+      row({ effective_amount: 250, target_project_name: "gaza", account_id: "g", account_name: "G" }),
+      row({ effective_amount: 200, target_project_name: "uno", account_id: "c", account_name: "C" }),
+    ];
+    const result = computeCrossProjectOutflow(rows);
+    // uno sum 500 > gaza 250 → both uno rows first and contiguous, then gaza
+    expect(result.map((g) => g.targetProject)).toEqual(["uno", "uno", "gaza"]);
+  });
+
+  it("all-mode: ordered by source group then target group, rows contiguous", () => {
+    const rows = [
+      row({ effective_amount: 100, source_project_name: "juno168", target_project_name: "uno", account_id: "a", account_name: "A" }),
+      row({ effective_amount: 900, source_project_name: "alpha", target_project_name: "gaza", account_id: "b", account_name: "B" }),
+      row({ effective_amount: 80, source_project_name: "juno168", target_project_name: "uno", account_id: "c", account_name: "C" }),
+    ];
+    const result = computeCrossProjectOutflow(rows, true);
+    // alpha sum=900 > juno168 sum=180 → alpha source group first, juno168 rows contiguous
+    expect(result.map((g) => g.sourceProject)).toEqual(["alpha", "juno168", "juno168"]);
+    expect(result.map((g) => g.targetProject)).toEqual(["gaza", "uno", "uno"]);
   });
 });
