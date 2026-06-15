@@ -13,6 +13,7 @@ import { resolveAccountInflow } from "@/lib/inflowFormula";
 import { aggregateParkingByAccountDay, aggregateUnregisteredParking, type UnregisteredParking } from "@/lib/parkingStats";
 import { aggregateOutflowByType, groupOutflowByAccount, type OutflowByTypeSummary } from "@/lib/outflowByType";
 import { aggregateInternalTransferByAccountDay } from "@/lib/internalTransfer";
+import { computeCrossProjectOutflow, type CrossProjectOutflowGroup } from "@/lib/crossProjectOutflow";
 import { depositTotalSql } from "@/lib/kpiSql";
 import { buildApayAccountReportQuery, parseApayAccountReportRow } from "@/lib/apayStats";
 
@@ -98,6 +99,8 @@ export interface ReconciliationReport {
   unregisteredParking: UnregisteredParking[];
   /** Per-type outflow totals for the selected day (ADR 0019 phase 1, display-only) */
   outflowByType: OutflowByTypeSummary[];
+  /** Cross-project outflow breakdown for the selected day (ADR 0020 §5, display-only) */
+  crossProjectOutflow: CrossProjectOutflowGroup[];
 }
 
 // ---------------------------------------------------------------------------
@@ -125,6 +128,7 @@ function emptyReport(startDate: string, endDate: string): ReconciliationReport {
     slipInflow: 0,
     unregisteredParking: [],
     outflowByType: [],
+    crossProjectOutflow: [],
   };
 }
 
@@ -348,6 +352,51 @@ export async function getReconciliationReport(
       WHERE match_count = 1
     `;
 
+    // ------------------------------------------------------------------
+    // 7g. Cross-project outflow rows for the selected day (ADR 0020 §5).
+    //     Scope: Discord transactions whose money left the current project's
+    //     accounts toward another project (target ≠ source or unresolved
+    //     target with a slip_note destination).
+    //     is_internal_transfer reuses the 2-tier receiver match from §1.
+    // ------------------------------------------------------------------
+    const crossProjectOutflowSql = `
+      SELECT
+        sp.project_name AS source_project_name,
+        tp.project_name AS target_project_name,
+        t.project_account_id::text AS account_id,
+        pa.account_name,
+        tt.name AS type_name,
+        t.slip_note,
+        COALESCE(t.adjusted_amount, t.ai_amount) AS effective_amount,
+        (
+          SELECT COUNT(*) = 1
+          FROM project_accounts pa_recv
+          WHERE pa_recv.deleted_at IS NULL
+            AND (
+              (
+                regexp_replace(COALESCE(pa_recv.account_number, ''), '[^0-9]', '', 'g')
+                  = regexp_replace(COALESCE(t.receiver_acc_num, ''), '[^0-9]', '', 'g')
+                AND regexp_replace(COALESCE(t.receiver_acc_num, ''), '[^0-9]', '', 'g') <> ''
+              )
+              OR (
+                t.receiver_name IS NOT NULL AND t.receiver_name <> ''
+                AND t.receiver_name = pa_recv.account_name
+              )
+            )
+        ) AS is_internal_transfer
+      FROM transactions t
+      JOIN projects sp ON t.source_project_id = sp.id
+      LEFT JOIN projects tp ON t.target_project_id = tp.id
+      LEFT JOIN project_accounts pa ON t.project_account_id = pa.id
+      LEFT JOIN transaction_types tt ON t.transaction_type_id = tt.id
+      WHERE (t.transfer_at AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Bangkok')::date = $1
+        AND t.matching_status IN ('AUTO_MAPPED', 'MANUAL_MAPPED')
+        AND (t.source_project_id = $2 OR $3 = true)
+        AND (
+          (t.target_project_id IS NOT NULL AND t.target_project_id != t.source_project_id)
+          OR (t.target_project_id IS NULL AND t.slip_note IS NOT NULL AND t.slip_note <> '')
+        )
+    `;
 
     logger.debug("getReconciliationReport", "Executing parallel DB queries");
 
@@ -362,6 +411,7 @@ export async function getReconciliationReport(
       parkingRes,
       outflowTypeRes,
       internalTransferRes,
+      crossProjectOutflowRes,
     ] = await Promise.all([
       query(inflowSql, isAll ? [startDate, endDate] : [startDate, endDate, projectIntId]),
       query(balanceSql, isAll ? [endDate] : [projectIntId, endDate]),
@@ -376,6 +426,7 @@ export async function getReconciliationReport(
       query(parkingSql, [endDate, projectIntId, isAll]).catch(() => ({ rows: [] })),
       query(outflowTypeSql, [startDate, endDate, projectIntId, isAll]).catch(() => ({ rows: [] })),
       query(internalTransferSql, [endDate, projectIntId, isAll]).catch(() => ({ rows: [] })),
+      query(crossProjectOutflowSql, [endDate, projectIntId, isAll]).catch(() => ({ rows: [] })),
     ]);
 
     // ------------------------------------------------------------------
@@ -484,6 +535,7 @@ export async function getReconciliationReport(
     });
 
     const outflowByType = aggregateOutflowByType(outflowTypeRes.rows);
+    const crossProjectOutflow = computeCrossProjectOutflow(crossProjectOutflowRes.rows, isAll);
 
     return {
       startingBalance,
@@ -496,6 +548,7 @@ export async function getReconciliationReport(
       slipInflow,
       unregisteredParking,
       outflowByType,
+      crossProjectOutflow,
       accountLevelStats,
       periodStart: startDate,
       periodEnd: endDate,
