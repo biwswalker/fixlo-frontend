@@ -17,6 +17,7 @@ import {
   CalendarCheck,
   GitMerge,
   Tags,
+  ArrowRightLeft,
 } from "lucide-react";
 import { ReconciliationSkeleton } from "@/components/dashboard/DashboardSkeletons";
 import { getPendingMatchCount, getPendingBalanceMatchCount } from "@/actions/dashboard";
@@ -305,6 +306,57 @@ async function ReconciliationContent({
                     <td className="px-4 py-2.5 font-medium text-gray-700">{row.typeName}</td>
                     <td className="px-4 py-2.5 text-right tabular-nums text-rose-600 font-semibold">
                       {formatBaht(row.total)}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* Cross-project outflow section (ADR 0020 §5 — display only) */}
+      {report.crossProjectOutflow.length > 0 && (
+        <div className="mt-6">
+          <h2 className="text-xl font-semibold tracking-tight text-gray-900 mb-3 flex items-center gap-2">
+            <ArrowRightLeft className="h-5 w-5 text-gray-400" />
+            ยอดโอนออกข้ามโปรเจกต์
+          </h2>
+          <div className="rounded-2xl border border-gray-100 bg-white shadow-sm overflow-hidden">
+            <table className="w-full text-sm">
+              <thead className="bg-gray-50/70">
+                <tr>
+                  {projectId === "all" && (
+                    <th className="text-left px-4 py-2.5 text-xs font-medium text-muted-foreground">โปรเจกต์ต้นทาง</th>
+                  )}
+                  <th className="text-left px-4 py-2.5 text-xs font-medium text-muted-foreground">โปรเจกต์ปลายทาง</th>
+                  <th className="text-left px-4 py-2.5 text-xs font-medium text-muted-foreground">บัญชีต้นทาง</th>
+                  <th className="text-left px-4 py-2.5 text-xs font-medium text-muted-foreground">ประเภท</th>
+                  <th className="text-right px-4 py-2.5 text-xs font-medium text-muted-foreground">ยอดรวม</th>
+                  <th className="text-right px-4 py-2.5 text-xs font-medium text-muted-foreground">จำนวน</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-50">
+                {report.crossProjectOutflow.map((row, i) => (
+                  <tr key={i} className="hover:bg-gray-50/50">
+                    {projectId === "all" && (
+                      <td className="px-4 py-2.5 font-medium text-gray-700">{row.sourceProject}</td>
+                    )}
+                    <td className="px-4 py-2.5 font-medium text-gray-700">
+                      {row.targetProject}
+                      {row.rawNote && (
+                        <span className="ml-1.5 text-[10px] text-muted-foreground font-normal">
+                          ({row.rawNote})
+                        </span>
+                      )}
+                    </td>
+                    <td className="px-4 py-2.5 text-gray-600">{row.sourceAccount}</td>
+                    <td className="px-4 py-2.5 text-gray-600">{row.kind}</td>
+                    <td className="px-4 py-2.5 text-right tabular-nums text-rose-600 font-semibold">
+                      {formatBaht(row.total)}
+                    </td>
+                    <td className="px-4 py-2.5 text-right tabular-nums text-gray-500">
+                      {row.count}
                     </td>
                   </tr>
                 ))}
