@@ -372,6 +372,7 @@ export async function getReconciliationReport(
           SELECT COUNT(*) = 1
           FROM project_accounts pa_recv
           WHERE pa_recv.deleted_at IS NULL
+            AND pa_recv.project_id = t.target_project_id
             AND (
               (
                 regexp_replace(COALESCE(pa_recv.account_number, ''), '[^0-9]', '', 'g')

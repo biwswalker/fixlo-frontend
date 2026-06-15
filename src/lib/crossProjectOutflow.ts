@@ -61,7 +61,7 @@ export function computeCrossProjectOutflow(
 
     const sourceAccount = row.account_name ?? UNMATCHED_ACCOUNT;
     const kind = resolveKind(row);
-    const amount = Number(row.effective_amount);
+    const amount = Number(row.effective_amount ?? 0);
 
     const keyParts = [targetProject, sourceAccount, kind];
     if (isAllMode) keyParts.push(row.source_project_name);
