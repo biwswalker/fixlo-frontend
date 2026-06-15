@@ -12,7 +12,6 @@ import { buildAccountLevelStats, applyApayReportOverride } from "@/lib/accountLe
 import { resolveAccountInflow } from "@/lib/inflowFormula";
 import { aggregateParkingByAccountDay, aggregateUnregisteredParking, type UnregisteredParking } from "@/lib/parkingStats";
 import { aggregateOutflowByType, groupOutflowByAccount, type OutflowByTypeSummary } from "@/lib/outflowByType";
-import { computeWithdrawalReconciliation, type WithdrawalReconciliationResult } from "@/lib/withdrawalReconciliation";
 import { aggregateInternalTransferByAccountDay } from "@/lib/internalTransfer";
 import { depositTotalSql } from "@/lib/kpiSql";
 import { buildApayAccountReportQuery, parseApayAccountReportRow } from "@/lib/apayStats";
@@ -99,8 +98,6 @@ export interface ReconciliationReport {
   unregisteredParking: UnregisteredParking[];
   /** Per-type outflow totals for the selected day (ADR 0019 phase 1, display-only) */
   outflowByType: OutflowByTypeSummary[];
-  /** Per-project withdrawal reconciliation: game-side vs slip-side (ADR 0020 §2) */
-  withdrawalReconciliation: WithdrawalReconciliationResult[];
 }
 
 // ---------------------------------------------------------------------------
@@ -128,7 +125,6 @@ function emptyReport(startDate: string, endDate: string): ReconciliationReport {
     slipInflow: 0,
     unregisteredParking: [],
     outflowByType: [],
-    withdrawalReconciliation: [],
   };
 }
 
@@ -352,59 +348,6 @@ export async function getReconciliationReport(
       WHERE match_count = 1
     `;
 
-    // ------------------------------------------------------------------
-    // 7d. Game-side withdrawal per project for the selected day (ADR 0020 §2).
-    //     report_withdrawals.trans_date is already Bangkok-scoped (scraped per
-    //     platform). Groups by project_name so the result matches the slip-side
-    //     attribution key.
-    // ------------------------------------------------------------------
-    const gameWithdrawalSql = `
-      SELECT p.project_name AS project_id, COALESCE(SUM(rw.amount), 0) AS total
-      FROM report_withdrawals rw
-      JOIN projects p ON rw.project_id = p.id
-      WHERE rw.status = 'สำเร็จ'
-        AND rw.trans_date::date = $1
-        AND (rw.project_id = $2 OR $3 = true)
-      GROUP BY p.project_name
-    `;
-
-    // ------------------------------------------------------------------
-    // 7e. Slip-side withdrawal rows for the selected day (ADR 0020 §2).
-    //     Includes type_name + source/target project names for attribution.
-    //     Excludes internal transfers (ADR 0020 §1+§2): receiver 2-tier-matches
-    //     exactly 1 master account across all projects → not a player payout.
-    //     Ambiguous match (>1) = keep (conservative, per ADR 0020 §1).
-    // ------------------------------------------------------------------
-    const withdrawalSlipSql = `
-      SELECT
-        tt.name AS type_name,
-        COALESCE(t.adjusted_amount, t.ai_amount) AS effective_amount,
-        sp.project_name AS source_project_id,
-        tp.project_name AS target_project_id
-      FROM transactions t
-      LEFT JOIN transaction_types tt ON t.transaction_type_id = tt.id
-      JOIN projects sp ON t.source_project_id = sp.id
-      LEFT JOIN projects tp ON t.target_project_id = tp.id
-      WHERE (t.transfer_at AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Bangkok')::date = $1
-        AND (t.source_project_id = $2 OR $3 = true)
-        AND t.matching_status IN ('AUTO_MAPPED', 'MANUAL_MAPPED')
-        AND (
-          SELECT COUNT(*)
-          FROM project_accounts pa_recv
-          WHERE pa_recv.deleted_at IS NULL
-            AND (
-              (
-                regexp_replace(COALESCE(pa_recv.account_number, ''), '[^0-9]', '', 'g')
-                  = regexp_replace(COALESCE(t.receiver_acc_num, ''), '[^0-9]', '', 'g')
-                AND regexp_replace(COALESCE(t.receiver_acc_num, ''), '[^0-9]', '', 'g') <> ''
-              )
-              OR (
-                t.receiver_name IS NOT NULL AND t.receiver_name <> ''
-                AND t.receiver_name = pa_recv.account_name
-              )
-            )
-        ) != 1
-    `;
 
     logger.debug("getReconciliationReport", "Executing parallel DB queries");
 
@@ -418,8 +361,6 @@ export async function getReconciliationReport(
       apayReportRes,
       parkingRes,
       outflowTypeRes,
-      gameWithdrawalRes,
-      withdrawalSlipRes,
       internalTransferRes,
     ] = await Promise.all([
       query(inflowSql, isAll ? [startDate, endDate] : [startDate, endDate, projectIntId]),
@@ -434,8 +375,6 @@ export async function getReconciliationReport(
         : query(buildApayAccountReportQuery(), [endDate, projectIntId]).catch(() => ({ rows: [] })),
       query(parkingSql, [endDate, projectIntId, isAll]).catch(() => ({ rows: [] })),
       query(outflowTypeSql, [startDate, endDate, projectIntId, isAll]).catch(() => ({ rows: [] })),
-      query(gameWithdrawalSql, [endDate, projectIntId, isAll]).catch(() => ({ rows: [] })),
-      query(withdrawalSlipSql, [endDate, projectIntId, isAll]).catch(() => ({ rows: [] })),
       query(internalTransferSql, [endDate, projectIntId, isAll]).catch(() => ({ rows: [] })),
     ]);
 
@@ -545,10 +484,6 @@ export async function getReconciliationReport(
     });
 
     const outflowByType = aggregateOutflowByType(outflowTypeRes.rows);
-    const withdrawalReconciliation = computeWithdrawalReconciliation(
-      withdrawalSlipRes.rows,
-      gameWithdrawalRes.rows,
-    );
 
     return {
       startingBalance,
@@ -561,7 +496,6 @@ export async function getReconciliationReport(
       slipInflow,
       unregisteredParking,
       outflowByType,
-      withdrawalReconciliation,
       accountLevelStats,
       periodStart: startDate,
       periodEnd: endDate,
