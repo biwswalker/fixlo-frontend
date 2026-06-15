@@ -392,6 +392,7 @@ export async function getReconciliationReport(
       LEFT JOIN transaction_types tt ON t.transaction_type_id = tt.id
       WHERE (t.transfer_at AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Bangkok')::date = $1
         AND t.matching_status IN ('AUTO_MAPPED', 'MANUAL_MAPPED')
+        AND COALESCE(t.adjusted_amount, t.ai_amount) IS NOT NULL
         AND (t.source_project_id = $2 OR $3 = true)
         AND (
           (t.target_project_id IS NOT NULL AND t.target_project_id != t.source_project_id)
