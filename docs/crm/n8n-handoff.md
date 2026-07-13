@@ -18,8 +18,8 @@
 
 ## 1. Database prerequisites
 
-Run once on the canonical prod DB (`spectre @ 100.108.218.92:55555` — see repo memory
-`canonical_production_db`):
+Run once on the canonical prod DB (endpoint intentionally not committed — see the private
+agent memory `canonical_production_db` for host/port):
 
 ```sql
 CREATE EXTENSION IF NOT EXISTS vector;
