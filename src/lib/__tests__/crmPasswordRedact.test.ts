@@ -3,7 +3,7 @@ import { redactPasswords, containsPassword } from "../crmPasswordRedact";
 
 describe("redactPasswords", () => {
   it("redacts a Thai password label token", () => {
-    expect(redactPasswords("รหัสผ่าน Niiza1122")).toBe("รหัสผ่าน [REDACTED]");
+    expect(redactPasswords("รหัสผ่าน Fakepw1122")).toBe("รหัสผ่าน [REDACTED]");
   });
 
   it("redacts English password labels", () => {
@@ -12,8 +12,8 @@ describe("redactPasswords", () => {
   });
 
   it("redacts within a larger message", () => {
-    const out = redactPasswords("ยูส 0802518587 รหัสผ่าน Niiza1122");
-    expect(out).toBe("ยูส 0802518587 รหัสผ่าน [REDACTED]");
+    const out = redactPasswords("ยูส 0800000000 รหัสผ่าน Fakepw1122");
+    expect(out).toBe("ยูส 0800000000 รหัสผ่าน [REDACTED]");
   });
 
   it("tolerates the bare word รหัส (promo codes untouched)", () => {
@@ -31,7 +31,7 @@ describe("redactPasswords", () => {
 
 describe("containsPassword", () => {
   it("detects a password token", () => {
-    expect(containsPassword("รหัสผ่าน Niiza1122")).toBe(true);
+    expect(containsPassword("รหัสผ่าน Fakepw1122")).toBe(true);
   });
   it("is false for plain text and promo codes", () => {
     expect(containsPassword("รหัสโปรโมชั่น SAVE5")).toBe(false);
