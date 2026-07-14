@@ -218,7 +218,7 @@ export async function getSessionDetail(
 
 /**
  * Ensure a crm_agent_profile exists for this Fixlo user × project and return its
- * id. crm_role is seeded from the placeholder Fixlo→crm bridge (until #157).
+ * id. crm_role is derived from the Fixlo role (ADR 0006).
  */
 async function ensureAgentProfile(
   fixloUserId: string,
