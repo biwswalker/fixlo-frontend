@@ -44,6 +44,19 @@ export function resolveCrmRole(
 }
 
 /**
+ * PLACEHOLDER bridge from the Fixlo role to a CRM role, used until `crm_role` is
+ * wired into the auth session (issue #157). owner/admin → supervisor, staff →
+ * junior, everything else → null. Replace with a real `crm_agent_profile` lookup.
+ */
+export function crmRoleFromFixloRole(
+  fixloRole: string | null | undefined,
+): CrmRole | null {
+  if (fixloRole === "owner" || fixloRole === "admin") return "supervisor";
+  if (fixloRole === "staff") return "junior";
+  return null;
+}
+
+/**
  * Whether a CRM role grants a permission. Missing role → false (least privilege).
  */
 export function hasCrmPermission(

@@ -1,5 +1,6 @@
 import { getServerAuthSession } from "@/lib/auth";
 import { redirect } from "next/navigation";
+import Link from "next/link";
 import { format } from "date-fns";
 import { th } from "date-fns/locale";
 import { getInboxSessions } from "@/actions/crm";
@@ -58,7 +59,11 @@ export default async function CrmInboxPage({
       ) : (
         <ul className="divide-y divide-gray-100 overflow-hidden rounded-xl border border-gray-100 bg-white">
           {sessions.map((s) => (
-            <li key={s.sessionId} className="flex items-center gap-3 px-4 py-3">
+            <li key={s.sessionId}>
+             <Link
+              href={`/dashboard/${projectId}/crm/inbox/${s.sessionId}`}
+              className="flex items-center gap-3 px-4 py-3 transition-colors hover:bg-gray-50"
+             >
               <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-blue-50 text-xs font-medium text-blue-700">
                 {(s.displayName || s.userId).slice(0, 2)}
               </div>
@@ -96,6 +101,7 @@ export default async function CrmInboxPage({
                   </span>
                 )}
               </div>
+             </Link>
             </li>
           ))}
         </ul>
