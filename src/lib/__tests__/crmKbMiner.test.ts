@@ -46,6 +46,23 @@ describe("mineIntentCandidates", () => {
     ]);
   });
 
+  it("drops a customer PII-submission utterance (masked number) from samples", () => {
+    const out = mineIntentCandidates(
+      [
+        // reply to "please send your details": name + masked phone/account. PII.
+        cust("2026-04-16T10:00:00+07:00", "สมชาย ใจดี\n[REDACTED_NUMBER]\nTtb [REDACTED_NUMBER]"),
+        cust("2026-04-16T10:01:00+07:00", "รบกวนตรวจสอบด้วยค่ะ"),
+        admin("2026-04-16T10:05:00+07:00", "รอสักครู่นะคะกำลังตรวจสอบให้"),
+      ],
+      { gapMinutes: GAP },
+    );
+    expect(out).toHaveLength(1);
+    // the PII-carrying utterance is dropped; the real question survives
+    expect(out[0].sampleUtterances).toEqual(["รบกวนตรวจสอบด้วยค่ะ"]);
+    expect(JSON.stringify(out)).not.toContain("REDACTED_NUMBER");
+    expect(JSON.stringify(out)).not.toContain("สมชาย");
+  });
+
   it("collects the contiguous pre-reply block, noise-filtered and de-duped", () => {
     const out = mineIntentCandidates(
       [

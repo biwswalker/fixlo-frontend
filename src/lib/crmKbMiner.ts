@@ -36,10 +36,17 @@ export interface MineOptions {
 // Image/sticker placeholders LINE writes for non-text customer turns. They are
 // dropped from utterance blocks without breaking contiguity of surrounding text.
 const NOISE_PLACEHOLDER = /คุณส่งรูป|คุณส่งสติกเกอร์/;
+// A masked number in a customer utterance means they submitted identity/account
+// details (name + phone + bank) in reply to a "please send your info" prompt —
+// a PII carrier, and not a question worth keeping as a sample. Drop it so the
+// customer's name doesn't ride into the candidate. (crmChatCsvParse already
+// masked the digits to this token; the accompanying name is not otherwise
+// detectable, so dropping the whole utterance is the safe move.)
+const PII_SUBMISSION = /\[REDACTED_NUMBER\]/;
 
 function isNoiseCustomerText(text: string): boolean {
   const t = text.trim();
-  return t === "" || NOISE_PLACEHOLDER.test(t);
+  return t === "" || NOISE_PLACEHOLDER.test(t) || PII_SUBMISSION.test(t);
 }
 
 interface Group {
