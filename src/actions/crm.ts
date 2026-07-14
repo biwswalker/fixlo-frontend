@@ -6,8 +6,9 @@ import { query } from "@/lib/db";
 import { logger } from "@/lib/logger";
 import { resolveProject } from "@/lib/projects";
 import { getServerAuthSession } from "@/lib/auth";
-import { crmRoleFromFixloRole } from "@/lib/crmRole";
+import { crmRoleFromFixloRole, hasCrmPermission } from "@/lib/crmRole";
 import { redactPasswords } from "@/lib/crmPasswordRedact";
+import type { PiiField } from "@/lib/crmPiiMask";
 import { applyFirstReply, type FrtSettings } from "@/lib/crmFrt";
 import { sendCrmReply } from "@/lib/n8nClient";
 
@@ -307,6 +308,58 @@ export async function sendReply(input: {
     return delivered ? { ok: true } : { ok: true, error: "line_deferred" };
   } catch (err) {
     logger.error("sendReply", `Failed for session ${input.sessionId}`, err);
+    return { ok: false, error: "server" };
+  }
+}
+
+export interface UnmaskResult {
+  ok: boolean;
+  value?: string | null;
+  error?: string;
+}
+
+/**
+ * Reveal a customer's full PII field and record an audit row (who/when/whose/
+ * field). Requires the crm.pii.unmask permission. Passwords are never a PII
+ * field here and have no unmask path (redacted at ingestion). See ADR 0004.
+ */
+export async function unmaskPii(input: {
+  projectSlug: string;
+  userId: string;
+  field: PiiField;
+}): Promise<UnmaskResult> {
+  const session = await getServerAuthSession();
+  if (!session) return { ok: false, error: "unauthorized" };
+  const crmRole = crmRoleFromFixloRole(session.user.role);
+  if (!hasCrmPermission(crmRole, "crm.pii.unmask")) {
+    return { ok: false, error: "forbidden" };
+  }
+  if (input.field !== "phone_number" && input.field !== "bank_account") {
+    return { ok: false, error: "field" };
+  }
+
+  try {
+    const ref = await resolveProject(input.projectSlug);
+    if (!ref) return { ok: false, error: "project" };
+    const projectId = ref.id;
+
+    const col = input.field; // whitelisted above
+    const res = await query(
+      `SELECT ${col} AS value FROM crm_customers
+       WHERE project_id = $1 AND user_id = $2`,
+      [projectId, input.userId],
+    );
+    if (!res.rows[0]) return { ok: false, error: "customer" };
+
+    await query(
+      `INSERT INTO crm_pii_access_log (fixlo_user_id, project_id, subject_user_id, field)
+       VALUES ($1, $2, $3, $4)`,
+      [String(session.user.id), projectId, input.userId, input.field],
+    );
+
+    return { ok: true, value: res.rows[0].value };
+  } catch (err) {
+    logger.error("unmaskPii", `Failed for ${input.userId}/${input.field}`, err);
     return { ok: false, error: "server" };
   }
 }

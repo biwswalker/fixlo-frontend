@@ -3,7 +3,7 @@ import { redirect, notFound } from "next/navigation";
 import Link from "next/link";
 import { format } from "date-fns";
 import { th } from "date-fns/locale";
-import { ArrowLeft, Lock, AlertTriangle } from "lucide-react";
+import { ArrowLeft, AlertTriangle } from "lucide-react";
 import { getSessionDetail } from "@/actions/crm";
 import { crmRoleFromFixloRole } from "@/lib/crmRole";
 import { maskPii } from "@/lib/crmPiiMask";
@@ -11,6 +11,7 @@ import { redactPasswords } from "@/lib/crmPasswordRedact";
 import { cn } from "@/lib/utils";
 import { ReplyBox } from "@/components/crm/ReplyBox";
 import { SlaTimer } from "@/components/crm/SlaTimer";
+import { UnmaskField } from "@/components/crm/UnmaskField";
 
 // CRM session thread + customer panel (issue #158). PII masked server-side by
 // crm_role; passwords redacted for all roles. Unmask + audit is #162.
@@ -143,19 +144,35 @@ export default async function CrmSessionPage({
           <dl className="space-y-2 border-t border-gray-100 pt-3 text-sm">
             <div className="flex flex-col">
               <dt className="text-[11px] text-gray-400">เบอร์</dt>
-              <dd className="flex items-center gap-1 text-gray-800">
-                {phone || "—"}
-                {crmRole !== "supervisor" && phone && (
-                  <Lock className="h-3 w-3 text-gray-300" />
+              <dd className="text-gray-800">
+                {!phone ? (
+                  "—"
+                ) : crmRole === "supervisor" ? (
+                  phone
+                ) : (
+                  <UnmaskField
+                    projectSlug={projectId}
+                    userId={c.userId}
+                    field="phone_number"
+                    masked={phone}
+                  />
                 )}
               </dd>
             </div>
             <div className="flex flex-col">
               <dt className="text-[11px] text-gray-400">บัญชี</dt>
-              <dd className="flex items-center gap-1 text-gray-800">
-                {bank || "—"}
-                {crmRole !== "supervisor" && bank && (
-                  <Lock className="h-3 w-3 text-gray-300" />
+              <dd className="text-gray-800">
+                {!bank ? (
+                  "—"
+                ) : crmRole === "supervisor" ? (
+                  bank
+                ) : (
+                  <UnmaskField
+                    projectSlug={projectId}
+                    userId={c.userId}
+                    field="bank_account"
+                    masked={bank}
+                  />
                 )}
               </dd>
             </div>
