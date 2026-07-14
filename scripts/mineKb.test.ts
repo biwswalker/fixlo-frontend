@@ -1,6 +1,10 @@
 import { describe, it, expect } from "vitest";
-import { summarizeCandidates } from "./mineKb";
+import { summarizeCandidates, buildArtifact } from "./mineKb";
 import type { IntentCandidate } from "../src/lib/crmKbMiner";
+import type {
+  AnnotatedCandidate,
+  KbDraftRow,
+} from "../src/lib/crmKbInsert";
 
 // SYNTHETIC data only — fabricated canned replies, no real customer PII.
 const cand = (
@@ -47,5 +51,66 @@ describe("summarizeCandidates", () => {
       byPolicy: { autopilot: 0, copilot_suggest: 0, force_human: 0 },
       annotated: [],
     });
+  });
+});
+
+describe("buildArtifact", () => {
+  const draftRow = (intentName: string): KbDraftRow => ({
+    project_id: 9,
+    intent_name: intentName,
+    sample_utterances: [],
+    target_response: intentName,
+    response_policy: "copilot_suggest",
+    is_sensitive: false,
+    review_status: "draft",
+  });
+  const skippedCand = (normalizedKey: string): AnnotatedCandidate => ({
+    normalizedKey,
+    sampleUtterances: [],
+    targetResponse: normalizedKey,
+    occurrences: 1,
+    intentName: normalizedKey,
+    isSensitive: false,
+    responsePolicy: "copilot_suggest",
+  });
+
+  it("records inserted rule_ids and skipped keys on an applied run", () => {
+    const artifact = buildArtifact({
+      project: "juno168",
+      projectId: 9,
+      applied: true,
+      candidateCount: 3,
+      rows: [draftRow("ก"), draftRow("ข")],
+      insertedIds: [101, 102],
+      partition: { toInsert: [], skipped: [skippedCand("ค")] },
+    });
+    expect(artifact.applied).toBe(true);
+    expect(artifact.counts).toEqual({
+      candidates: 3,
+      toInsert: 2,
+      inserted: 2,
+      skipped: 1,
+    });
+    expect(artifact.inserted).toEqual([
+      { ...draftRow("ก"), rule_id: 101 },
+      { ...draftRow("ข"), rule_id: 102 },
+    ]);
+    expect(artifact.skipped).toEqual([{ intentName: "ค", normalizedKey: "ค" }]);
+  });
+
+  it("omits rule_ids on a dry run (nothing inserted)", () => {
+    const artifact = buildArtifact({
+      project: "juno168",
+      projectId: 9,
+      applied: false,
+      candidateCount: 1,
+      rows: [draftRow("ก")],
+      insertedIds: [],
+      partition: { toInsert: [], skipped: [] },
+    });
+    expect(artifact.applied).toBe(false);
+    expect(artifact.counts.inserted).toBe(0);
+    expect(artifact.inserted).toEqual([draftRow("ก")]);
+    expect("rule_id" in artifact.inserted[0]).toBe(false);
   });
 });
