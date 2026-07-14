@@ -24,6 +24,8 @@ import {
   mineIntentCandidates,
   type IntentCandidate,
 } from "../src/lib/crmKbMiner";
+import { annotateCandidate } from "../src/lib/crmSensitivityHeuristic";
+import type { ResponsePolicy } from "../src/lib/crmIntentPolicy";
 
 /** CRM default session gap (6h); see docs/crm/CONTEXT.md and ADR 0003. */
 const GAP_MINUTES = 360;
@@ -165,6 +167,44 @@ function preview(text: string, max = 80): string {
   return flat.length > max ? `${flat.slice(0, max - 1)}…` : flat;
 }
 
+/** A mined candidate annotated with its derived name + sensitivity + policy. */
+export interface AnnotatedCandidate extends IntentCandidate {
+  intentName: string;
+  isSensitive: boolean;
+  responsePolicy: ResponsePolicy;
+}
+
+export interface CandidateSummary {
+  total: number;
+  sensitive: number;
+  /** Count of candidates per resolved response policy. */
+  byPolicy: Record<ResponsePolicy, number>;
+  annotated: AnnotatedCandidate[];
+}
+
+/**
+ * Annotate every candidate (name + sensitivity + policy) and tally the sensitive
+ * count and per-policy breakdown for the CLI summary. Pure — no I/O — so it is
+ * unit-testable; the annotation itself is the offline heuristic (issue #180).
+ */
+export function summarizeCandidates(
+  candidates: IntentCandidate[],
+): CandidateSummary {
+  const byPolicy: Record<ResponsePolicy, number> = {
+    autopilot: 0,
+    copilot_suggest: 0,
+    force_human: 0,
+  };
+  let sensitive = 0;
+  const annotated = candidates.map((c) => {
+    const a = annotateCandidate(c);
+    if (a.isSensitive) sensitive++;
+    byPolicy[a.responsePolicy]++;
+    return { ...c, ...a };
+  });
+  return { total: candidates.length, sensitive, byPolicy, annotated };
+}
+
 async function main() {
   const { dir, project } = parseArgs(process.argv.slice(2));
   const abs = path.resolve(dir);
@@ -188,18 +228,34 @@ async function main() {
   );
 
   const candidates = await mineCandidates(dirCsvSource(abs));
-  console.log(`\nCandidate intents: ${candidates.length}`);
-  const shown = candidates.slice(0, 10);
+  const {
+    total: candTotal,
+    sensitive,
+    byPolicy,
+    annotated,
+  } = summarizeCandidates(candidates);
+  console.log(`\nCandidate intents: ${candTotal}`);
+  console.log(
+    `  sensitive: ${sensitive} / ${candTotal}  (non-sensitive: ${candTotal - sensitive})`,
+  );
+  console.log(
+    `  policy: autopilot=${byPolicy.autopilot} copilot_suggest=${byPolicy.copilot_suggest} force_human=${byPolicy.force_human}`,
+  );
+  const shown = annotated.slice(0, 10);
   for (const c of shown) {
-    console.log(`\n  • [${c.occurrences}×] ${preview(c.targetResponse)}`);
+    const flag = c.isSensitive ? "⚠ sensitive" : "safe";
+    console.log(
+      `\n  • [${c.occurrences}×] ${c.intentName}  (${flag} → ${c.responsePolicy})`,
+    );
+    console.log(`      reply: ${preview(c.targetResponse)}`);
     for (const u of c.sampleUtterances.slice(0, 3)) {
       console.log(`      ↳ ${preview(u)}`);
     }
     const more = c.sampleUtterances.length - 3;
     if (more > 0) console.log(`      …and ${more} more utterance(s)`);
   }
-  if (candidates.length > shown.length) {
-    console.log(`\n  …and ${candidates.length - shown.length} more candidate(s)`);
+  if (annotated.length > shown.length) {
+    console.log(`\n  …and ${annotated.length - shown.length} more candidate(s)`);
   }
 }
 
