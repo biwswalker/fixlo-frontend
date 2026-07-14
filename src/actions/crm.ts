@@ -11,6 +11,7 @@ import { redactPasswords } from "@/lib/crmPasswordRedact";
 import type { PiiField } from "@/lib/crmPiiMask";
 import { applyFirstReply, type FrtSettings } from "@/lib/crmFrt";
 import { sendCrmReply } from "@/lib/n8nClient";
+import { selectAgentKpiSql } from "@/lib/crmKpi";
 
 // Business timezone offset (Asia/Bangkok, no DST). crmFrt operates on
 // business-local wall-clock, so UTC instants are shifted by this before compute.
@@ -408,4 +409,39 @@ export async function sendDraft(input: {
     sessionId: input.sessionId,
     text: input.text,
   });
+}
+
+export interface AgentKpiRow {
+  fixloUserId: string;
+  sessionsHandled: number;
+  sessionsAnswered: number;
+  avgFrtSeconds: number | null;
+  slaPassedCount: number;
+  slaPassPct: number | null;
+}
+
+/**
+ * Per-agent KPI for one project + business day (YYYY-MM-DD), read from the
+ * materialized view. Empty-safe.
+ */
+export async function getAgentKpiDaily(
+  projectSlug: string,
+  dateStr: string,
+): Promise<AgentKpiRow[]> {
+  try {
+    const ref = await resolveProject(projectSlug);
+    if (!ref) return [];
+    const res = await query(selectAgentKpiSql(1, 2), [ref.id, dateStr]);
+    return res.rows.map((r) => ({
+      fixloUserId: r.fixlo_user_id,
+      sessionsHandled: Number(r.sessions_handled),
+      sessionsAnswered: Number(r.sessions_answered),
+      avgFrtSeconds: r.avg_frt_seconds === null ? null : Number(r.avg_frt_seconds),
+      slaPassedCount: Number(r.sla_passed_count),
+      slaPassPct: r.sla_pass_pct === null ? null : Number(r.sla_pass_pct),
+    }));
+  } catch (err) {
+    logger.error("getAgentKpiDaily", `Failed for ${projectSlug} ${dateStr}`, err);
+    return [];
+  }
 }
