@@ -363,3 +363,49 @@ export async function unmaskPii(input: {
     return { ok: false, error: "server" };
   }
 }
+
+/** Discard an AI draft reply (never sent to the customer). */
+export async function discardDraft(input: {
+  projectSlug: string;
+  sessionId: number;
+  draftMessageId: string;
+}): Promise<{ ok: boolean }> {
+  const session = await getServerAuthSession();
+  if (!session || !["owner", "admin", "staff"].includes(session.user.role || "")) {
+    return { ok: false };
+  }
+  try {
+    await query(
+      `DELETE FROM crm_chat_messages WHERE message_id = $1 AND is_draft = TRUE`,
+      [input.draftMessageId],
+    );
+    revalidatePath(`/dashboard/${input.projectSlug}/crm/inbox/${input.sessionId}`);
+    return { ok: true };
+  } catch (err) {
+    logger.error("discardDraft", `Failed for ${input.draftMessageId}`, err);
+    return { ok: false };
+  }
+}
+
+/**
+ * Send an AI draft (optionally edited) as an admin reply: remove the draft row,
+ * then deliver via the normal send path (records admin msg, FRT, n8n).
+ */
+export async function sendDraft(input: {
+  projectSlug: string;
+  sessionId: number;
+  draftMessageId: string;
+  text: string;
+}): Promise<SendReplyResult> {
+  const discarded = await discardDraft({
+    projectSlug: input.projectSlug,
+    sessionId: input.sessionId,
+    draftMessageId: input.draftMessageId,
+  });
+  if (!discarded.ok) return { ok: false, error: "draft" };
+  return sendReply({
+    projectSlug: input.projectSlug,
+    sessionId: input.sessionId,
+    text: input.text,
+  });
+}

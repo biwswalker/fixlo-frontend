@@ -12,6 +12,7 @@ import { cn } from "@/lib/utils";
 import { ReplyBox } from "@/components/crm/ReplyBox";
 import { SlaTimer } from "@/components/crm/SlaTimer";
 import { UnmaskField } from "@/components/crm/UnmaskField";
+import { DraftCard } from "@/components/crm/DraftCard";
 
 // CRM session thread + customer panel (issue #158). PII masked server-side by
 // crm_role; passwords redacted for all roles. Unmask + audit is #162.
@@ -93,6 +94,17 @@ export default async function CrmSessionPage({
               <p className="py-8 text-center text-xs text-gray-400">ยังไม่มีข้อความ</p>
             )}
             {detail.messages.map((m) => {
+              if (m.isDraft) {
+                return (
+                  <DraftCard
+                    key={m.messageId}
+                    projectSlug={projectId}
+                    sessionId={detail.sessionId}
+                    draftMessageId={m.messageId}
+                    text={redactPasswords(m.text)}
+                  />
+                );
+              }
               const isPlaceholder = PLACEHOLDERS.has(m.text.trim());
               return (
                 <div key={m.messageId} className={cn("flex flex-col", bubbleAlign(m.senderType))}>
@@ -108,9 +120,6 @@ export default async function CrmSessionPage({
                       )}
                     >
                       {redactPasswords(m.text)}
-                      {m.isDraft && (
-                        <span className="ml-1 text-[10px] opacity-70">(ฉบับร่าง)</span>
-                      )}
                     </div>
                   )}
                   <span className="px-1 text-[10px] text-gray-400">
