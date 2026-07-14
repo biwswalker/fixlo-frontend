@@ -253,6 +253,9 @@ Trigger = **Fixlo POST** `{rule_id}` on intent approve/edit. Embed
 Not an n8n webhook flow — a batch job (script or n8n manual workflow) over the LINE OA
 export CSVs. ADR 0005.
 
+- **Location**: store exports **outside the repo** at
+  `~/workspaces/flexio/fixlo-crm-history/<project>/` (sibling of the repo, gitignored —
+  the CSVs contain PII + plaintext passwords). The miner globs that directory.
 - **Input**: `*.csv` LINE OA exports. Columns: `ประเภทผู้ส่ง` (`User`/`Account`),
   `ชื่อผู้ส่ง`, `วันส่ง`, `เวลาส่ง`, `ข้อความ`. Sender mapping: `User`→customer;
   `Account`+`ข้อความตอบกลับอัตโนมัติ`→bot; `Account`+nickname→admin.

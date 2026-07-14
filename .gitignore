@@ -46,3 +46,9 @@ spectre-*-backup
 
 # editor (per-user)
 .vscode/
+
+# CRM chat-history exports (PII + passwords) — never commit. Store outside the
+# repo at ~/workspaces/flexio/fixlo-crm-history/<project>/ (sibling of this repo).
+# These entries are defensive only.
+*.csv
+/crm-history/
