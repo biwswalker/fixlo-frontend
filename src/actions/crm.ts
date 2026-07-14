@@ -10,8 +10,9 @@ import { crmRoleFromFixloRole, hasCrmPermission } from "@/lib/crmRole";
 import { redactPasswords } from "@/lib/crmPasswordRedact";
 import type { PiiField } from "@/lib/crmPiiMask";
 import { applyFirstReply, type FrtSettings } from "@/lib/crmFrt";
-import { sendCrmReply } from "@/lib/n8nClient";
+import { sendCrmReply, embedCrmIntent } from "@/lib/n8nClient";
 import { selectAgentKpiSql } from "@/lib/crmKpi";
+import { effectivePolicy, type ResponsePolicy } from "@/lib/crmIntentPolicy";
 
 // Business timezone offset (Asia/Bangkok, no DST). crmFrt operates on
 // business-local wall-clock, so UTC instants are shifted by this before compute.
@@ -443,5 +444,105 @@ export async function getAgentKpiDaily(
   } catch (err) {
     logger.error("getAgentKpiDaily", `Failed for ${projectSlug} ${dateStr}`, err);
     return [];
+  }
+}
+
+export interface KbIntent {
+  ruleId: number;
+  intentName: string;
+  sampleUtterances: string[];
+  targetResponse: string;
+  responsePolicy: ResponsePolicy;
+  isSensitive: boolean;
+  reviewStatus: "draft" | "approved" | "archived";
+}
+
+/** Knowledge base intents for a project (drafts first, then approved). */
+export async function getKnowledgeBase(
+  projectSlug: string,
+): Promise<KbIntent[]> {
+  try {
+    const ref = await resolveProject(projectSlug);
+    if (!ref) return [];
+    const res = await query(
+      `SELECT rule_id, intent_name, sample_utterances, target_response,
+              response_policy, is_sensitive, review_status
+       FROM crm_bot_knowledge_base
+       WHERE project_id = $1
+       ORDER BY CASE review_status WHEN 'draft' THEN 0 WHEN 'approved' THEN 1 ELSE 2 END,
+                intent_name ASC`,
+      [ref.id],
+    );
+    return res.rows.map((r) => ({
+      ruleId: Number(r.rule_id),
+      intentName: r.intent_name,
+      sampleUtterances: r.sample_utterances ?? [],
+      targetResponse: r.target_response,
+      responsePolicy: r.response_policy,
+      isSensitive: r.is_sensitive,
+      reviewStatus: r.review_status,
+    }));
+  } catch (err) {
+    logger.error("getKnowledgeBase", `Failed for ${projectSlug}`, err);
+    return [];
+  }
+}
+
+async function requireKbManager() {
+  const session = await getServerAuthSession();
+  const crmRole = crmRoleFromFixloRole(session?.user.role);
+  return session && hasCrmPermission(crmRole, "crm.kb.manage") ? session : null;
+}
+
+/**
+ * Update an intent's response text, policy, and sensitivity. Sensitive intents
+ * are coerced to force_human (ADR 0005). Triggers a re-embed via n8n.
+ */
+export async function saveIntent(input: {
+  projectSlug: string;
+  ruleId: number;
+  targetResponse: string;
+  responsePolicy: ResponsePolicy;
+  isSensitive: boolean;
+}): Promise<{ ok: boolean; error?: string }> {
+  if (!(await requireKbManager())) return { ok: false, error: "forbidden" };
+  const policy = effectivePolicy(input.responsePolicy, input.isSensitive);
+  try {
+    await query(
+      `UPDATE crm_bot_knowledge_base
+       SET target_response = $1, response_policy = $2, is_sensitive = $3
+       WHERE rule_id = $4`,
+      [input.targetResponse, policy, input.isSensitive, input.ruleId],
+    );
+    await embedCrmIntent({ rule_id: input.ruleId });
+    revalidatePath(`/dashboard/${input.projectSlug}/crm/knowledge`);
+    return { ok: true };
+  } catch (err) {
+    logger.error("saveIntent", `Failed for rule ${input.ruleId}`, err);
+    return { ok: false, error: "server" };
+  }
+}
+
+/**
+ * Move a mined draft intent to approved (embeds it live) or archived. Nothing is
+ * live to customers until approved (ADR 0005).
+ */
+export async function setIntentReview(input: {
+  projectSlug: string;
+  ruleId: number;
+  status: "approved" | "archived";
+}): Promise<{ ok: boolean; error?: string }> {
+  if (!(await requireKbManager())) return { ok: false, error: "forbidden" };
+  try {
+    await query(
+      `UPDATE crm_bot_knowledge_base SET review_status = $1 WHERE rule_id = $2`,
+      [input.status, input.ruleId],
+    );
+    if (input.status === "approved") await embedCrmIntent({ rule_id: input.ruleId });
+    revalidatePath(`/dashboard/${input.projectSlug}/crm/knowledge`);
+    return { ok: true };
+  } catch (err) {
+    logger.error("setIntentReview", `Failed for rule ${input.ruleId}`, err);
+    return { ok: false, error: "server" };
   }
 }
