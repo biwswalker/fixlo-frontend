@@ -13,6 +13,11 @@ import { applyFirstReply, type FrtSettings } from "@/lib/crmFrt";
 import { sendCrmReply, embedCrmIntent } from "@/lib/n8nClient";
 import { selectAgentKpiSql } from "@/lib/crmKpi";
 import { effectivePolicy, type ResponsePolicy } from "@/lib/crmIntentPolicy";
+import {
+  validateBotSettings,
+  DEFAULT_BOT_SETTINGS,
+  type CrmBotSettings,
+} from "@/lib/crmBotSettings";
 
 // Business timezone offset (Asia/Bangkok, no DST). crmFrt operates on
 // business-local wall-clock, so UTC instants are shifted by this before compute.
@@ -544,5 +549,73 @@ export async function setIntentReview(input: {
   } catch (err) {
     logger.error("setIntentReview", `Failed for rule ${input.ruleId}`, err);
     return { ok: false, error: "server" };
+  }
+}
+
+/** Global CRM bot settings (single row). Falls back to defaults. */
+export async function getBotSettings(): Promise<CrmBotSettings> {
+  try {
+    const res = await query(
+      `SELECT system_prompt, temperature, confidence_threshold,
+              session_gap_minutes, op_hours_start, op_hours_end, sla_seconds
+       FROM crm_bot_settings WHERE setting_id = 1`,
+    );
+    const r = res.rows[0];
+    if (!r) return DEFAULT_BOT_SETTINGS;
+    return {
+      systemPrompt: r.system_prompt ?? "",
+      temperature: Number(r.temperature),
+      confidenceThreshold: Number(r.confidence_threshold),
+      sessionGapMinutes: Number(r.session_gap_minutes),
+      opHoursStart: String(r.op_hours_start).slice(0, 5),
+      opHoursEnd: String(r.op_hours_end).slice(0, 5),
+      slaSeconds: Number(r.sla_seconds),
+    };
+  } catch (err) {
+    logger.error("getBotSettings", "Failed", err);
+    return DEFAULT_BOT_SETTINGS;
+  }
+}
+
+/** Save global CRM bot settings. Validates ranges. RBAC: crm.settings.edit. */
+export async function saveBotSettings(
+  input: CrmBotSettings,
+): Promise<{ ok: boolean; errors?: string[] }> {
+  const session = await getServerAuthSession();
+  const crmRole = crmRoleFromFixloRole(session?.user.role);
+  if (!session || !hasCrmPermission(crmRole, "crm.settings.edit")) {
+    return { ok: false, errors: ["forbidden"] };
+  }
+  const errors = validateBotSettings(input);
+  if (errors.length) return { ok: false, errors };
+  try {
+    await query(
+      `INSERT INTO crm_bot_settings
+         (setting_id, system_prompt, temperature, confidence_threshold,
+          session_gap_minutes, op_hours_start, op_hours_end, sla_seconds)
+       VALUES (1, $1, $2, $3, $4, $5, $6, $7)
+       ON CONFLICT (setting_id) DO UPDATE SET
+         system_prompt = EXCLUDED.system_prompt,
+         temperature = EXCLUDED.temperature,
+         confidence_threshold = EXCLUDED.confidence_threshold,
+         session_gap_minutes = EXCLUDED.session_gap_minutes,
+         op_hours_start = EXCLUDED.op_hours_start,
+         op_hours_end = EXCLUDED.op_hours_end,
+         sla_seconds = EXCLUDED.sla_seconds`,
+      [
+        input.systemPrompt,
+        input.temperature,
+        input.confidenceThreshold,
+        input.sessionGapMinutes,
+        `${input.opHoursStart}:00`,
+        `${input.opHoursEnd}:00`,
+        input.slaSeconds,
+      ],
+    );
+    revalidatePath("/dashboard");
+    return { ok: true };
+  } catch (err) {
+    logger.error("saveBotSettings", "Failed", err);
+    return { ok: false, errors: ["server"] };
   }
 }
