@@ -20,10 +20,9 @@ import { useSession } from "next-auth/react";
 // Two bounded contexts share one grouped sidebar (CONTEXT-MAP.md):
 //   - "reconciliation" group: the original back-office money flow.
 //   - "crm" group: the LINE service desk (docs/crm/CONTEXT.md).
-// RBAC note: reconciliation items gate on the Fixlo role. CRM items *should* gate on
-// crm_agent_profile.crm_role (junior|supervisor) once that is wired into the session —
-// see docs/crm/adr/0001-crm-bounded-context.md. Until then they gate on the Fixlo role as
-// a coarse placeholder (supervisor ≈ owner/admin).
+// RBAC note: reconciliation items gate on the Fixlo role. CRM items gate on the
+// CRM role, which is derived from the Fixlo role (owner/admin → supervisor, staff
+// → junior) — see docs/crm/adr/0006-crm-role-derived-from-fixlo-role.md.
 type NavGroup = "reconciliation" | "crm";
 
 export function Sidebar() {
@@ -81,7 +80,7 @@ export function Sidebar() {
       href: `${base}/crm/inbox${dateSuffix}`,
       icon: MessagesSquare,
       active: pathname.startsWith(`${base}/crm/inbox`),
-      hidden: !isStaffUp, // junior+ (placeholder for crm_role)
+      hidden: !isStaffUp, // junior+ (crm_role derived from Fixlo role, ADR 0006)
     },
     {
       group: "crm" as NavGroup,

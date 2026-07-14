@@ -44,9 +44,10 @@ export function resolveCrmRole(
 }
 
 /**
- * PLACEHOLDER bridge from the Fixlo role to a CRM role, used until `crm_role` is
- * wired into the auth session (issue #157). owner/admin → supervisor, staff →
- * junior, everything else → null. Replace with a real `crm_agent_profile` lookup.
+ * Canonical CRM role, derived directly from the Fixlo role (ADR 0006):
+ * owner/admin → supervisor, staff → junior, everything else (viewer/none) → no
+ * CRM access. The CRM permission axis is a deterministic function of the Fixlo
+ * role — there is no separate crm_role source to hydrate.
  */
 export function crmRoleFromFixloRole(
   fixloRole: string | null | undefined,

@@ -6,7 +6,7 @@ import {
   type CrmPermission,
 } from "../crmRole";
 
-describe("crmRoleFromFixloRole (placeholder bridge)", () => {
+describe("crmRoleFromFixloRole (canonical, ADR 0006)", () => {
   it("maps owner/admin to supervisor", () => {
     expect(crmRoleFromFixloRole("owner")).toBe("supervisor");
     expect(crmRoleFromFixloRole("admin")).toBe("supervisor");

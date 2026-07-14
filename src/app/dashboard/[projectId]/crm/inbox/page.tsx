@@ -9,8 +9,8 @@ import { MessagesSquare } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 // CRM service desk — shared inbox (issue #156, docs/crm/adr/0003).
-// RBAC placeholder: gate on the Fixlo role (staff+) until crm_role is wired into
-// the session (issue #157). A junior/supervisor maps to staff+ for now.
+// RBAC: the CRM role is derived from the Fixlo role (ADR 0006) — staff+ maps to
+// junior/supervisor. Inbox is open to junior and up.
 
 function tierBadge(tier: string) {
   const styles: Record<string, string> = {
