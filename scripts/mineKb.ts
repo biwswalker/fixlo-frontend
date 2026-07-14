@@ -20,6 +20,13 @@
 import fs from "fs";
 import path from "path";
 import { parseChatCsv, type SenderType } from "../src/lib/crmChatCsvParse";
+import {
+  mineIntentCandidates,
+  type IntentCandidate,
+} from "../src/lib/crmKbMiner";
+
+/** CRM default session gap (6h); see docs/crm/CONTEXT.md and ADR 0003. */
+const GAP_MINUTES = 360;
 
 /** A named CSV blob to mine. `name` is for logging only (never its contents). */
 export interface CsvInput {
@@ -85,6 +92,79 @@ export async function countBySender(source: CsvSource): Promise<{
   return { perFile, total };
 }
 
+/**
+ * Mine candidate intents across every file. Each file is one customer's
+ * conversation, so it is mined independently (contiguity/session pairing must
+ * not cross customers); the per-file candidates are then merged by normalized
+ * key. On merge, utterances are unioned + de-duped, occurrences summed, and the
+ * `targetResponse` of the higher-occurrence contributor is kept — the exact
+ * most-frequent-raw guarantee holds per file (see `crmKbMiner`); this cross-file
+ * tie-break is a summary heuristic, good enough for the review-before-insert CLI.
+ */
+export async function mineCandidates(
+  source: CsvSource,
+  gapMinutes = GAP_MINUTES,
+): Promise<IntentCandidate[]> {
+  const inputs = await source();
+  const lists = inputs.map((input) =>
+    mineIntentCandidates(parseChatCsv(input.text), { gapMinutes }),
+  );
+  return mergeCandidates(lists);
+}
+
+/** Merge per-file candidate lists by normalized key; sort by occurrences desc. */
+export function mergeCandidates(lists: IntentCandidate[][]): IntentCandidate[] {
+  interface Acc extends IntentCandidate {
+    seen: Set<string>;
+    targetWeight: number;
+    order: number;
+  }
+  const merged = new Map<string, Acc>();
+  let order = 0;
+  for (const list of lists) {
+    for (const c of list) {
+      let acc = merged.get(c.normalizedKey);
+      if (!acc) {
+        acc = {
+          normalizedKey: c.normalizedKey,
+          sampleUtterances: [],
+          targetResponse: c.targetResponse,
+          occurrences: 0,
+          seen: new Set(),
+          targetWeight: 0,
+          order: order++,
+        };
+        merged.set(c.normalizedKey, acc);
+      }
+      acc.occurrences += c.occurrences;
+      if (c.occurrences > acc.targetWeight) {
+        acc.targetWeight = c.occurrences;
+        acc.targetResponse = c.targetResponse;
+      }
+      for (const u of c.sampleUtterances) {
+        if (!acc.seen.has(u)) {
+          acc.seen.add(u);
+          acc.sampleUtterances.push(u);
+        }
+      }
+    }
+  }
+  return [...merged.values()]
+    .sort((a, b) => b.occurrences - a.occurrences || a.order - b.order)
+    .map(({ normalizedKey, sampleUtterances, targetResponse, occurrences }) => ({
+      normalizedKey,
+      sampleUtterances,
+      targetResponse,
+      occurrences,
+    }));
+}
+
+/** One-line preview of already-scrubbed text (no raw PII); collapsed + capped. */
+function preview(text: string, max = 80): string {
+  const flat = text.replace(/\s+/g, " ").trim();
+  return flat.length > max ? `${flat.slice(0, max - 1)}…` : flat;
+}
+
 async function main() {
   const { dir, project } = parseArgs(process.argv.slice(2));
   const abs = path.resolve(dir);
@@ -106,6 +186,21 @@ async function main() {
   console.log(
     `\nTotal: ${grand} messages  (customer=${total.customer} admin=${total.admin} bot=${total.bot})`,
   );
+
+  const candidates = await mineCandidates(dirCsvSource(abs));
+  console.log(`\nCandidate intents: ${candidates.length}`);
+  const shown = candidates.slice(0, 10);
+  for (const c of shown) {
+    console.log(`\n  • [${c.occurrences}×] ${preview(c.targetResponse)}`);
+    for (const u of c.sampleUtterances.slice(0, 3)) {
+      console.log(`      ↳ ${preview(u)}`);
+    }
+    const more = c.sampleUtterances.length - 3;
+    if (more > 0) console.log(`      …and ${more} more utterance(s)`);
+  }
+  if (candidates.length > shown.length) {
+    console.log(`\n  …and ${candidates.length - shown.length} more candidate(s)`);
+  }
 }
 
 // Run only as a script, not when imported by tests.
