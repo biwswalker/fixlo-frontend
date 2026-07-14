@@ -13,6 +13,7 @@ import { ReplyBox } from "@/components/crm/ReplyBox";
 import { SlaTimer } from "@/components/crm/SlaTimer";
 import { UnmaskField } from "@/components/crm/UnmaskField";
 import { DraftCard } from "@/components/crm/DraftCard";
+import { AssignPin } from "@/components/crm/AssignPin";
 
 // CRM session thread + customer panel (issue #158). PII masked server-side by
 // crm_role; passwords redacted for all roles. Unmask + audit is #162.
@@ -186,6 +187,13 @@ export default async function CrmSessionPage({
               </dd>
             </div>
           </dl>
+          <div className="mt-3 border-t border-gray-100 pt-3">
+            <AssignPin
+              projectSlug={projectId}
+              userId={c.userId}
+              assignedAgentName={c.assignedAgentName}
+            />
+          </div>
           {crmRole !== "supervisor" && (
             <p className="mt-3 border-t border-gray-100 pt-2 text-[11px] text-gray-400">
               มุมมอง junior — PII ถูกปิดบัง

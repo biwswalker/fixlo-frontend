@@ -137,6 +137,8 @@ export interface CrmCustomerRaw {
   phoneNumber: string | null; // raw PII — caller masks by role
   bankAccount: string | null; // raw PII — caller masks by role
   humanHandoff: boolean;
+  assignedAgentId: number | null;
+  assignedAgentName: string | null;
 }
 
 export interface CrmSessionDetail {
@@ -163,10 +165,12 @@ export async function getSessionDetail(
       `SELECT s.session_id, s.project_id, s.is_open, s.started_at,
               s.frt_seconds, s.sla_passed,
               c.user_id, c.display_name, c.tier, c.phone_number,
-              c.bank_account, c.human_handoff
+              c.bank_account, c.human_handoff, c.assigned_admin_id,
+              ap.fixlo_user_id AS assigned_agent_name
        FROM crm_sessions s
        JOIN crm_customers c
          ON c.project_id = s.project_id AND c.user_id = s.user_id
+       LEFT JOIN crm_agent_profile ap ON ap.id = c.assigned_admin_id
        WHERE s.session_id = $1`,
       [sessionId],
     );
@@ -195,6 +199,8 @@ export async function getSessionDetail(
         phoneNumber: s.phone_number,
         bankAccount: s.bank_account,
         humanHandoff: s.human_handoff,
+        assignedAgentId: s.assigned_admin_id === null ? null : Number(s.assigned_admin_id),
+        assignedAgentName: s.assigned_agent_name,
       },
       messages: mRes.rows.map((r) => ({
         messageId: r.message_id,
@@ -617,5 +623,83 @@ export async function saveBotSettings(
   } catch (err) {
     logger.error("saveBotSettings", "Failed", err);
     return { ok: false, errors: ["server"] };
+  }
+}
+
+/**
+ * Pin a customer to the current agent (non-binding — the pool still replies).
+ * If the customer was pinned to a different agent, logs a case transfer.
+ * See docs/crm/adr/0003-service-desk-reframe.md.
+ */
+export async function claimCustomer(input: {
+  projectSlug: string;
+  userId: string;
+  reason?: string;
+}): Promise<{ ok: boolean; error?: string }> {
+  const session = await getServerAuthSession();
+  if (!session || !["owner", "admin", "staff"].includes(session.user.role || "")) {
+    return { ok: false, error: "unauthorized" };
+  }
+  try {
+    const ref = await resolveProject(input.projectSlug);
+    if (!ref) return { ok: false, error: "project" };
+    const projectId = ref.id;
+    const meId = await ensureAgentProfile(
+      String(session.user.id),
+      session.user.role,
+      projectId,
+    );
+    if (meId == null) return { ok: false, error: "agent" };
+
+    const cur = await query(
+      `SELECT assigned_admin_id FROM crm_customers WHERE project_id = $1 AND user_id = $2`,
+      [projectId, input.userId],
+    );
+    if (!cur.rows[0]) return { ok: false, error: "customer" };
+    const prev: number | null =
+      cur.rows[0].assigned_admin_id === null ? null : Number(cur.rows[0].assigned_admin_id);
+
+    if (prev === meId) return { ok: true };
+
+    await query(
+      `UPDATE crm_customers SET assigned_admin_id = $1 WHERE project_id = $2 AND user_id = $3`,
+      [meId, projectId, input.userId],
+    );
+    if (prev !== null) {
+      await query(
+        `INSERT INTO crm_case_transfers (project_id, user_id, from_admin_id, to_admin_id, reason)
+         VALUES ($1, $2, $3, $4, $5)`,
+        [projectId, input.userId, prev, meId, input.reason ?? null],
+      );
+    }
+    revalidatePath(`/dashboard/${input.projectSlug}/crm/inbox`);
+    return { ok: true };
+  } catch (err) {
+    logger.error("claimCustomer", `Failed for ${input.userId}`, err);
+    return { ok: false, error: "server" };
+  }
+}
+
+/** Remove a customer's agent pin (back to the open pool). */
+export async function unassignCustomer(input: {
+  projectSlug: string;
+  userId: string;
+}): Promise<{ ok: boolean; error?: string }> {
+  const session = await getServerAuthSession();
+  if (!session || !["owner", "admin", "staff"].includes(session.user.role || "")) {
+    return { ok: false, error: "unauthorized" };
+  }
+  try {
+    const ref = await resolveProject(input.projectSlug);
+    if (!ref) return { ok: false, error: "project" };
+    await query(
+      `UPDATE crm_customers SET assigned_admin_id = NULL WHERE project_id = $1 AND user_id = $2`,
+      [ref.id, input.userId],
+    );
+    revalidatePath(`/dashboard/${input.projectSlug}/crm/inbox`);
+    return { ok: true };
+  } catch (err) {
+    logger.error("unassignCustomer", `Failed for ${input.userId}`, err);
+    return { ok: false, error: "server" };
   }
 }
