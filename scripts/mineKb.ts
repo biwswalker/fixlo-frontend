@@ -434,39 +434,39 @@ async function main() {
     console.log(`\n  …and ${annotated.length - shown.length} more candidate(s)`);
   }
 
-  // --- M4: resolve project → partition against existing rows → confirm gate ---
+  // --- M4: the DB is reached ONLY on --apply. Dry-run never opens a connection. ---
+  if (!apply) {
+    console.log(
+      `\nDRY RUN — no DB access, no rows written. Re-run with --apply to resolve ` +
+        `the project, skip intents already present, and insert ${annotated.length} ` +
+        `candidate(s) as review_status='draft'. (Artifact is written on --apply.)`,
+    );
+    return;
+  }
+
+  // --apply: resolve project → partition against existing rows → insert drafts.
   const { resolveProject } = await import("../src/lib/projects");
   const projectRef = await resolveProject(project);
   if (!projectRef) {
     throw new Error(`Unknown or inactive project code: ${project}`);
   }
 
-  const existingKeys = await fetchExistingKeys(projectRef.id);
-  const partition = partitionNewCandidates(annotated, existingKeys);
-  const rows = partition.toInsert.map((c) =>
-    candidateToDraftRow(c, projectRef.id),
-  );
-
-  console.log(`\nProject id: ${projectRef.id} (${projectRef.code})`);
-  console.log(
-    `Insert plan: ${rows.length} new draft row(s), ` +
-      `${partition.skipped.length} skipped (already present, non-archived).`,
-  );
-
-  let insertedIds: number[] = [];
   const { default: pool } = await import("../src/lib/db");
   try {
-    if (apply) {
-      // Explicit confirmation given (--apply): the ONLY path that writes.
-      console.log(`\nApplying: inserting ${rows.length} draft row(s) as review_status='draft'…`);
-      insertedIds = await insertDraftRows(rows);
-      console.log(`Inserted rule_ids: ${insertedIds.join(", ") || "(none)"}`);
-    } else {
-      // Default: dry-run. No DB write happens.
-      console.log(
-        `\nDRY RUN — no rows written. Re-run with --apply to insert the ${rows.length} row(s) above.`,
-      );
-    }
+    const existingKeys = await fetchExistingKeys(projectRef.id);
+    const partition = partitionNewCandidates(annotated, existingKeys);
+    const rows = partition.toInsert.map((c) =>
+      candidateToDraftRow(c, projectRef.id),
+    );
+
+    console.log(`\nProject id: ${projectRef.id} (${projectRef.code})`);
+    console.log(
+      `Insert plan: ${rows.length} new draft row(s), ` +
+        `${partition.skipped.length} skipped (already present, non-archived).`,
+    );
+    console.log(`\nApplying: inserting ${rows.length} draft row(s) as review_status='draft'…`);
+    const insertedIds = await insertDraftRows(rows);
+    console.log(`Inserted rule_ids: ${insertedIds.join(", ") || "(none)"}`);
 
     const artifactPath = out ? path.resolve(out) : defaultArtifactPath(project);
     writeArtifact(
@@ -474,7 +474,7 @@ async function main() {
       buildArtifact({
         project,
         projectId: projectRef.id,
-        applied: apply,
+        applied: true,
         candidateCount: annotated.length,
         rows,
         insertedIds,
