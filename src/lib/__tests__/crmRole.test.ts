@@ -2,8 +2,23 @@ import { describe, it, expect } from "vitest";
 import {
   resolveCrmRole,
   hasCrmPermission,
+  crmRoleFromFixloRole,
   type CrmPermission,
 } from "../crmRole";
+
+describe("crmRoleFromFixloRole (placeholder bridge)", () => {
+  it("maps owner/admin to supervisor", () => {
+    expect(crmRoleFromFixloRole("owner")).toBe("supervisor");
+    expect(crmRoleFromFixloRole("admin")).toBe("supervisor");
+  });
+  it("maps staff to junior", () => {
+    expect(crmRoleFromFixloRole("staff")).toBe("junior");
+  });
+  it("maps viewer/unknown/missing to null", () => {
+    expect(crmRoleFromFixloRole("viewer")).toBeNull();
+    expect(crmRoleFromFixloRole(undefined)).toBeNull();
+  });
+});
 
 describe("resolveCrmRole", () => {
   it("returns the role from an active profile", () => {

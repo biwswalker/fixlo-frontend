@@ -95,3 +95,93 @@ export async function getInboxSessions(
     return [];
   }
 }
+
+export type CrmSenderType = "customer" | "admin" | "bot";
+
+export interface CrmThreadMessage {
+  messageId: string;
+  senderType: CrmSenderType;
+  text: string; // raw; caller applies password redaction on display
+  isDraft: boolean;
+  createdAt: string;
+}
+
+export interface CrmCustomerRaw {
+  userId: string;
+  displayName: string | null;
+  tier: string;
+  phoneNumber: string | null; // raw PII — caller masks by role
+  bankAccount: string | null; // raw PII — caller masks by role
+  humanHandoff: boolean;
+}
+
+export interface CrmSessionDetail {
+  sessionId: number;
+  projectId: number;
+  isOpen: boolean;
+  startedAt: string | null;
+  frtSeconds: number | null;
+  slaPassed: boolean | null;
+  customer: CrmCustomerRaw;
+  messages: CrmThreadMessage[];
+}
+
+/**
+ * Full detail for one session: metadata, customer (raw PII), and messages in
+ * chronological order. PII/password handling is the caller's responsibility
+ * (mask by role, redact passwords). Returns null if not found / on error.
+ */
+export async function getSessionDetail(
+  sessionId: number,
+): Promise<CrmSessionDetail | null> {
+  try {
+    const sRes = await query(
+      `SELECT s.session_id, s.project_id, s.is_open, s.started_at,
+              s.frt_seconds, s.sla_passed,
+              c.user_id, c.display_name, c.tier, c.phone_number,
+              c.bank_account, c.human_handoff
+       FROM crm_sessions s
+       JOIN crm_customers c
+         ON c.project_id = s.project_id AND c.user_id = s.user_id
+       WHERE s.session_id = $1`,
+      [sessionId],
+    );
+    const s = sRes.rows[0];
+    if (!s) return null;
+
+    const mRes = await query(
+      `SELECT message_id, sender_type, message_text, is_draft, created_at
+       FROM crm_chat_messages
+       WHERE session_id = $1
+       ORDER BY created_at ASC`,
+      [sessionId],
+    );
+
+    return {
+      sessionId: Number(s.session_id),
+      projectId: Number(s.project_id),
+      isOpen: s.is_open,
+      startedAt: s.started_at ? new Date(s.started_at).toISOString() : null,
+      frtSeconds: s.frt_seconds === null ? null : Number(s.frt_seconds),
+      slaPassed: s.sla_passed,
+      customer: {
+        userId: s.user_id,
+        displayName: s.display_name,
+        tier: s.tier ?? "Regular",
+        phoneNumber: s.phone_number,
+        bankAccount: s.bank_account,
+        humanHandoff: s.human_handoff,
+      },
+      messages: mRes.rows.map((r) => ({
+        messageId: r.message_id,
+        senderType: r.sender_type,
+        text: r.message_text,
+        isDraft: r.is_draft,
+        createdAt: new Date(r.created_at).toISOString(),
+      })),
+    };
+  } catch (err) {
+    logger.error("getSessionDetail", `Failed for session ${sessionId}`, err);
+    return null;
+  }
+}
