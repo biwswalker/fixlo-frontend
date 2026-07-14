@@ -1,8 +1,24 @@
 "use server";
 
+import { randomUUID } from "crypto";
+import { revalidatePath } from "next/cache";
 import { query } from "@/lib/db";
 import { logger } from "@/lib/logger";
 import { resolveProject } from "@/lib/projects";
+import { getServerAuthSession } from "@/lib/auth";
+import { crmRoleFromFixloRole } from "@/lib/crmRole";
+import { redactPasswords } from "@/lib/crmPasswordRedact";
+import { applyFirstReply, type FrtSettings } from "@/lib/crmFrt";
+import { sendCrmReply } from "@/lib/n8nClient";
+
+// Business timezone offset (Asia/Bangkok, no DST). crmFrt operates on
+// business-local wall-clock, so UTC instants are shifted by this before compute.
+const BKK_OFFSET_MS = 7 * 60 * 60 * 1000;
+const DEFAULT_FRT: FrtSettings = {
+  opHoursStart: "08:00",
+  opHoursEnd: "22:00",
+  slaSeconds: 600,
+};
 
 // Read layer for the CRM service desk (docs/crm/). Ingestion is owned by n8n;
 // this repo reads what n8n writes. See docs/crm/adr/0002-n8n-owns-line-ingestion.md.
@@ -183,5 +199,114 @@ export async function getSessionDetail(
   } catch (err) {
     logger.error("getSessionDetail", `Failed for session ${sessionId}`, err);
     return null;
+  }
+}
+
+/**
+ * Ensure a crm_agent_profile exists for this Fixlo user × project and return its
+ * id. crm_role is seeded from the placeholder Fixlo→crm bridge (until #157).
+ */
+async function ensureAgentProfile(
+  fixloUserId: string,
+  fixloRole: string | null | undefined,
+  projectId: number,
+): Promise<number | null> {
+  const crmRole = crmRoleFromFixloRole(fixloRole) ?? "junior";
+  const res = await query(
+    `INSERT INTO crm_agent_profile (fixlo_user_id, project_id, crm_role)
+     VALUES ($1, $2, $3)
+     ON CONFLICT (fixlo_user_id, project_id) DO UPDATE SET fixlo_user_id = EXCLUDED.fixlo_user_id
+     RETURNING id`,
+    [fixloUserId, projectId, crmRole],
+  );
+  return res.rows[0] ? Number(res.rows[0].id) : null;
+}
+
+export interface SendReplyResult {
+  ok: boolean;
+  error?: string;
+}
+
+/**
+ * Send an admin reply for a session: record the admin message, update FRT/SLA if
+ * this is the session's first response, and POST the reply to the n8n send
+ * webhook (which delivers over LINE). Text is password-redacted before storage.
+ */
+export async function sendReply(input: {
+  projectSlug: string;
+  sessionId: number;
+  text: string;
+}): Promise<SendReplyResult> {
+  const session = await getServerAuthSession();
+  if (!session || !["owner", "admin", "staff"].includes(session.user.role || "")) {
+    return { ok: false, error: "unauthorized" };
+  }
+  const text = redactPasswords((input.text || "").trim());
+  if (!text) return { ok: false, error: "empty" };
+
+  try {
+    const ref = await resolveProject(input.projectSlug);
+    if (!ref) return { ok: false, error: "project" };
+    const projectId = ref.id;
+
+    const sRes = await query(
+      `SELECT user_id, frt_start_at, first_customer_msg_at, first_admin_reply_at
+       FROM crm_sessions WHERE session_id = $1 AND project_id = $2`,
+      [input.sessionId, projectId],
+    );
+    const s = sRes.rows[0];
+    if (!s) return { ok: false, error: "session" };
+
+    const adminId = await ensureAgentProfile(
+      String(session.user.id),
+      session.user.role,
+      projectId,
+    );
+    if (adminId == null) return { ok: false, error: "agent" };
+
+    const now = Date.now();
+
+    // FRT update if this is the first admin response of the session.
+    const startInstant = s.frt_start_at ?? s.first_customer_msg_at;
+    if (s.first_admin_reply_at == null && startInstant) {
+      const update = applyFirstReply(
+        {
+          frtStartAt: new Date(startInstant).getTime() + BKK_OFFSET_MS,
+          firstAdminReplyAt: null,
+        },
+        now + BKK_OFFSET_MS,
+        adminId,
+        DEFAULT_FRT,
+      );
+      if (update) {
+        await query(
+          `UPDATE crm_sessions
+           SET first_admin_reply_at = to_timestamp($1 / 1000.0),
+               first_responder_id = $2, frt_seconds = $3, sla_passed = $4
+           WHERE session_id = $5`,
+          [now, update.firstResponderId, update.frtSeconds, update.slaPassed, input.sessionId],
+        );
+      }
+    }
+
+    await query(
+      `INSERT INTO crm_chat_messages
+         (message_id, project_id, user_id, session_id, admin_id, sender_type, message_text)
+       VALUES ($1, $2, $3, $4, $5, 'admin', $6)`,
+      [randomUUID(), projectId, s.user_id, input.sessionId, adminId, text],
+    );
+
+    const delivered = await sendCrmReply({
+      project_id: projectId,
+      user_id: s.user_id,
+      admin_id: adminId,
+      message_text: text,
+    });
+
+    revalidatePath(`/dashboard/${input.projectSlug}/crm/inbox/${input.sessionId}`);
+    return delivered ? { ok: true } : { ok: true, error: "line_deferred" };
+  } catch (err) {
+    logger.error("sendReply", `Failed for session ${input.sessionId}`, err);
+    return { ok: false, error: "server" };
   }
 }

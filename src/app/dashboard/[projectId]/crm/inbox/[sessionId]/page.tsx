@@ -9,6 +9,8 @@ import { crmRoleFromFixloRole } from "@/lib/crmRole";
 import { maskPii } from "@/lib/crmPiiMask";
 import { redactPasswords } from "@/lib/crmPasswordRedact";
 import { cn } from "@/lib/utils";
+import { ReplyBox } from "@/components/crm/ReplyBox";
+import { SlaTimer } from "@/components/crm/SlaTimer";
 
 // CRM session thread + customer panel (issue #158). PII masked server-side by
 // crm_role; passwords redacted for all roles. Unmask + audit is #162.
@@ -61,11 +63,29 @@ export default async function CrmSessionPage({
             <span className="text-sm font-medium text-gray-900">
               {c.displayName || c.userId}
             </span>
-            {c.humanHandoff && (
-              <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 px-2 py-0.5 text-[11px] text-amber-700">
-                <AlertTriangle className="h-3 w-3" /> รอคนตอบ
-              </span>
-            )}
+            <div className="flex items-center gap-2">
+              {detail.frtSeconds !== null ? (
+                <span
+                  className={cn(
+                    "rounded-full px-2 py-0.5 text-[11px] font-medium",
+                    detail.slaPassed
+                      ? "bg-green-50 text-green-700"
+                      : "bg-red-50 text-red-700",
+                  )}
+                >
+                  FRT {Math.floor(detail.frtSeconds / 60)}:
+                  {String(detail.frtSeconds % 60).padStart(2, "0")}
+                </span>
+              ) : (
+                detail.isOpen &&
+                detail.startedAt && <SlaTimer startedAtIso={detail.startedAt} />
+              )}
+              {c.humanHandoff && (
+                <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 px-2 py-0.5 text-[11px] text-amber-700">
+                  <AlertTriangle className="h-3 w-3" /> รอคนตอบ
+                </span>
+              )}
+            </div>
           </div>
           <div className="flex flex-col gap-2 px-4 py-4">
             {detail.messages.length === 0 && (
@@ -104,6 +124,7 @@ export default async function CrmSessionPage({
               );
             })}
           </div>
+          <ReplyBox projectSlug={projectId} sessionId={detail.sessionId} />
         </div>
 
         {/* Customer panel */}
