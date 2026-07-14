@@ -3,7 +3,8 @@ import { parseChatCsv, maskNumbers } from "../crmChatCsvParse";
 
 // A compact but faithful slice of the LINE OA export format: BOM, three
 // metadata rows, the column header, then data rows including a multi-line
-// quoted message and each sender kind.
+// quoted message and each sender kind. All names/numbers/passwords here are
+// SYNTHETIC — never paste real customer PII into fixtures.
 const SAMPLE =
   "﻿ชื่อบัญชี,JUNO168 VVIP\n" +
   "ไทม์โซน,'+07:00\n" +
@@ -11,8 +12,8 @@ const SAMPLE =
   "ประเภทผู้ส่ง,ชื่อผู้ส่ง,วันส่ง,เวลาส่ง,ข้อความ\n" +
   "Account,ข้อความตอบกลับอัตโนมัติ,2026/04/16,13:15:28,เว็บตรงลิขสิทธิ์แท้\n" +
   'Account,ข้อความตอบกลับอัตโนมัติ,2026/04/16,13:15:28,"สวัสดี คุณ ยูยู\nยินดีต้อนรับ\n\nขอบคุณค่ะ"\n' +
-  "User,0802518587,2026/04/16,13:15:41,ถอนนานมากเลยค่ะ\n" +
-  "Account,อุ๋มอิ๋ม,2026/04/16,14:43:00,ยอดฝากเข้าแล้วนะคะ\n";
+  "User,0800000000,2026/04/16,13:15:41,ถอนนานมากเลยค่ะ\n" +
+  "Account,แอดมินเอ,2026/04/16,14:43:00,ยอดฝากเข้าแล้วนะคะ\n";
 
 describe("parseChatCsv", () => {
   it("skips metadata and column-header rows", () => {
@@ -43,7 +44,7 @@ describe("parseChatCsv", () => {
   it("maps Account + a nickname to admin", () => {
     const msg = parseChatCsv(SAMPLE).find((m) => m.text.includes("ยอดฝาก"))!;
     expect(msg.senderType).toBe("admin");
-    expect(msg.senderName).toBe("อุ๋มอิ๋ม");
+    expect(msg.senderName).toBe("แอดมินเอ");
   });
 
   it("builds an ISO timestamp using the export timezone offset", () => {
@@ -54,17 +55,17 @@ describe("parseChatCsv", () => {
   it("redacts password tokens in the text", () => {
     const csv =
       "ประเภทผู้ส่ง,ชื่อผู้ส่ง,วันส่ง,เวลาส่ง,ข้อความ\n" +
-      "Account,BeeR,2026/04/16,14:00:00,รหัสผ่าน Niiza1122\n";
+      "Account,AdminB,2026/04/16,14:00:00,รหัสผ่าน Fakepw1122\n";
     expect(parseChatCsv(csv)[0].text).toBe("รหัสผ่าน [REDACTED]");
   });
 
   it("masks phone/account digit-runs in the text", () => {
     const csv =
       "ประเภทผู้ส่ง,ชื่อผู้ส่ง,วันส่ง,เวลาส่ง,ข้อความ\n" +
-      'User,0802518587,2026/04/16,13:16:45,"ณภัทร\n0802518587\nTtb 3029057951"\n';
+      'User,0800000000,2026/04/16,13:16:45,"สมชาย\n0800000000\nTtb 1234567890"\n';
     const text = parseChatCsv(csv)[0].text;
-    expect(text).not.toContain("0802518587");
-    expect(text).not.toContain("3029057951");
+    expect(text).not.toContain("0800000000");
+    expect(text).not.toContain("1234567890");
     expect(text).toContain("[REDACTED_NUMBER]");
   });
 
@@ -75,7 +76,7 @@ describe("parseChatCsv", () => {
       "garbage line without enough columns\n" +
       ",,,,\n" +
       "Bogus,someone,not-a-date,nope,hi\n" +
-      "User,0802518587,2026/04/16,13:15:41,สวัสดีค่ะ\n";
+      "User,0800000000,2026/04/16,13:15:41,สวัสดีค่ะ\n";
     const msgs = parseChatCsv(csv);
     expect(msgs).toHaveLength(1);
     expect(msgs[0].text).toBe("สวัสดีค่ะ");
@@ -88,12 +89,12 @@ describe("parseChatCsv", () => {
 
 describe("maskNumbers", () => {
   it("masks a 10-digit phone number", () => {
-    expect(maskNumbers("โทร 0802518587 นะคะ")).toBe("โทร [REDACTED_NUMBER] นะคะ");
+    expect(maskNumbers("โทร 0800000000 นะคะ")).toBe("โทร [REDACTED_NUMBER] นะคะ");
   });
 
   it("masks dashed and spaced variants", () => {
-    expect(maskNumbers("080-251-8587")).toBe("[REDACTED_NUMBER]");
-    expect(maskNumbers("302 905 7951")).toBe("[REDACTED_NUMBER]");
+    expect(maskNumbers("080-000-0000")).toBe("[REDACTED_NUMBER]");
+    expect(maskNumbers("123 456 7890")).toBe("[REDACTED_NUMBER]");
   });
 
   it("leaves short numbers, dates and times untouched", () => {
