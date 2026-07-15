@@ -36,6 +36,7 @@
 import fs from "fs";
 import os from "os";
 import path from "path";
+import { config } from "dotenv";
 import { parseChatCsv, type SenderType } from "../src/lib/crmChatCsvParse";
 import {
   mineIntentCandidates,
@@ -51,6 +52,12 @@ import {
   type CandidatePartition,
   type KbDraftRow,
 } from "../src/lib/crmKbInsert";
+
+// Load .env before anything reaches src/lib/db (dynamically imported below, on
+// --apply only) — without this, DATABASE_URL is unset in process.env and the
+// pool silently falls back to empty individual DB_* params (ECONNREFUSED).
+// Mirrors scripts/migrate.ts.
+config({ path: path.join(__dirname, "../.env") });
 
 /** CRM default session gap (6h); see docs/crm/CONTEXT.md and ADR 0003. */
 const GAP_MINUTES = 360;
