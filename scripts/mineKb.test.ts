@@ -1,5 +1,11 @@
 import { describe, it, expect } from "vitest";
-import { summarizeCandidates, buildArtifact } from "./mineKb";
+import {
+  summarizeCandidates,
+  buildArtifact,
+  filterByMinOccurrences,
+  parseArgs,
+  DEFAULT_MIN_OCCURRENCES,
+} from "./mineKb";
 import type { IntentCandidate } from "../src/lib/crmKbMiner";
 import type {
   AnnotatedCandidate,
@@ -112,5 +118,41 @@ describe("buildArtifact", () => {
     expect(artifact.counts.inserted).toBe(0);
     expect(artifact.inserted).toEqual([draftRow("ก")]);
     expect("rule_id" in artifact.inserted[0]).toBe(false);
+  });
+});
+
+describe("filterByMinOccurrences", () => {
+  it("drops candidates below the threshold, keeps at/above it", () => {
+    const cands = [cand("A", [], 15), cand("B", [], 10), cand("C", [], 9), cand("D", [], 1)];
+    const kept = filterByMinOccurrences(cands, 10);
+    expect(kept.map((c) => c.targetResponse)).toEqual(["A", "B"]);
+  });
+
+  it("returns everything when min is 1", () => {
+    const cands = [cand("A", [], 1), cand("B", [], 3)];
+    expect(filterByMinOccurrences(cands, 1)).toHaveLength(2);
+  });
+
+  it("returns an empty array when nothing meets the threshold", () => {
+    const cands = [cand("A", [], 2), cand("B", [], 3)];
+    expect(filterByMinOccurrences(cands, 10)).toEqual([]);
+  });
+});
+
+describe("parseArgs --min-occurrences", () => {
+  const base = ["--dir", "/tmp/x", "--project", "juno168"];
+
+  it("defaults to DEFAULT_MIN_OCCURRENCES when omitted", () => {
+    expect(parseArgs(base).minOccurrences).toBe(DEFAULT_MIN_OCCURRENCES);
+  });
+
+  it("parses an explicit --min-occurrences", () => {
+    expect(parseArgs([...base, "--min-occurrences", "5"]).minOccurrences).toBe(5);
+  });
+
+  it("rejects a non-positive-integer value", () => {
+    expect(() => parseArgs([...base, "--min-occurrences", "0"])).toThrow();
+    expect(() => parseArgs([...base, "--min-occurrences", "abc"])).toThrow();
+    expect(() => parseArgs([...base, "--min-occurrences", "-3"])).toThrow();
   });
 });
