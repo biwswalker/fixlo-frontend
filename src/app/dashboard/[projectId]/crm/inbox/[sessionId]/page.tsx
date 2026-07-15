@@ -14,6 +14,7 @@ import { SlaTimer } from "@/components/crm/SlaTimer";
 import { UnmaskField } from "@/components/crm/UnmaskField";
 import { DraftCard } from "@/components/crm/DraftCard";
 import { AssignPin } from "@/components/crm/AssignPin";
+import { PollRefresh } from "@/components/crm/PollRefresh";
 
 // CRM session thread + customer panel (issue #158). PII masked server-side by
 // crm_role; passwords redacted for all roles. Unmask + audit is #162.
@@ -52,6 +53,7 @@ export default async function CrmSessionPage({
 
   return (
     <div className="mx-auto max-w-3xl px-4 py-6 sm:px-6">
+      <PollRefresh />
       <Link
         href={`/dashboard/${projectId}/crm/inbox`}
         className="mb-4 inline-flex items-center gap-1 text-sm text-gray-500 hover:text-gray-700"

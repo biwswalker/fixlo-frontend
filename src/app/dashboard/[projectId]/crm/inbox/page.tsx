@@ -7,6 +7,7 @@ import { getInboxSessions } from "@/actions/crm";
 import { getProjectByName } from "@/actions/dashboard";
 import { MessagesSquare } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { PollRefresh } from "@/components/crm/PollRefresh";
 
 // CRM service desk — shared inbox (issue #156, docs/crm/adr/0003).
 // RBAC: the CRM role is derived from the Fixlo role (ADR 0006) — staff+ maps to
@@ -39,6 +40,7 @@ export default async function CrmInboxPage({
 
   return (
     <div className="mx-auto max-w-3xl px-4 py-6 sm:px-6">
+      <PollRefresh />
       <div className="mb-6 flex items-center gap-3">
         <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-blue-50 text-blue-600">
           <MessagesSquare className="h-5 w-5" strokeWidth={1.5} />
