@@ -10,9 +10,19 @@
  *   npx tsx scripts/mineKb.ts --dir <folder> --project <code>            # dry-run
  *   npx tsx scripts/mineKb.ts --dir <folder> --project <code> --apply    # insert
  *   npx tsx scripts/mineKb.ts ... --out <file.json>                      # artifact path
+ *   npx tsx scripts/mineKb.ts ... --min-occurrences <n>                  # long-tail cutoff (default 10)
  *
  * SAFETY: default is DRY-RUN — no DB write happens without `--apply`. `.env`
  * `DATABASE_URL` points at PRODUCTION; only run `--apply` when you mean it.
+ *
+ * LONG-TAIL CUTOFF: on a real 6,207-file export, mining alone (no threshold)
+ * produced 10,585 candidates — 79% (8,366) occurring exactly once (typos,
+ * one-off phrasing that never normalizes to a shared key), unreviewable at that
+ * volume and not the kind of repeated pattern a bot should answer from anyway.
+ * `--min-occurrences` (default 10) drops candidates below the threshold BEFORE
+ * summarizing/inserting; at 10 that cut 10,585 → ~363 while still covering
+ * ~81% of all mined conversation turns (occurrences), since the long tail is
+ * mostly singletons. Tune per project; the flag exists so this isn't hardcoded.
  *
  * The CSV history lives OUTSIDE the repo (~/workspaces/flexio/fixlo-crm-history/
  * <project>/, gitignored — PII + passwords). Input is read through a small
@@ -78,6 +88,9 @@ export function dirCsvSource(dir: string): CsvSource {
   };
 }
 
+/** Below this many occurrences a candidate is long-tail noise, not a pattern. */
+export const DEFAULT_MIN_OCCURRENCES = 10;
+
 export interface MineArgs {
   dir: string;
   project: string;
@@ -85,26 +98,48 @@ export interface MineArgs {
   apply: boolean;
   /** Optional artifact path override; defaults to a path OUTSIDE the repo. */
   out?: string;
+  /** Drop candidates with fewer occurrences than this before summarizing/inserting. */
+  minOccurrences: number;
 }
 
-/** Flag parser for `--dir`, `--project`, `--apply` (confirm gate), `--out`. */
+/** Flag parser for `--dir`, `--project`, `--apply` (confirm gate), `--out`, `--min-occurrences`. */
 export function parseArgs(argv: string[]): MineArgs {
   let dir = "";
   let project = "";
   let apply = false;
   let out: string | undefined;
+  let minOccurrences = DEFAULT_MIN_OCCURRENCES;
   for (let i = 0; i < argv.length; i++) {
     if (argv[i] === "--dir") dir = argv[++i] ?? "";
     else if (argv[i] === "--project") project = argv[++i] ?? "";
     else if (argv[i] === "--apply") apply = true;
     else if (argv[i] === "--out") out = argv[++i] ?? "";
+    else if (argv[i] === "--min-occurrences") {
+      const raw = argv[++i] ?? "";
+      const n = Number(raw);
+      if (!Number.isInteger(n) || n < 1) {
+        throw new Error(`--min-occurrences must be a positive integer, got: ${raw}`);
+      }
+      minOccurrences = n;
+    }
   }
   if (!dir || !project) {
     throw new Error(
-      "Usage: npx tsx scripts/mineKb.ts --dir <folder> --project <code> [--apply] [--out <file.json>]",
+      "Usage: npx tsx scripts/mineKb.ts --dir <folder> --project <code> [--apply] [--out <file.json>] [--min-occurrences <n>]",
     );
   }
-  return { dir, project, apply, out };
+  return { dir, project, apply, out, minOccurrences };
+}
+
+/**
+ * Drop candidates with fewer than `min` occurrences (the long-tail cutoff). Pure;
+ * preserves the input's sort order (callers sort by occurrences desc already).
+ */
+export function filterByMinOccurrences(
+  candidates: IntentCandidate[],
+  min: number,
+): IntentCandidate[] {
+  return candidates.filter((c) => c.occurrences >= min);
 }
 
 export type SenderCounts = Record<SenderType, number>;
@@ -382,7 +417,9 @@ function writeArtifact(outPath: string, artifact: MineArtifact): void {
 }
 
 async function main() {
-  const { dir, project, apply, out } = parseArgs(process.argv.slice(2));
+  const { dir, project, apply, out, minOccurrences } = parseArgs(
+    process.argv.slice(2),
+  );
   const abs = path.resolve(dir);
   if (!fs.existsSync(abs) || !fs.statSync(abs).isDirectory()) {
     throw new Error(`Not a directory: ${abs}`);
@@ -403,14 +440,20 @@ async function main() {
     `\nTotal: ${grand} messages  (customer=${total.customer} admin=${total.admin} bot=${total.bot})`,
   );
 
-  const candidates = await mineCandidates(dirCsvSource(abs));
+  const mined = await mineCandidates(dirCsvSource(abs));
+  const candidates = filterByMinOccurrences(mined, minOccurrences);
+  const droppedLongTail = mined.length - candidates.length;
   const {
     total: candTotal,
     sensitive,
     byPolicy,
     annotated,
   } = summarizeCandidates(candidates);
-  console.log(`\nCandidate intents: ${candTotal}`);
+  console.log(
+    `\nMined ${mined.length} raw candidate(s); dropped ${droppedLongTail} below ` +
+      `--min-occurrences ${minOccurrences} (long-tail).`,
+  );
+  console.log(`Candidate intents: ${candTotal}`);
   console.log(
     `  sensitive: ${sensitive} / ${candTotal}  (non-sensitive: ${candTotal - sensitive})`,
   );
