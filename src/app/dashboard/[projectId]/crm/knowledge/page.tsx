@@ -4,7 +4,7 @@ import { BrainCircuit } from "lucide-react";
 import { getKnowledgeBase } from "@/actions/crm";
 import { getProjectByName } from "@/actions/dashboard";
 import { crmRoleFromFixloRole, hasCrmPermission } from "@/lib/crmRole";
-import { KbIntentCard } from "@/components/crm/KbIntentCard";
+import { KbReview } from "@/components/crm/KbReview";
 
 // CRM knowledge base (issue #160). Review mined intents, edit responses, set
 // policy + sensitivity. RBAC: supervisor+ (crm.kb.manage).
@@ -50,11 +50,7 @@ export default async function CrmKnowledgePage({
           </p>
         </div>
       ) : (
-        <div className="flex flex-col gap-3">
-          {intents.map((intent) => (
-            <KbIntentCard key={intent.ruleId} projectSlug={projectId} intent={intent} />
-          ))}
-        </div>
+        <KbReview projectSlug={projectId} intents={intents} />
       )}
     </div>
   );
