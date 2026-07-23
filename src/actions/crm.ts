@@ -1,6 +1,5 @@
 "use server";
 
-import { randomUUID } from "crypto";
 import { revalidatePath } from "next/cache";
 import { query } from "@/lib/db";
 import { logger } from "@/lib/logger";
@@ -8,7 +7,7 @@ import { resolveProject } from "@/lib/projects";
 import { getServerAuthSession } from "@/lib/auth";
 import { crmRoleFromFixloRole, hasCrmPermission } from "@/lib/crmRole";
 import { redactPasswords } from "@/lib/crmPasswordRedact";
-import type { PiiField } from "@/lib/crmPiiMask";
+import { maskPii, type PiiField } from "@/lib/crmPiiMask";
 import { applyFirstReply, type FrtSettings } from "@/lib/crmFrt";
 import { sendCrmReply, embedCrmIntent } from "@/lib/n8nClient";
 import { selectAgentKpiSql } from "@/lib/crmKpi";
@@ -116,6 +115,73 @@ export async function getInboxSessions(
     }));
   } catch (err) {
     logger.error("getInboxSessions", `Failed for project ${projectSlug}`, err);
+    return [];
+  }
+}
+
+export interface CrmCustomerListRow {
+  userId: string;
+  displayName: string | null;
+  tier: string;
+  phoneMasked: string | null; // masked by crm_role (ADR 0004)
+  bankMasked: string | null;
+  humanHandoff: boolean;
+  assignedAgentName: string | null;
+  sessionCount: number;
+  lastActivityAt: string | null;
+}
+
+/**
+ * Customers for a project, most-recently-active first. PII (phone/bank) is
+ * masked here by the caller's crm_role — the list never ships raw PII; on-demand
+ * reveal is a separate audited action in the session detail (ADR 0004).
+ * Empty-safe: returns [] on any error.
+ */
+export async function getCustomers(
+  projectSlug: string,
+  limit = 200,
+): Promise<CrmCustomerListRow[]> {
+  try {
+    const ref = await resolveProject(projectSlug);
+    if (!ref) return [];
+    const session = await getServerAuthSession();
+    const crmRole = crmRoleFromFixloRole(session?.user.role);
+
+    const result = await query(
+      `SELECT c.user_id,
+              c.display_name,
+              c.tier,
+              c.phone_number,
+              c.bank_account,
+              c.human_handoff,
+              a.fixlo_user_id AS agent_name,
+              (SELECT count(*) FROM crm_sessions s
+                 WHERE s.project_id = c.project_id AND s.user_id = c.user_id) AS session_count,
+              (SELECT max(created_at) FROM crm_chat_messages m
+                 WHERE m.project_id = c.project_id AND m.user_id = c.user_id) AS last_activity
+       FROM crm_customers c
+       LEFT JOIN crm_agent_profile a ON a.id = c.assigned_admin_id
+       WHERE c.project_id = $1
+       ORDER BY last_activity DESC NULLS LAST
+       LIMIT $2`,
+      [ref.id, limit],
+    );
+
+    return result.rows.map((r) => ({
+      userId: r.user_id,
+      displayName: r.display_name,
+      tier: r.tier ?? "Regular",
+      phoneMasked: maskPii(r.phone_number, "phone_number", crmRole) ?? null,
+      bankMasked: maskPii(r.bank_account, "bank_account", crmRole) ?? null,
+      humanHandoff: r.human_handoff,
+      assignedAgentName: r.agent_name ?? null,
+      sessionCount: Number(r.session_count),
+      lastActivityAt: r.last_activity
+        ? new Date(r.last_activity).toISOString()
+        : null,
+    }));
+  } catch (err) {
+    logger.error("getCustomers", `Failed for project ${projectSlug}`, err);
     return [];
   }
 }
@@ -303,13 +369,10 @@ export async function sendReply(input: {
       }
     }
 
-    await query(
-      `INSERT INTO crm_chat_messages
-         (message_id, project_id, user_id, session_id, admin_id, sender_type, message_text)
-       VALUES ($1, $2, $3, $4, $5, 'admin', $6)`,
-      [randomUUID(), projectId, s.user_id, input.sessionId, adminId, text],
-    );
-
+    // n8n (WF4 crm-send) is the single writer for outbound chat messages —
+    // it inserts the row (admin or bot) after routing the LINE reply/push.
+    // Fixlo must NOT also insert here or every admin reply is stored twice
+    // (ADR 0002: n8n owns LINE outbound; Fixlo is the read/action layer).
     const delivered = await sendCrmReply({
       project_id: projectId,
       user_id: s.user_id,
