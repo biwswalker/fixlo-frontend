@@ -3,7 +3,7 @@ import { redirect, notFound } from "next/navigation";
 import Link from "next/link";
 import { format } from "date-fns";
 import { th } from "date-fns/locale";
-import { ArrowLeft, AlertTriangle } from "lucide-react";
+import { ArrowLeft } from "lucide-react";
 import { getSessionDetail } from "@/actions/crm";
 import { crmRoleFromFixloRole } from "@/lib/crmRole";
 import { maskPii } from "@/lib/crmPiiMask";
@@ -14,6 +14,7 @@ import { SlaTimer } from "@/components/crm/SlaTimer";
 import { UnmaskField } from "@/components/crm/UnmaskField";
 import { DraftCard } from "@/components/crm/DraftCard";
 import { AssignPin } from "@/components/crm/AssignPin";
+import { HandoffToggle } from "@/components/crm/HandoffToggle";
 import { PollRefresh } from "@/components/crm/PollRefresh";
 
 // CRM session thread + customer panel (issue #158). PII masked server-side by
@@ -85,11 +86,11 @@ export default async function CrmSessionPage({
                 detail.isOpen &&
                 detail.startedAt && <SlaTimer startedAtIso={detail.startedAt} />
               )}
-              {c.humanHandoff && (
-                <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 px-2 py-0.5 text-[11px] text-amber-700">
-                  <AlertTriangle className="h-3 w-3" /> รอคนตอบ
-                </span>
-              )}
+              <HandoffToggle
+                projectSlug={projectId}
+                userId={c.userId}
+                handoff={c.humanHandoff}
+              />
             </div>
           </div>
           <div className="flex flex-col gap-2 px-4 py-4">

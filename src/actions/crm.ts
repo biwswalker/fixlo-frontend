@@ -11,7 +11,11 @@ import { maskPii, type PiiField } from "@/lib/crmPiiMask";
 import { applyFirstReply, type FrtSettings } from "@/lib/crmFrt";
 import { sendCrmReply, embedCrmIntent } from "@/lib/n8nClient";
 import { selectAgentKpiSql } from "@/lib/crmKpi";
-import { effectivePolicy, type ResponsePolicy } from "@/lib/crmIntentPolicy";
+import {
+  effectivePolicy,
+  type ResponsePolicy,
+  type ResponseType,
+} from "@/lib/crmIntentPolicy";
 import {
   validateBotSettings,
   DEFAULT_BOT_SETTINGS,
@@ -527,6 +531,7 @@ export interface KbIntent {
   sampleUtterances: string[];
   targetResponse: string;
   responsePolicy: ResponsePolicy;
+  responseType: ResponseType | null;
   isSensitive: boolean;
   reviewStatus: "draft" | "approved" | "archived";
 }
@@ -540,7 +545,7 @@ export async function getKnowledgeBase(
     if (!ref) return [];
     const res = await query(
       `SELECT rule_id, intent_name, sample_utterances, target_response,
-              response_policy, is_sensitive, review_status
+              response_policy, response_type, is_sensitive, review_status
        FROM crm_bot_knowledge_base
        WHERE project_id = $1
        ORDER BY CASE review_status WHEN 'draft' THEN 0 WHEN 'approved' THEN 1 ELSE 2 END,
@@ -553,6 +558,7 @@ export async function getKnowledgeBase(
       sampleUtterances: r.sample_utterances ?? [],
       targetResponse: r.target_response,
       responsePolicy: r.response_policy,
+      responseType: r.response_type ?? null,
       isSensitive: r.is_sensitive,
       reviewStatus: r.review_status,
     }));
@@ -577,16 +583,20 @@ export async function saveIntent(input: {
   ruleId: number;
   targetResponse: string;
   responsePolicy: ResponsePolicy;
+  responseType?: ResponseType | null;
   isSensitive: boolean;
 }): Promise<{ ok: boolean; error?: string }> {
   if (!(await requireKbManager())) return { ok: false, error: "forbidden" };
   const policy = effectivePolicy(input.responsePolicy, input.isSensitive);
+  // response_type only matters for autopilot; default to a verbatim reply.
+  const responseType =
+    policy === "autopilot" ? (input.responseType ?? "direct_reply") : null;
   try {
     await query(
       `UPDATE crm_bot_knowledge_base
-       SET target_response = $1, response_policy = $2, is_sensitive = $3
-       WHERE rule_id = $4`,
-      [input.targetResponse, policy, input.isSensitive, input.ruleId],
+       SET target_response = $1, response_policy = $2, response_type = $3, is_sensitive = $4
+       WHERE rule_id = $5`,
+      [input.targetResponse, policy, responseType, input.isSensitive, input.ruleId],
     );
     await embedCrmIntent({ rule_id: input.ruleId });
     revalidatePath(`/dashboard/${input.projectSlug}/crm/knowledge`);
@@ -763,6 +773,38 @@ export async function unassignCustomer(input: {
     return { ok: true };
   } catch (err) {
     logger.error("unassignCustomer", `Failed for ${input.userId}`, err);
+    return { ok: false, error: "server" };
+  }
+}
+
+/**
+ * Toggle a customer's human-handoff flag. Setting it false returns the
+ * conversation to the bot (WF1 routes to the AI copilot again instead of
+ * bypassing to a human). Setting it true keeps the bot silent. Without this the
+ * handoff is one-way — a handed-off customer can never go back to the bot.
+ */
+export async function setHumanHandoff(input: {
+  projectSlug: string;
+  userId: string;
+  handoff: boolean;
+}): Promise<{ ok: boolean; error?: string }> {
+  const session = await getServerAuthSession();
+  if (!session || !["owner", "admin", "staff"].includes(session.user.role || "")) {
+    return { ok: false, error: "unauthorized" };
+  }
+  try {
+    const ref = await resolveProject(input.projectSlug);
+    if (!ref) return { ok: false, error: "project" };
+    await query(
+      `UPDATE crm_customers
+       SET human_handoff = $1, updated_at = (now() AT TIME ZONE 'UTC')
+       WHERE project_id = $2 AND user_id = $3`,
+      [input.handoff, ref.id, input.userId],
+    );
+    revalidatePath(`/dashboard/${input.projectSlug}/crm/inbox`);
+    return { ok: true };
+  } catch (err) {
+    logger.error("setHumanHandoff", `Failed for ${input.userId}`, err);
     return { ok: false, error: "server" };
   }
 }

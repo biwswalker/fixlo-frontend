@@ -11,6 +11,13 @@ export const RESPONSE_POLICIES: ResponsePolicy[] = [
   "force_human",
 ];
 
+// How an autopilot intent produces its reply: send the saved answer verbatim, or
+// have the LLM (WF3) generate one grounded in it. Only meaningful for autopilot.
+// A null response_type is treated as "direct_reply" in n8n (WF2).
+export type ResponseType = "direct_reply" | "llm_generate";
+
+export const RESPONSE_TYPES: ResponseType[] = ["direct_reply", "llm_generate"];
+
 /**
  * The policy that actually applies: a sensitive intent is always force_human,
  * whatever was requested. Non-sensitive intents keep their requested policy.
